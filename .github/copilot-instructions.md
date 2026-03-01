@@ -94,9 +94,7 @@ dotnet test tests/unit/...               # テスト確認
 ### 2. コミット & PR
 ```bash
 git add -A
-git commit -m "feat: Phase{N} - {概要}
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -m "feat: Phase{N} - {概要}" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 git push origin feature/phase{N}-{名前}
 gh pr create --title "Phase{N}: {タイトル}" --body "{説明}"
 ```
