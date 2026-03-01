@@ -3,7 +3,7 @@ using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
-using Microsoft.Graph.Models.ODataErrors;
+using Microsoft.Kiota.Abstractions;
 
 namespace CloudMigrator.Providers.Graph;
 
@@ -257,7 +257,7 @@ public sealed class GraphStorageProvider : IStorageProvider
             return created?.Id
                 ?? throw new InvalidOperationException($"フォルダ作成後に ID が取得できません: {folderName}");
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 409)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 409)
         {
             // フォルダが既に存在する場合は検索して既存 ID を返す
             _logger.LogDebug("フォルダが既に存在します。ID を検索します: {FolderName}", folderName);
@@ -268,7 +268,8 @@ public sealed class GraphStorageProvider : IStorageProvider
     private async Task<string> FindFolderIdAsync(
         string driveId, string parentId, string folderName, CancellationToken ct)
     {
-        var filter = $"name eq '{folderName}'";
+        var escapedName = folderName.Replace("'", "''", StringComparison.Ordinal);
+        var filter = $"name eq '{escapedName}' and folder ne null";
         DriveItemCollectionResponse? children = parentId == "root"
             ? await _client.Drives[driveId].Items["root"].Children
                 .GetAsync(r => r.QueryParameters.Filter = filter, ct).ConfigureAwait(false)

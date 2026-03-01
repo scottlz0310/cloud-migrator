@@ -29,18 +29,34 @@ public sealed class SkipListManager
     public async Task<HashSet<string>> LoadAsync(CancellationToken cancellationToken = default)
     {
         if (!File.Exists(_filePath))
-            return [];
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        try
+        for (int i = 0; i < WriteRetryCount; i++)
         {
-            var json = await File.ReadAllTextAsync(_filePath, cancellationToken).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<HashSet<string>>(json, JsonOptions) ?? [];
+            try
+            {
+                var json = await File.ReadAllTextAsync(_filePath, cancellationToken).ConfigureAwait(false);
+                return JsonSerializer.Deserialize<HashSet<string>>(json, JsonOptions)
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+            catch (IOException) when (i < WriteRetryCount - 1)
+            {
+                // 書き込み中の一時的な共有違反 → リトライ
+                await Task.Delay(50 * (i + 1), cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException ex) when (i >= WriteRetryCount - 1)
+            {
+                _logger.LogError(ex, "スキップリスト読み込みに失敗しました（リトライ上限到達）: {Path}", _filePath);
+                throw;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "スキップリスト JSON が破損しています: {Path}", _filePath);
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "スキップリスト読み込みに失敗しました: {Path}", _filePath);
-            return [];
-        }
+
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>指定キーがスキップリストに存在するか確認する。</summary>
@@ -92,6 +108,15 @@ public sealed class SkipListManager
             catch (IOException) when (i < WriteRetryCount - 1)
             {
                 await Task.Delay(50 * (i + 1), cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException ex) when (i >= WriteRetryCount - 1)
+            {
+                _logger.LogError(
+                    ex,
+                    "スキップリスト書き込みに失敗しました（リトライ上限到達）: {Path}, RetryCount={RetryCount}",
+                    _filePath,
+                    WriteRetryCount);
+                throw;
             }
         }
     }
