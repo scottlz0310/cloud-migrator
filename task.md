@@ -2,7 +2,7 @@
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 
-## 現在の状態: Phase 3 完了・Phase 4 準備中
+## 現在の状態: Phase 4 完了
 
 ---
 
@@ -33,11 +33,11 @@
 
 ## Phase 4: 転送エンジン
 
-- [ ] small upload（4MB 未満 PUT）
-- [ ] large upload（Upload Session + チャンク）
-- [ ] フォルダ自動作成（階層順次）
-- [ ] 並列転送（`Parallel.ForEachAsync` + `Channels`）
-- [ ] セッション再開・部分再送の永続化
+- [x] small upload（4MB 未満 PUT）
+- [x] large upload（Upload Session + チャンク）
+- [x] フォルダ自動作成（階層順次）
+- [x] 並列転送（`Parallel.ForEachAsync` + `Channels`）
+- [x] セッション再開・部分再送の永続化
 
 ## Phase 5: 実行モード互換
 

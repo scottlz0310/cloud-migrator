@@ -17,6 +17,9 @@ public sealed class GraphStorageProvider : IStorageProvider
     private readonly ILogger<GraphStorageProvider> _logger;
     private readonly GraphStorageOptions _options;
     private readonly int _largeFileThresholdBytes;
+    private readonly int _chunkSizeBytes;
+    private readonly UploadSessionStore? _sessionStore;
+    private string? _cachedOneDriveDriveId;
 
     public string ProviderId => "graph";
 
@@ -24,16 +27,22 @@ public sealed class GraphStorageProvider : IStorageProvider
     /// <param name="logger">ロガー</param>
     /// <param name="options">OneDrive/SharePoint 識別子設定</param>
     /// <param name="largeFileThresholdMb">大容量判定閾値（MB）。デフォルト 4</param>
+    /// <param name="chunkSizeMb">チャンクサイズ（MB）。デフォルト 5</param>
+    /// <param name="sessionStore">アップロードセッション永続化（null = 無効）</param>
     public GraphStorageProvider(
         GraphServiceClient client,
         ILogger<GraphStorageProvider> logger,
         GraphStorageOptions? options = null,
-        int largeFileThresholdMb = 4)
+        int largeFileThresholdMb = 4,
+        int chunkSizeMb = 5,
+        UploadSessionStore? sessionStore = null)
     {
         _client = client;
         _logger = logger;
         _options = options ?? new GraphStorageOptions();
         _largeFileThresholdBytes = largeFileThresholdMb * 1024 * 1024;
+        _chunkSizeBytes = chunkSizeMb * 1024 * 1024;
+        _sessionStore = sessionStore;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -189,32 +198,165 @@ public sealed class GraphStorageProvider : IStorageProvider
             await LargeUploadAsync(job, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// 小ファイル（4MB 未満）を単純 PUT でアップロード（FR-04）。
-    /// Phase 4 でストリーム取得とドライブ ID 解決を実装する。
-    /// </summary>
-    private async Task SmallUploadAsync(TransferJob job, CancellationToken cancellationToken)
+    /// <summary>OneDrive のドライブ ID を 1 回だけ取得してキャッシュする。</summary>
+    private async Task<string> GetOneDriveDriveIdAsync(CancellationToken ct)
     {
+        if (_cachedOneDriveDriveId is not null) return _cachedOneDriveDriveId;
+        var drive = await _client.Users[_options.OneDriveUserId].Drive
+            .GetAsync(cancellationToken: ct)
+            .ConfigureAwait(false);
+        _cachedOneDriveDriveId = drive?.Id
+            ?? throw new InvalidOperationException("OneDrive ドライブ ID の取得に失敗しました");
+        return _cachedOneDriveDriveId;
+    }
+
+    /// <summary>
+    /// 小ファイル（4MB 未満）を OneDrive からダウンロードして SharePoint へ PUT（FR-04）。
+    /// </summary>
+    private async Task SmallUploadAsync(TransferJob job, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(_options.OneDriveUserId) || string.IsNullOrEmpty(_options.SharePointDriveId))
+        {
+            _logger.LogError(
+                "OneDriveUserId または SharePointDriveId が未設定のため転送できません: {SkipKey}",
+                job.Source.SkipKey);
+            throw new InvalidOperationException(
+                "OneDriveUserId または SharePointDriveId が未設定のため、小ファイルアップロード処理を実行できません。");
+        }
+
         _logger.LogDebug("小ファイルアップロード開始: {SkipKey} ({Bytes} bytes)",
             job.Source.SkipKey, job.Source.SizeBytes);
 
-        // TODO Phase 4: ストリーム取得と driveId / itemId の解決を実装する
-        _logger.LogWarning("SmallUploadAsync は Phase 4 で実装予定です: {Path}", job.DestinationFullPath);
-        await Task.CompletedTask.ConfigureAwait(false);
+        // OneDrive からダウンロードし、SharePoint へ PUT
+        var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
+        await using var stream = await _client.Drives[oneDriveId].Items[job.Source.Id].Content
+            .GetAsync(cancellationToken: ct)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                $"ダウンロードストリームが null です: {job.Source.SkipKey}");
+
+        var relPath = job.DestinationFullPath.TrimStart('/');
+        await _client.Drives[_options.SharePointDriveId].Root.ItemWithPath(relPath).Content
+            .PutAsync(stream, cancellationToken: ct)
+            .ConfigureAwait(false);
+
+        _logger.LogInformation("小ファイルアップロード完了: {SkipKey}", job.Source.SkipKey);
     }
 
     /// <summary>
     /// 大容量ファイル（4MB 以上）を Upload Session + LargeFileUploadTask でアップロード（FR-05）。
-    /// Phase 4 で driveId / 親フォルダ ID の解決と組み合わせて完成する。
+    /// <see cref="UploadSessionStore"/> が設定されている場合、中断後のセッション再開に対応する。
     /// </summary>
-    private async Task LargeUploadAsync(TransferJob job, CancellationToken cancellationToken)
+    private async Task LargeUploadAsync(TransferJob job, CancellationToken ct)
     {
+        if (string.IsNullOrEmpty(_options.OneDriveUserId) || string.IsNullOrEmpty(_options.SharePointDriveId))
+        {
+            _logger.LogError(
+                "OneDriveUserId または SharePointDriveId が未設定のため転送できません: {SkipKey}",
+                job.Source.SkipKey);
+            throw new InvalidOperationException(
+                "OneDriveUserId または SharePointDriveId が未設定のため、大容量ファイルアップロード処理を実行できません。");
+        }
+
         _logger.LogDebug("大容量ファイルアップロード開始: {SkipKey} ({Bytes} bytes)",
             job.Source.SkipKey, job.Source.SizeBytes);
 
-        // TODO Phase 4: Upload Session フロー（LargeFileUploadTask）を実装する
-        _logger.LogWarning("LargeUploadAsync は Phase 4 で実装予定です: {Path}", job.DestinationFullPath);
-        await Task.CompletedTask.ConfigureAwait(false);
+        var relPath = job.DestinationFullPath.TrimStart('/');
+        var tempPath = Path.GetTempFileName();
+
+        try
+        {
+            // 1. OneDrive からテンポラリファイルにダウンロード（LargeFileUploadTask はシーク可能な Stream が必要）
+            var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
+            await using var downloadStream = await _client.Drives[oneDriveId].Items[job.Source.Id].Content
+                .GetAsync(cancellationToken: ct)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"ダウンロードストリームが null です: {job.Source.SkipKey}");
+
+            await using (var tempWrite = File.Create(tempPath))
+                await downloadStream.CopyToAsync(tempWrite, ct).ConfigureAwait(false);
+
+            // 2. 既存セッション URL の確認（再開可能か）
+            // セッションキーには転送先パスを使用（ソースキーだと destRoot 変更時に誤用される）
+            var sessionKey = relPath;
+            UploadSession? uploadSession = null;
+            var savedUrl = _sessionStore is not null
+                ? await _sessionStore.GetAsync(sessionKey, ct).ConfigureAwait(false)
+                : null;
+
+            if (savedUrl is not null)
+            {
+                _logger.LogDebug("既存セッションで再開を試みます: {SkipKey}", job.Source.SkipKey);
+                uploadSession = new UploadSession { UploadUrl = savedUrl };
+            }
+            else
+            {
+                // 3. 新規アップロードセッション作成
+                uploadSession = await _client.Drives[_options.SharePointDriveId].Root
+                    .ItemWithPath(relPath)
+                    .CreateUploadSession
+                    .PostAsync(new(), cancellationToken: ct)
+                    .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        $"アップロードセッションの作成に失敗: {job.Source.SkipKey}");
+
+                if (_sessionStore is not null && uploadSession.UploadUrl is not null)
+                    await _sessionStore.SetAsync(sessionKey, uploadSession.UploadUrl, ct)
+                        .ConfigureAwait(false);
+            }
+
+            // 4. LargeFileUploadTask でチャンク送信（セッション期限切れ時は再作成してリトライ）
+            await using var uploadStream = File.OpenRead(tempPath);
+            var uploadTask = new LargeFileUploadTask<DriveItem>(
+                uploadSession, uploadStream, _chunkSizeBytes, _client.RequestAdapter);
+
+            UploadResult<DriveItem> result;
+            try
+            {
+                result = await uploadTask.UploadAsync().ConfigureAwait(false);
+            }
+            catch (ApiException ex) when (ex.ResponseStatusCode is 404 or 410)
+            {
+                // セッション期限切れ: ストア削除 → 新規セッション作成 → リトライ
+                _logger.LogWarning("アップロードセッション期限切れ。再作成します: {SkipKey}", job.Source.SkipKey);
+                if (_sessionStore is not null)
+                    await _sessionStore.RemoveAsync(sessionKey, ct).ConfigureAwait(false);
+
+                uploadStream.Seek(0, SeekOrigin.Begin);
+                uploadSession = await _client.Drives[_options.SharePointDriveId].Root
+                    .ItemWithPath(relPath)
+                    .CreateUploadSession
+                    .PostAsync(new(), cancellationToken: ct)
+                    .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        $"セッション再作成に失敗: {job.Source.SkipKey}");
+
+                if (_sessionStore is not null && uploadSession.UploadUrl is not null)
+                    await _sessionStore.SetAsync(sessionKey, uploadSession.UploadUrl, ct)
+                        .ConfigureAwait(false);
+
+                uploadTask = new LargeFileUploadTask<DriveItem>(
+                    uploadSession, uploadStream, _chunkSizeBytes, _client.RequestAdapter);
+                result = await uploadTask.UploadAsync().ConfigureAwait(false);
+            }
+
+            if (!result.UploadSucceeded)
+                throw new InvalidOperationException(
+                    $"大容量アップロードが完了しませんでした: {job.Source.SkipKey}");
+
+            // 5. 成功時はセッション削除
+            if (_sessionStore is not null)
+                await _sessionStore.RemoveAsync(sessionKey, ct).ConfigureAwait(false);
+
+            _logger.LogInformation("大容量ファイルアップロード完了: {SkipKey}", job.Source.SkipKey);
+        }
+        finally
+        {
+            // テンポラリファイルを確実に削除
+            try { File.Delete(tempPath); }
+            catch (Exception ex) { _logger.LogWarning(ex, "テンポラリファイルの削除に失敗: {Path}", tempPath); }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
