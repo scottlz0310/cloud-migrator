@@ -69,6 +69,39 @@ public sealed class SkipListManager
     }
 
     /// <summary>
+    /// スキップキーのセットをファイルへ一括保存する（既存の内容は上書き）。
+    /// 再構築時など大量キーをまとめて書き込む際に使用し、AddAsync の O(n²) を回避する。
+    /// </summary>
+    public async Task SaveAsync(IEnumerable<string> keys, CancellationToken cancellationToken = default)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var dir = Path.GetDirectoryName(_filePath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            var keySet = new HashSet<string>(keys, StringComparer.OrdinalIgnoreCase);
+            await using var stream = new FileStream(
+                _filePath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                useAsync: true);
+            await JsonSerializer.SerializeAsync(stream, keySet, JsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation("skip_list を一括保存しました: {Count} 件", keySet.Count);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <summary>
     /// 転送成功後にスキップキーを原子的に追加する（FR-08）。
     /// 単一の FileStream (FileShare.None) でプロセス間の read-modify-write を排他期間内に収める。
     /// </summary>

@@ -37,13 +37,18 @@ internal static class RebuildSkipListCommand
 
         if (hashChanged)
         {
-            logger.LogWarning("設定変更を検知しました。キャッシュをクリアします。");
-            ConfigHashChecker.ClearCaches(opts.Paths, logger);
+            logger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
+            ConfigHashChecker.ClearAll(opts.Paths, logger);
             await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, hash, ct).ConfigureAwait(false);
         }
+        else
+        {
+            // 設定ハッシュに変更がない場合でも skip_list をクリアして再構築
+            ConfigHashChecker.ClearSkipList(opts.Paths, logger);
+        }
 
-        // skip_list をクリアして SharePoint から再構築
-        ConfigHashChecker.ClearSkipList(opts.Paths, logger);
+        // skip_list を SharePoint から再構築
+
         logger.LogInformation("skip_list を再構築します…");
 
         await TransferCommand.RebuildSkipListFromSharePointAsync(svc, logger, ct).ConfigureAwait(false);

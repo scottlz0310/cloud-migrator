@@ -22,7 +22,12 @@ public static class ConfigHashChecker
         sb.Append(options.Graph.OneDriveUserId).Append('|');
         sb.Append(options.Graph.SharePointSiteId).Append('|');
         sb.Append(options.Graph.SharePointDriveId).Append('|');
-        sb.Append(options.DestinationRoot);
+        // Trim, バックスラッシュ正規化, 末尾スラッシュ除去して表記揺れによるハッシュ差異を防ぐ
+        sb.Append(
+            (options.DestinationRoot ?? string.Empty)
+                .Trim()
+                .Replace('\\', '/')
+                .Trim('/'));
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexStringLower(bytes);
@@ -61,10 +66,10 @@ public static class ConfigHashChecker
     }
 
     /// <summary>
-    /// キャッシュファイル群（OneDrive・SharePoint キャッシュ・skip_list）を削除する。
-    /// 設定変更時に呼び出され、FR-10 に従って skip_list も無効化する。
+    /// キャッシュファイル群（OneDrive・SharePoint キャッシュ・skip_list）をすべて削除する。
+    /// 設定変更時に呼び出され、FR-10 に従ってキャッシュと skip_list を一括無効化する。
     /// </summary>
-    public static void ClearCaches(PathOptions paths, ILogger logger)
+    public static void ClearAll(PathOptions paths, ILogger logger)
     {
         DeleteIfExists(paths.OneDriveCache, logger);
         DeleteIfExists(paths.SharePointCache, logger);

@@ -8,8 +8,9 @@ namespace CloudMigrator.Cli.Commands;
 
 /// <summary>
 /// transfer サブコマンド。
-/// - 通常実行（FR-13）: skip_list がなければ自動再構築後に転送
-/// - --full-rebuild（FR-12）: キャッシュ・skip_list をクリアして全転送
+/// - 通常実行（FR-13）: skip_list がなければ SP を再クロールして自動再構築後に転送。
+///   SP 再構築済み skip_list により既転送ファイルはスキップされる。
+/// - --full-rebuild（FR-12）: キャッシュと skip_list をクリアして SP から再構築後に転送
 /// </summary>
 internal static class TransferCommand
 {
@@ -45,8 +46,7 @@ internal static class TransferCommand
         if (hashChanged)
         {
             logger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
-            ConfigHashChecker.ClearCaches(opts.Paths, logger);
-            ConfigHashChecker.ClearSkipList(opts.Paths, logger);
+            ConfigHashChecker.ClearAll(opts.Paths, logger);
             await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, hash, ct).ConfigureAwait(false);
         }
 
@@ -54,8 +54,7 @@ internal static class TransferCommand
         if (fullRebuild)
         {
             logger.LogInformation("--full-rebuild: キャッシュと skip_list をクリアします。");
-            ConfigHashChecker.ClearCaches(opts.Paths, logger);
-            ConfigHashChecker.ClearSkipList(opts.Paths, logger);
+            ConfigHashChecker.ClearAll(opts.Paths, logger);
         }
 
         // 3. OneDrive クロール（キャッシュ優先）
@@ -108,9 +107,9 @@ internal static class TransferCommand
         var destinationRoot = svc.Options.DestinationRoot;
         var hasDestinationRoot = !string.IsNullOrWhiteSpace(destinationRoot);
         if (hasDestinationRoot)
-            destinationRoot = destinationRoot.Trim().Trim('/');
+            destinationRoot = destinationRoot.Trim().Replace('\\', '/').Trim('/');
 
-        int added = 0;
+        var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in spItems.Where(i => !i.IsFolder))
         {
             var skipKey = item.SkipKey;
@@ -137,10 +136,12 @@ internal static class TransferCommand
             if (string.IsNullOrWhiteSpace(skipKey))
                 continue;
 
-            await svc.SkipListManager.AddAsync(skipKey, ct).ConfigureAwait(false);
-            added++;
+            skipKeys.Add(skipKey);
         }
 
-        logger.LogInformation("skip_list を再構築しました: {Count} 件追加", added);
+        if (skipKeys.Count > 0)
+            await svc.SkipListManager.SaveAsync(skipKeys, ct).ConfigureAwait(false);
+
+        logger.LogInformation("skip_list を再構築しました: {Count} 件追加", skipKeys.Count);
     }
 }
