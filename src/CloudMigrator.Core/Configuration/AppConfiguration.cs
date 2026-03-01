@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using System.Reflection;
 
 namespace CloudMigrator.Core.Configuration;
 
@@ -11,13 +12,27 @@ public static class AppConfiguration
     /// <summary>
     /// IConfiguration を構築する。
     /// configPath が null の場合は configs/config.json を自動検索する。
+    /// DOTNET_ENVIRONMENT または ASPNETCORE_ENVIRONMENT が "Development" の場合、
+    /// エントリアセンブリの UserSecretsId を使って dotnet user-secrets を自動ロードする。
     /// </summary>
     public static IConfiguration Build(string? configPath = null)
     {
         var resolvedPath = configPath ?? ResolveConfigPath();
+        var env = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+                  ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+                  ?? "Production";
 
-        return new ConfigurationBuilder()
-            .AddJsonFile(resolvedPath, optional: true, reloadOnChange: false)
+        var builder = new ConfigurationBuilder()
+            .AddJsonFile(resolvedPath, optional: true, reloadOnChange: false);
+
+        if (env.Equals("Development", StringComparison.OrdinalIgnoreCase))
+        {
+            var entryAssembly = Assembly.GetEntryAssembly();
+            if (entryAssembly is not null)
+                builder.AddUserSecrets(entryAssembly, optional: true);
+        }
+
+        return builder
             .AddEnvironmentVariables()
             .Build();
     }
