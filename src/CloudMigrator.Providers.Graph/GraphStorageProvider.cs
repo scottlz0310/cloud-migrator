@@ -134,30 +134,42 @@ public sealed class GraphStorageProvider : IStorageProvider
             if (driveItem.Id is null) continue;
 
             var storageItem = DriveItemToStorageItem(driveItem, currentPath);
+            if (storageItem is null)
+            {
+                _logger.LogWarning("Name が null/空のアイテムをスキップします: Id={Id}", driveItem.Id);
+                continue;
+            }
+
             if (!seen.Add(storageItem.SkipKey))
             {
                 _logger.LogDebug("重複をスキップ: {SkipKey}", storageItem.SkipKey);
                 continue;
             }
 
-            result.Add(storageItem);
-
             if (storageItem.IsFolder)
                 await CrawlDriveFolderAsync(
                     driveId, driveItem.Id, storageItem.SkipKey, result, seen, ct)
                     .ConfigureAwait(false);
+            else
+                result.Add(storageItem);
         }
     }
 
-    private static StorageItem DriveItemToStorageItem(DriveItem item, string currentPath) => new()
+    internal static StorageItem? DriveItemToStorageItem(DriveItem item, string currentPath)
     {
-        Id = item.Id ?? string.Empty,
-        Name = item.Name ?? string.Empty,
-        Path = currentPath,
-        SizeBytes = item.Size,
-        LastModifiedUtc = item.LastModifiedDateTime,
-        IsFolder = item.Folder is not null,
-    };
+        if (string.IsNullOrEmpty(item.Name))
+            return null;
+
+        return new()
+        {
+            Id = item.Id ?? string.Empty,
+            Name = item.Name,
+            Path = currentPath,
+            SizeBytes = item.Folder is not null ? null : item.Size,
+            LastModifiedUtc = item.LastModifiedDateTime,
+            IsFolder = item.Folder is not null,
+        };
+    }
 
     // ─────────────────────────────────────────────────────────────
     // IStorageProvider: UploadFileAsync

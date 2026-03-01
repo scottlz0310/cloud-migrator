@@ -36,8 +36,10 @@ public sealed class SkipListManager
             try
             {
                 var json = await File.ReadAllTextAsync(_filePath, cancellationToken).ConfigureAwait(false);
-                return JsonSerializer.Deserialize<HashSet<string>>(json, JsonOptions)
-                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var deserialized = JsonSerializer.Deserialize<HashSet<string>>(json, JsonOptions);
+                return deserialized is null
+                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    : new HashSet<string>(deserialized, StringComparer.OrdinalIgnoreCase);
             }
             catch (IOException) when (i < WriteRetryCount - 1)
             {
@@ -68,56 +70,83 @@ public sealed class SkipListManager
 
     /// <summary>
     /// 転送成功後にスキップキーを原子的に追加する（FR-08）。
-    /// 同一プロセス内の排他制御には SemaphoreSlim を、
-    /// プロセス間の排他制御には FileShare.None を使用する。
+    /// 単一の FileStream (FileShare.None) でプロセス間の read-modify-write を排他期間内に収める。
     /// </summary>
     public async Task AddAsync(string skipKey, CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var keys = await LoadAsync(cancellationToken).ConfigureAwait(false);
-            if (!keys.Add(skipKey))
-                return; // 既に存在する場合は何もしない
+            var dir = Path.GetDirectoryName(_filePath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
 
-            await WriteWithRetryAsync(keys, cancellationToken).ConfigureAwait(false);
-            _logger.LogDebug("スキップリストに追加: {SkipKey}", skipKey);
+            for (int i = 0; i < WriteRetryCount; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    // FileShare.None で他プロセスをブロックしたまま読み込みと書き込みを行う
+                    await using var stream = new FileStream(
+                        _filePath,
+                        FileMode.OpenOrCreate,
+                        FileAccess.ReadWrite,
+                        FileShare.None,
+                        bufferSize: 4096,
+                        useAsync: true);
+
+                    HashSet<string> keys;
+                    if (stream.Length == 0)
+                    {
+                        keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    }
+                    else
+                    {
+                        stream.Position = 0;
+                        try
+                        {
+                            var existing = await JsonSerializer.DeserializeAsync<HashSet<string>>(
+                                stream, JsonOptions, cancellationToken).ConfigureAwait(false);
+                            keys = existing is null
+                                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                                : new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+                        }
+                        catch (JsonException ex)
+                        {
+                            _logger.LogError(ex, "スキップリスト JSON が破損しています: {Path}", _filePath);
+                            keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        }
+                    }
+
+                    if (!keys.Add(skipKey))
+                        return; // 既に存在する場合は何もしない
+
+                    stream.SetLength(0);
+                    stream.Position = 0;
+                    await JsonSerializer.SerializeAsync(stream, keys, JsonOptions, cancellationToken)
+                        .ConfigureAwait(false);
+                    await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+                    _logger.LogDebug("スキップリストに追加: {SkipKey}", skipKey);
+                    return;
+                }
+                catch (IOException) when (i < WriteRetryCount - 1)
+                {
+                    await Task.Delay(50 * (i + 1), cancellationToken).ConfigureAwait(false);
+                }
+                catch (IOException ex) when (i >= WriteRetryCount - 1)
+                {
+                    _logger.LogError(
+                        ex,
+                        "スキップリストの原子的追加に失敗しました（リトライ上限到達）: {Path}",
+                        _filePath);
+                    throw;
+                }
+            }
         }
         finally
         {
             _lock.Release();
-        }
-    }
-
-    private async Task WriteWithRetryAsync(HashSet<string> keys, CancellationToken cancellationToken)
-    {
-        var dir = Path.GetDirectoryName(_filePath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-
-        for (int i = 0; i < WriteRetryCount; i++)
-        {
-            try
-            {
-                await using var fs = new FileStream(
-                    _filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-                await JsonSerializer.SerializeAsync(fs, keys, JsonOptions, cancellationToken)
-                    .ConfigureAwait(false);
-                return;
-            }
-            catch (IOException) when (i < WriteRetryCount - 1)
-            {
-                await Task.Delay(50 * (i + 1), cancellationToken).ConfigureAwait(false);
-            }
-            catch (IOException ex) when (i >= WriteRetryCount - 1)
-            {
-                _logger.LogError(
-                    ex,
-                    "スキップリスト書き込みに失敗しました（リトライ上限到達）: {Path}, RetryCount={RetryCount}",
-                    _filePath,
-                    WriteRetryCount);
-                throw;
-            }
         }
     }
 }

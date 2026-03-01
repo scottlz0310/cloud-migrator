@@ -102,6 +102,44 @@ public class SkipListManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task ContainsAsync_ShouldBeCaseInsensitive()
+    {
+        // 検証対象: ContainsAsync  目的: OrdinalIgnoreCase で大文字小文字を区別しないこと
+        var manager = CreateManager();
+        await manager.AddAsync("DOCS/Report.XLSX");
+
+        var result = await manager.ContainsAsync("docs/report.xlsx");
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AddAsync_ShouldBeIdempotent_WhenAddingSameKeyCaseInsensitive()
+    {
+        // 検証対象: AddAsync  目的: 大文字小文字違いの同一キーは重複しないこと（OrdinalIgnoreCase）
+        var manager = CreateManager();
+        await manager.AddAsync("DOCS/File.TXT");
+        await manager.AddAsync("docs/file.txt");
+
+        var keys = await manager.LoadAsync();
+        keys.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ShouldUseOrdinalIgnoreCase_AfterDeserialization()
+    {
+        // 検証対象: LoadAsync  目的: ファイルから読み込んだ HashSet が OrdinalIgnoreCase であること
+        var manager = CreateManager();
+        await manager.AddAsync("Archive/File.zip");
+
+        // 別インスタンスで再読み込み（デシリアライズ経路）
+        var manager2 = CreateManager();
+        var result = await manager2.ContainsAsync("archive/file.ZIP");
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task AddAsync_ShouldCreateParentDirectories()
     {
         // 検証対象: AddAsync  目的: 親ディレクトリが存在しなくても自動作成されること
