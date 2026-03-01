@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CloudMigrator.Cli/CloudMigrator.Cli.csproj" />
+    <Project Path="src/CloudMigrator.Core/CloudMigrator.Core.csproj" />
+    <Project Path="src/CloudMigrator.Observability/CloudMigrator.Observability.csproj" />
+    <Project Path="src/CloudMigrator.Providers.Abstractions/CloudMigrator.Providers.Abstractions.csproj" />
+    <Project Path="src/CloudMigrator.Providers.Dropbox/CloudMigrator.Providers.Dropbox.csproj" />
+    <Project Path="src/CloudMigrator.Providers.Graph/CloudMigrator.Providers.Graph.csproj" />
+    <Project Path="src/CloudMigrator.Testing/CloudMigrator.Testing.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/e2e/">
+    <Project Path="tests/e2e/CloudMigrator.Tests.E2E.csproj" />
+  </Folder>
+  <Folder Name="/tests/integration/">
+    <Project Path="tests/integration/CloudMigrator.Tests.Integration.csproj" />
+  </Folder>
+  <Folder Name="/tests/unit/">
+    <Project Path="tests/unit/CloudMigrator.Tests.Unit.csproj" />
+  </Folder>
+</Solution>

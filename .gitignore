@@ -52,3 +52,18 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+# .NET ビルド成果物
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# 実行時生成ファイル
+logs/
+.env
+.env.*
+
+# テスト結果
+*.trx
+TestResults/

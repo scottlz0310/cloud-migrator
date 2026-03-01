@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build & Test (${{ matrix.os }} / .NET ${{ matrix.dotnet }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        dotnet: ["10.0"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .NET セットアップ
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ matrix.dotnet }}
+
+      - name: 依存関係の復元
+        run: dotnet restore CloudMigrator.slnx
+
+      - name: ビルド
+        run: dotnet build CloudMigrator.slnx --no-restore --configuration Release
+
+      - name: テスト（unit + integration）
+        run: |
+          dotnet test tests/unit/CloudMigrator.Tests.Unit.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+          dotnet test tests/integration/CloudMigrator.Tests.Integration.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+
+      - name: テスト結果のアップロード
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}-dotnet${{ matrix.dotnet }}
+          path: "**/test-results.trx"
