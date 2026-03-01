@@ -9,6 +9,25 @@
 
 ---
 
+## [0.2.1] - 2026-03-01
+
+### Fixed
+- `StorageItem.SkipKey`: 空パス時に先頭スラッシュが混入する問題を修正
+- `TransferJob.DestinationPath/DestinationFullPath`: `TrimEnd/TrimStart('/')` で二重スラッシュを排除
+- `GraphProviderOptions.ClientSecret` を設定モデルから除外し `AppConfiguration.GetGraphClientSecret()` 経由のみに変更
+- `configs/config.json` から `clientSecret` キーを削除
+- `sample.env` のキーを `MIGRATOR__GRAPH__*` 形式（.NET `__` 区切り規約）に統一
+- CI の `pull-requests: write` 権限を削除（最小権限）
+- CI の restore/build コマンドに `CloudMigrator.slnx` を明示指定
+- CI のテスト実行をプロジェクト個別指定に変更（E2E を確実に除外）
+- テストファイルにプレースホルダーアサーション追加、E2E に `[Trait("Category","E2E")]` 付与
+- `task.md` / `CHANGELOG.md` のソリューションファイル名を `.slnx` に修正
+
+### Changed
+- `.github/copilot-instructions.md` にイテレーションサイクルとビルドコマンドを追記
+
+---
+
 ## [0.2.0] - 2026-03-01
 
 ### Added
