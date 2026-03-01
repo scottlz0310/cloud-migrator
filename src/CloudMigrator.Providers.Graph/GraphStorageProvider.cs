@@ -3,7 +3,6 @@ using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
-using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Kiota.Abstractions;
 
 namespace CloudMigrator.Providers.Graph;
@@ -216,10 +215,7 @@ public sealed class GraphStorageProvider : IStorageProvider
     /// </summary>
     private async Task SmallUploadAsync(TransferJob job, CancellationToken ct)
     {
-        var userId = _options.OneDriveUserId;
-        var driveId = _options.SharePointDriveId;
-
-        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(driveId))
+        if (string.IsNullOrEmpty(_options.OneDriveUserId) || string.IsNullOrEmpty(_options.SharePointDriveId))
         {
             _logger.LogError(
                 "OneDriveUserId または SharePointDriveId が未設定のため転送できません: {SkipKey}",
@@ -240,7 +236,7 @@ public sealed class GraphStorageProvider : IStorageProvider
                 $"ダウンロードストリームが null です: {job.Source.SkipKey}");
 
         var relPath = job.DestinationFullPath.TrimStart('/');
-        await _client.Drives[driveId].Root.ItemWithPath(relPath).Content
+        await _client.Drives[_options.SharePointDriveId].Root.ItemWithPath(relPath).Content
             .PutAsync(stream, cancellationToken: ct)
             .ConfigureAwait(false);
 
@@ -253,10 +249,7 @@ public sealed class GraphStorageProvider : IStorageProvider
     /// </summary>
     private async Task LargeUploadAsync(TransferJob job, CancellationToken ct)
     {
-        var userId = _options.OneDriveUserId;
-        var driveId = _options.SharePointDriveId;
-
-        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(driveId))
+        if (string.IsNullOrEmpty(_options.OneDriveUserId) || string.IsNullOrEmpty(_options.SharePointDriveId))
         {
             _logger.LogError(
                 "OneDriveUserId または SharePointDriveId が未設定のため転送できません: {SkipKey}",
@@ -300,7 +293,7 @@ public sealed class GraphStorageProvider : IStorageProvider
             else
             {
                 // 3. 新規アップロードセッション作成
-                uploadSession = await _client.Drives[driveId].Root
+                uploadSession = await _client.Drives[_options.SharePointDriveId].Root
                     .ItemWithPath(relPath)
                     .CreateUploadSession
                     .PostAsync(new(), cancellationToken: ct)
@@ -323,7 +316,7 @@ public sealed class GraphStorageProvider : IStorageProvider
             {
                 result = await uploadTask.UploadAsync().ConfigureAwait(false);
             }
-            catch (ODataError ex) when (ex.ResponseStatusCode is 404 or 410)
+            catch (ApiException ex) when (ex.ResponseStatusCode is 404 or 410)
             {
                 // セッション期限切れ: ストア削除 → 新規セッション作成 → リトライ
                 _logger.LogWarning("アップロードセッション期限切れ。再作成します: {SkipKey}", job.Source.SkipKey);
@@ -331,7 +324,7 @@ public sealed class GraphStorageProvider : IStorageProvider
                     await _sessionStore.RemoveAsync(sessionKey, ct).ConfigureAwait(false);
 
                 uploadStream.Seek(0, SeekOrigin.Begin);
-                uploadSession = await _client.Drives[driveId].Root
+                uploadSession = await _client.Drives[_options.SharePointDriveId].Root
                     .ItemWithPath(relPath)
                     .CreateUploadSession
                     .PostAsync(new(), cancellationToken: ct)

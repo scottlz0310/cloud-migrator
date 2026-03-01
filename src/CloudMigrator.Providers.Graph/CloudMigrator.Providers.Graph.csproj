@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\CloudMigrator.Core\CloudMigrator.Core.csproj" />
     <ProjectReference Include="..\CloudMigrator.Providers.Abstractions\CloudMigrator.Providers.Abstractions.csproj" />
     <ProjectReference Include="..\CloudMigrator.Observability\CloudMigrator.Observability.csproj" />
   </ItemGroup>

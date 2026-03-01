@@ -44,6 +44,7 @@ public sealed class TransferEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_WithEmptySourceList_ReturnsZeroSummary()
     {
+        // 検証対象: RunAsync  目的: ソースが空の場合はすべてゼロのサマリーを返すこと
         var engine = CreateEngine();
 
         var summary = await engine.RunAsync([], "dest/root");
@@ -60,6 +61,7 @@ public sealed class TransferEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_SkipsAlreadyTransferredItems_BySkipList()
     {
+        // 検証対象: RunAsync  目的: skip_list 登録済みアイテムはアップロードせずスキップすること
         var file = MakeFile("docs", "report.pdf");
         await _skipList.AddAsync(file.SkipKey);
 
@@ -76,6 +78,7 @@ public sealed class TransferEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_OnSuccessfulTransfer_IncrementsSuccessAndUpdatesSkipList()
     {
+        // 検証対象: RunAsync  目的: 転送成功時に Success をインクリメントし、skip_list に登録すること
         var file = MakeFile("docs", "report.pdf");
         _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
                  .Returns(Task.CompletedTask);
@@ -96,6 +99,7 @@ public sealed class TransferEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_OnFailedTransfer_IncrementsFailedAndDoesNotUpdateSkipList()
     {
+        // 検証対象: RunAsync  目的: 転送失敗時に Failed をインクリメントし、skip_list には登録しないこと
         var file = MakeFile("docs", "broken.pdf");
         _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
                  .ThrowsAsync(new IOException("network error"));
@@ -115,6 +119,7 @@ public sealed class TransferEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_PreCreatesFolderHierarchy_DerivedFromItemPaths()
     {
+        // 検証対象: RunAsync フォルダ先行作成  目的: アイテムの Path セグメントからフォルダ階層を導出し、ファイル転送前に EnsureFolderAsync を呼ぶこと
         // ファイルの Path = "docs/sub" → "dest/root/docs" と "dest/root/docs/sub" が先行作成されること
         var file = MakeFile("docs/sub", "file.txt");
         var callOrder = new List<string>();
@@ -147,6 +152,7 @@ public sealed class TransferEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_WithMixedResults_CountsCorrectly()
     {
+        // 検証対象: RunAsync  目的: 成功・失敗・スキップが混在する場合、各カウントが正確に集計されること
         var file1 = MakeFile("docs", "ok.pdf");
         var file2 = MakeFile("docs", "fail.pdf");
         var file3 = MakeFile("docs", "skip.pdf");
