@@ -5,6 +5,7 @@
     "maxParallelTransfers": 4,
     "retryCount": 3,
     "timeoutSec": 300,
+    "destinationRoot": "",
     "paths": {
       "skipList": "logs/skip_list.json",
       "oneDriveCache": "logs/onedrive_files.json",
