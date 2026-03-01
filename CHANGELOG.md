@@ -9,6 +9,30 @@
 
 ---
 
+## [0.4.0] - 2026-03-01
+
+### Added
+- `CrawlCache`（`CloudMigrator.Core.Storage`）- クロール結果を JSON ファイルへキャッシュ（FR-09）
+- `SkipListManager`（`CloudMigrator.Core.Storage`）- スキップリスト読み書き・排他制御（FR-07/FR-08）
+  - `SemaphoreSlim`（プロセス内）+ `FileShare.None` + リトライ（プロセス間）
+  - 判定キー: `StorageItem.SkipKey`（path + name の組み合わせ）
+- `GraphStorageOptions` - OneDriveUserId / SharePointDriveId の注入用設定クラス（Graph プロジェクト）
+- `GraphStorageProvider.ListItemsAsync` 実装
+  - `rootPath="onedrive"` → OneDrive ユーザードライブを再帰クロール（FR-02）
+  - `rootPath="sharepoint"` → SharePoint ドライブを再帰クロール（FR-03）
+  - `PageIterator<DriveItem, DriveItemCollectionResponse>` によるページング
+  - `HashSet<string>` による重複排除
+- `GraphStorageProvider.EnsureFolderAsync` 実装（FR-06）
+  - パスをセグメント分割し、階層順に `Items[parentId].Children.PostAsync` でフォルダ作成
+  - 409 Conflict 時は既存フォルダの ID を検索して返す
+- ユニットテスト追加（`CrawlCacheTests` 5 ケース、`SkipListManagerTests` 7 ケース、計 27 ケース）
+
+### Changed
+- `GraphStorageProvider` コンストラクタに `GraphStorageOptions?` パラメータ追加（省略時は空 options）
+- `CloudMigrator.Core.csproj` に `Microsoft.Extensions.Logging.Abstractions` パッケージ追加
+
+---
+
 ## [0.3.0] - 2026-03-01
 
 ### Added
@@ -78,7 +102,8 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...v0.2.0
