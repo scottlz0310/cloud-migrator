@@ -1,0 +1,24 @@
+{
+  "migrator": {
+    "chunkSizeMb": 5,
+    "largeFileThresholdMb": 4,
+    "maxParallelTransfers": 4,
+    "retryCount": 3,
+    "timeoutSec": 300,
+    "paths": {
+      "skipList": "logs/skip_list.json",
+      "oneDriveCache": "logs/onedrive_files.json",
+      "sharePointCache": "logs/sharepoint_current_files.json",
+      "transferLog": "logs/transfer.log",
+      "configHash": "logs/config_hash.txt"
+    },
+    "graph": {
+      "clientId": "",
+      "tenantId": "",
+      "clientSecret": "",
+      "oneDriveUserId": "",
+      "sharePointSiteId": "",
+      "sharePointDriveId": ""
+    }
+  }
+}
