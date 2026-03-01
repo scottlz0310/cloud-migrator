@@ -9,6 +9,23 @@
 
 ---
 
+## [0.3.0] - 2026-03-01
+
+### Added
+- `GraphAuthenticator`（MSAL client credentials、`IAccessTokenProvider` 実装）
+- `GraphClientFactory`（`GraphServiceClient` ファクトリ、retry max 3 / timeout / rate-limit）
+- `GraphStorageProvider`（`IStorageProvider` 実装）
+  - 4MB 未満: small upload ルーティング（Phase 4 で実装）
+  - 4MB 以上: large upload ルーティング（Phase 4 で実装）
+  - `ListItemsAsync` / `EnsureFolderAsync` スタブ（Phase 3 で実装）
+- ユニットテスト追加（`GraphStorageProviderTests` 7 ケース、`AbstractionTests` 6 ケース）
+- `tests/unit` に `CloudMigrator.Providers.Graph` 参照を追加
+
+### Changed
+- `Microsoft.Kiota.Http.HttpClientLibrary` NuGet パッケージ追加（Graph プロジェクト）
+
+---
+
 ## [0.2.1] - 2026-03-01
 
 ### Fixed
@@ -61,7 +78,8 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/scottlz0310/cloud-migrator/releases/tag/v0.1.0
