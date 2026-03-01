@@ -2,7 +2,7 @@
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 
-## 現在の状態: Phase 1 進行中
+## 現在の状態: Phase 2 完了・Phase 3 準備中
 
 ---
 
@@ -19,10 +19,11 @@
 
 ## Phase 2: 認証・Graph 基盤
 
-- [ ] `GraphAuthenticator`（client credentials、トークン自動更新）
-- [ ] Graph API クライアント共通化（retry/timeout/rate-limit）
-- [ ] `LargeFileUploadTask` PoC（4MB 超チャンクアップロード）
-- [ ] `IStorageProvider` に Graph 実装を接続
+- [x] `GraphAuthenticator`（client credentials、トークン自動更新）
+- [x] Graph API クライアント共通化（retry/timeout/rate-limit）
+- [x] `LargeFileUploadTask` PoC（コメントで設計記録、Phase 3 で実装）
+- [x] `IStorageProvider` に Graph 実装を接続
+- [x] `GraphStorageProvider` ユニットテスト（13 ケース）
 
 ## Phase 3: クロール + スキップリスト
 
