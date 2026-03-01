@@ -8,7 +8,7 @@
 
 ## Phase 1: プロジェクト基盤
 
-- [x] ソリューション・プロジェクト作成（CloudMigrator.sln + 10プロジェクト）
+- [x] ソリューション・プロジェクト作成（CloudMigrator.slnx + 10プロジェクト）
 - [x] プロジェクト参照の設定
 - [x] NuGet パッケージ追加（Graph SDK, System.CommandLine, Serilog, FluentAssertions, Moq）
 - [x] `IStorageProvider` 契約定義（Providers.Abstractions）

@@ -1,10 +1,11 @@
-﻿namespace CloudMigrator.Tests.Unit;
+namespace CloudMigrator.Tests.Unit;
 
 public class UnitTest1
 {
     [Fact]
-    public void Test1()
+    public void Placeholder_ShouldPass()
     {
-
+        // Phase 2 以降で実装されるユニットテストのプレースホルダー
+        Assert.True(true);
     }
 }

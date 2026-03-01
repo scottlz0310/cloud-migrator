@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   build-test:
@@ -29,13 +28,15 @@ jobs:
           dotnet-version: ${{ matrix.dotnet }}
 
       - name: 依存関係の復元
-        run: dotnet restore
+        run: dotnet restore CloudMigrator.slnx
 
       - name: ビルド
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build CloudMigrator.slnx --no-restore --configuration Release
 
       - name: テスト（unit + integration）
-        run: dotnet test --no-build --configuration Release --filter "Category!=E2E" --logger "trx;LogFileName=test-results.trx"
+        run: |
+          dotnet test tests/unit/CloudMigrator.Tests.Unit.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+          dotnet test tests/integration/CloudMigrator.Tests.Integration.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
 
       - name: テスト結果のアップロード
         uses: actions/upload-artifact@v4

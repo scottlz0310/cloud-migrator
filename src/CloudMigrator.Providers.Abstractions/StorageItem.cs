@@ -24,5 +24,5 @@ public sealed record StorageItem
     public bool IsFolder { get; init; }
 
     /// <summary>スキップリスト判定キー（FR-07: path + name の組み合わせ）</summary>
-    public string SkipKey => $"{Path}/{Name}";
+    public string SkipKey => string.IsNullOrEmpty(Path) ? Name : $"{Path}/{Name}";
 }

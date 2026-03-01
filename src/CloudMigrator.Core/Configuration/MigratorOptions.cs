@@ -45,14 +45,14 @@ public sealed class PathOptions
 /// </summary>
 public sealed class GraphProviderOptions
 {
-    /// <summary>Azure AD アプリケーション（クライアント）ID。環境変数 GRAPH_CLIENT_ID でオーバーライド可</summary>
+    /// <summary>Azure AD アプリケーション（クライアント）ID。環境変数 MIGRATOR__GRAPH__CLIENTID でオーバーライド可</summary>
     public string ClientId { get; set; } = string.Empty;
 
-    /// <summary>Azure AD テナント ID。環境変数 GRAPH_TENANT_ID でオーバーライド可</summary>
+    /// <summary>Azure AD テナント ID。環境変数 MIGRATOR__GRAPH__TENANTID でオーバーライド可</summary>
     public string TenantId { get; set; } = string.Empty;
 
-    /// <summary>クライアントシークレット。必ず環境変数 GRAPH_CLIENT_SECRET から取得すること（config.json への記載禁止）</summary>
-    public string ClientSecret { get; set; } = string.Empty;
+    // クライアントシークレットはこのモデルに含めない。
+    // AppConfiguration.GetGraphClientSecret() で環境変数 MIGRATOR__GRAPH__CLIENTSECRET から直接取得すること。
 
     /// <summary>OneDrive ユーザー ID または UPN</summary>
     public string OneDriveUserId { get; set; } = string.Empty;

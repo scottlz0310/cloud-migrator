@@ -27,7 +27,7 @@
 ## [0.1.0] - 2026-03-01
 
 ### Added
-- ソリューション `CloudMigrator.sln` 作成（.NET 10）
+- ソリューション `CloudMigrator.slnx` 作成（.NET 10）
 - プロジェクト構成初期化
   - `CloudMigrator.Cli` - System.CommandLine ベース CLI エントリーポイント
   - `CloudMigrator.Core` - ドメイン・ユースケース

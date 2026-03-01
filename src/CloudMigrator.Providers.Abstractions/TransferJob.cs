@@ -12,8 +12,9 @@ public sealed record TransferJob
     public required string DestinationRoot { get; init; }
 
     /// <summary>転送先での相対パス（Source.Path に基づく）</summary>
-    public string DestinationPath => $"{DestinationRoot}/{Source.Path}".TrimEnd('/');
+    public string DestinationPath =>
+        $"{DestinationRoot.TrimEnd('/')}/{Source.Path.TrimStart('/')}".TrimEnd('/');
 
     /// <summary>転送先でのフルパス（ファイル名を含む）</summary>
-    public string DestinationFullPath => $"{DestinationPath}/{Source.Name}";
+    public string DestinationFullPath => $"{DestinationPath}/{Source.Name.TrimStart('/')}";
 }

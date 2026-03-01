@@ -4,6 +4,7 @@ namespace CloudMigrator.Core.Configuration;
 
 /// <summary>
 /// 設定ローダー。優先順位: 環境変数 > config.json > デフォルト値（OPS-01）
+/// 環境変数キーは MIGRATOR__GRAPH__CLIENTID のように __ 区切りでセクションを表現する（.NET 標準規約）
 /// </summary>
 public static class AppConfiguration
 {
@@ -22,7 +23,14 @@ public static class AppConfiguration
     }
 
     /// <summary>
-    /// 実行ファイルから configs/config.json を探す（最大3階層上まで）
+    /// クライアントシークレットを環境変数 MIGRATOR__GRAPH__CLIENTSECRET から取得する。
+    /// この値は config.json に書かず、必ず環境変数で提供すること（OPS-02, セキュリティ要件）。
+    /// </summary>
+    public static string GetGraphClientSecret()
+        => Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET") ?? string.Empty;
+
+    /// <summary>
+    /// 実行ファイルから configs/config.json を探す（最大4階層上まで）
     /// </summary>
     private static string ResolveConfigPath()
     {

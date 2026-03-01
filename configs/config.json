@@ -15,7 +15,6 @@
     "graph": {
       "clientId": "",
       "tenantId": "",
-      "clientSecret": "",
       "oneDriveUserId": "",
       "sharePointSiteId": "",
       "sharePointDriveId": ""
