@@ -13,7 +13,7 @@
 
 ### Added
 - `TransferSummary`（`CloudMigrator.Core.Transfer`）- 転送結果サマリーレコード（Success / Failed / Skipped / Elapsed）
-- `UploadSessionStore`（`CloudMigrator.Core.Transfer`）- チャンクアップロードのセッション URL を JSON ファイルへ永続化（FR-05 再開）
+- `UploadSessionStore`（`CloudMigrator.Providers.Graph`）- チャンクアップロードのセッション URL を JSON ファイルへ永続化（FR-05 再開）
 - `TransferEngine`（`CloudMigrator.Core.Transfer`）- 並列転送オーケストレーター（FR-04/05/06/07/08/14）
   - フォルダを転送先に先行作成（SkipKey の長さ昇順）
   - `SkipListManager` による転送済み判定・スキップ（FR-07）
@@ -28,7 +28,6 @@
   - `UploadSessionStore` によるセッション再開対応
   - `LargeFileUploadTask<DriveItem>` でチャンク送信
   - 成功時にセッション URL を削除、一時ファイルを `finally` で確実削除
-- `CloudMigrator.Providers.Graph` に `CloudMigrator.Core` プロジェクト参照追加
 - ユニットテスト追加（`TransferEngineTests` 6 ケース、計 40 ケース）
 
 ---
