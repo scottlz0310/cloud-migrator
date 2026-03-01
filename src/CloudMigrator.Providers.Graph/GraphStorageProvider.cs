@@ -3,6 +3,7 @@ using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
 
 namespace CloudMigrator.Providers.Graph;
 
@@ -14,27 +15,31 @@ public sealed class GraphStorageProvider : IStorageProvider
 {
     private readonly GraphServiceClient _client;
     private readonly ILogger<GraphStorageProvider> _logger;
+    private readonly GraphStorageOptions _options;
     private readonly int _largeFileThresholdBytes;
 
     public string ProviderId => "graph";
 
     /// <param name="client">GraphClientFactory で生成した GraphServiceClient</param>
     /// <param name="logger">ロガー</param>
+    /// <param name="options">OneDrive/SharePoint 識別子設定</param>
     /// <param name="largeFileThresholdMb">大容量判定閾値（MB）。デフォルト 4</param>
     public GraphStorageProvider(
         GraphServiceClient client,
         ILogger<GraphStorageProvider> logger,
+        GraphStorageOptions? options = null,
         int largeFileThresholdMb = 4)
     {
         _client = client;
         _logger = logger;
+        _options = options ?? new GraphStorageOptions();
         _largeFileThresholdBytes = largeFileThresholdMb * 1024 * 1024;
     }
 
     // ─────────────────────────────────────────────────────────────
     // IStorageProvider: ListItemsAsync
-    // Phase 3 で OneDrive/SharePoint 再帰クロールとキャッシュを実装する。
-    // Phase 2 では接続確認用の最小実装のみ。
+    // rootPath="onedrive"  → OneDrive 再帰クロール（FR-02）
+    // rootPath="sharepoint" → SharePoint 再帰クロール（FR-03）
     // ─────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -42,10 +47,117 @@ public sealed class GraphStorageProvider : IStorageProvider
         string rootPath,
         CancellationToken cancellationToken = default)
     {
-        // Phase 3 で実装。現時点では空リストを返すスタブ。
-        _logger.LogWarning("ListItemsAsync は Phase 3 で実装予定です。rootPath={RootPath}", rootPath);
-        return Task.FromResult<IReadOnlyList<StorageItem>>(Array.Empty<StorageItem>());
+        if (rootPath.StartsWith("onedrive", StringComparison.OrdinalIgnoreCase))
+            return ListOneDriveItemsAsync(cancellationToken);
+
+        if (rootPath.StartsWith("sharepoint", StringComparison.OrdinalIgnoreCase))
+            return ListSharePointItemsAsync(cancellationToken);
+
+        _logger.LogWarning("不明な rootPath です: {RootPath}", rootPath);
+        return Task.FromResult<IReadOnlyList<StorageItem>>([]);
     }
+
+    // ── OneDrive クロール（FR-02）──────────────────────────────
+
+    private async Task<IReadOnlyList<StorageItem>> ListOneDriveItemsAsync(CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(_options.OneDriveUserId))
+        {
+            _logger.LogWarning("OneDriveUserId が未設定のため OneDrive クロールをスキップします");
+            return [];
+        }
+
+        var drive = await _client.Users[_options.OneDriveUserId].Drive
+            .GetAsync(cancellationToken: ct).ConfigureAwait(false);
+
+        var driveId = drive?.Id
+            ?? throw new InvalidOperationException(
+                $"OneDrive が取得できません: UserId={_options.OneDriveUserId}");
+
+        var result = new List<StorageItem>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await CrawlDriveFolderAsync(driveId, null, string.Empty, result, seen, ct).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "OneDrive クロール完了: {Count} 件 (UserId={UserId})", result.Count, _options.OneDriveUserId);
+        return result;
+    }
+
+    // ── SharePoint クロール（FR-03）───────────────────────────
+
+    private async Task<IReadOnlyList<StorageItem>> ListSharePointItemsAsync(CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(_options.SharePointDriveId))
+        {
+            _logger.LogWarning("SharePointDriveId が未設定のため SharePoint クロールをスキップします");
+            return [];
+        }
+
+        var result = new List<StorageItem>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await CrawlDriveFolderAsync(_options.SharePointDriveId, null, string.Empty, result, seen, ct)
+            .ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "SharePoint クロール完了: {Count} 件 (DriveId={DriveId})",
+            result.Count, _options.SharePointDriveId);
+        return result;
+    }
+
+    // ── 共通再帰クロール（重複排除、ページング）──────────────────
+
+    private async Task CrawlDriveFolderAsync(
+        string driveId,
+        string? itemId,
+        string currentPath,
+        List<StorageItem> result,
+        HashSet<string> seen,
+        CancellationToken ct)
+    {
+        DriveItemCollectionResponse? firstPage = itemId is null
+            ? await _client.Drives[driveId].Items["root"].Children
+                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false)
+            : await _client.Drives[driveId].Items[itemId].Children
+                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false);
+
+        if (firstPage is null) return;
+
+        // ページング対応で全アイテムを収集してから再帰
+        var levelItems = new List<DriveItem>();
+        var pageIterator = PageIterator<DriveItem, DriveItemCollectionResponse>
+            .CreatePageIterator(_client, firstPage, item => { levelItems.Add(item); return true; });
+        await pageIterator.IterateAsync(ct).ConfigureAwait(false);
+
+        foreach (var driveItem in levelItems)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (driveItem.Id is null) continue;
+
+            var storageItem = DriveItemToStorageItem(driveItem, currentPath);
+            if (!seen.Add(storageItem.SkipKey))
+            {
+                _logger.LogDebug("重複をスキップ: {SkipKey}", storageItem.SkipKey);
+                continue;
+            }
+
+            result.Add(storageItem);
+
+            if (storageItem.IsFolder)
+                await CrawlDriveFolderAsync(
+                    driveId, driveItem.Id, storageItem.SkipKey, result, seen, ct)
+                    .ConfigureAwait(false);
+        }
+    }
+
+    private static StorageItem DriveItemToStorageItem(DriveItem item, string currentPath) => new()
+    {
+        Id = item.Id ?? string.Empty,
+        Name = item.Name ?? string.Empty,
+        Path = currentPath,
+        SizeBytes = item.Size,
+        LastModifiedUtc = item.LastModifiedDateTime,
+        IsFolder = item.Folder is not null,
+    };
 
     // ─────────────────────────────────────────────────────────────
     // IStorageProvider: UploadFileAsync
@@ -67,48 +179,29 @@ public sealed class GraphStorageProvider : IStorageProvider
 
     /// <summary>
     /// 小ファイル（4MB 未満）を単純 PUT でアップロード（FR-04）。
+    /// Phase 4 でストリーム取得とドライブ ID 解決を実装する。
     /// </summary>
     private async Task SmallUploadAsync(TransferJob job, CancellationToken cancellationToken)
     {
         _logger.LogDebug("小ファイルアップロード開始: {SkipKey} ({Bytes} bytes)",
             job.Source.SkipKey, job.Source.SizeBytes);
 
-        // TODO Phase 3: 実際のファイルストリーム取得を OneDrive クロールキャッシュと連携する
-        // 現在は DriveItem の content を直接取得するパスに接続するスタブ
-        _logger.LogWarning("SmallUploadAsync: Phase 3 でストリーム取得を実装します: {Path}", job.DestinationFullPath);
+        // TODO Phase 4: ストリーム取得と driveId / itemId の解決を実装する
+        _logger.LogWarning("SmallUploadAsync は Phase 4 で実装予定です: {Path}", job.DestinationFullPath);
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
     /// <summary>
     /// 大容量ファイル（4MB 以上）を Upload Session + LargeFileUploadTask でアップロード（FR-05）。
-    /// Phase 3 で driveId / 親フォルダ ID の解決と組み合わせて完成する。
+    /// Phase 4 で driveId / 親フォルダ ID の解決と組み合わせて完成する。
     /// </summary>
     private async Task LargeUploadAsync(TransferJob job, CancellationToken cancellationToken)
     {
         _logger.LogDebug("大容量ファイルアップロード開始: {SkipKey} ({Bytes} bytes)",
             job.Source.SkipKey, job.Source.SizeBytes);
 
-        // PoC: Phase 3 で実装する Upload Session フロー（概念コード）
-        //
-        // var requestBody = new Microsoft.Graph.Drives.Item.Items.Item.CreateUploadSession.CreateUploadSessionPostRequestBody
-        // {
-        //     Item = new DriveItemUploadableProperties
-        //     {
-        //         AdditionalData = new Dictionary<string, object>
-        //             { { "@microsoft.graph.conflictBehavior", "replace" } }
-        //     }
-        // };
-        //
-        // var session = await _client.Drives[driveId]
-        //     .Items[parentId]
-        //     .CreateUploadSession
-        //     .PostAsync(requestBody, cancellationToken: cancellationToken);
-        //
-        // using var stream = await GetSourceStreamAsync(job, cancellationToken);
-        // var uploadTask = new LargeFileUploadTask<DriveItem>(session, stream, chunkSizeBytes: _largeFileThresholdBytes);
-        // var result = await uploadTask.UploadAsync(cancellationToken: cancellationToken);
-
-        _logger.LogWarning("LargeUploadAsync は Phase 3 で実装予定です: {Path}", job.DestinationFullPath);
+        // TODO Phase 4: Upload Session フロー（LargeFileUploadTask）を実装する
+        _logger.LogWarning("LargeUploadAsync は Phase 4 で実装予定です: {Path}", job.DestinationFullPath);
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
@@ -120,20 +213,70 @@ public sealed class GraphStorageProvider : IStorageProvider
     /// <inheritdoc/>
     public async Task EnsureFolderAsync(string folderPath, CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("フォルダ作成確認: {FolderPath}", folderPath);
+        if (string.IsNullOrEmpty(_options.SharePointDriveId))
+        {
+            _logger.LogWarning(
+                "SharePointDriveId が未設定のため EnsureFolderAsync をスキップします: {FolderPath}", folderPath);
+            return;
+        }
 
-        // TODO Phase 3: driveId / 親フォルダ ID を MigratorOptions から解決し、
-        //               Graph API でフォルダを順次作成する
-        // var newFolder = new DriveItem
-        // {
-        //     Name = folderName,
-        //     Folder = new Folder(),
-        //     AdditionalData = new Dictionary<string, object>
-        //         { { "@microsoft.graph.conflictBehavior", "fail" } }
-        // };
-        // await _client.Drives[driveId].Items[parentId].Children.PostAsync(newFolder, cancellationToken: cancellationToken);
+        var segments = folderPath.Split(
+            ['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return;
 
-        _logger.LogWarning("EnsureFolderAsync は Phase 3 で実装予定です: {FolderPath}", folderPath);
-        await Task.CompletedTask.ConfigureAwait(false);
+        var driveId = _options.SharePointDriveId;
+        var parentId = "root";
+
+        foreach (var segment in segments)
+            parentId = await EnsureFolderSegmentAsync(driveId, parentId, segment, cancellationToken)
+                .ConfigureAwait(false);
+
+        _logger.LogDebug("フォルダ確認完了: {FolderPath}", folderPath);
+    }
+
+    /// <summary>フォルダが存在しなければ作成し、そのアイテム ID を返す（FR-06）。</summary>
+    private async Task<string> EnsureFolderSegmentAsync(
+        string driveId, string parentId, string folderName, CancellationToken ct)
+    {
+        var newFolder = new DriveItem
+        {
+            Name = folderName,
+            Folder = new Folder(),
+            AdditionalData = new Dictionary<string, object>
+                { { "@microsoft.graph.conflictBehavior", "fail" } },
+        };
+
+        try
+        {
+            DriveItem? created = parentId == "root"
+                ? await _client.Drives[driveId].Items["root"].Children
+                    .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false)
+                : await _client.Drives[driveId].Items[parentId].Children
+                    .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false);
+
+            return created?.Id
+                ?? throw new InvalidOperationException($"フォルダ作成後に ID が取得できません: {folderName}");
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 409)
+        {
+            // フォルダが既に存在する場合は検索して既存 ID を返す
+            _logger.LogDebug("フォルダが既に存在します。ID を検索します: {FolderName}", folderName);
+            return await FindFolderIdAsync(driveId, parentId, folderName, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<string> FindFolderIdAsync(
+        string driveId, string parentId, string folderName, CancellationToken ct)
+    {
+        var filter = $"name eq '{folderName}'";
+        DriveItemCollectionResponse? children = parentId == "root"
+            ? await _client.Drives[driveId].Items["root"].Children
+                .GetAsync(r => r.QueryParameters.Filter = filter, ct).ConfigureAwait(false)
+            : await _client.Drives[driveId].Items[parentId].Children
+                .GetAsync(r => r.QueryParameters.Filter = filter, ct).ConfigureAwait(false);
+
+        return children?.Value?.FirstOrDefault()?.Id
+            ?? throw new InvalidOperationException(
+                $"既存フォルダの ID が取得できません: {folderName}");
     }
 }

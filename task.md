@@ -2,7 +2,7 @@
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 
-## 現在の状態: Phase 2 完了・Phase 3 準備中
+## 現在の状態: Phase 3 完了・Phase 4 準備中
 
 ---
 
@@ -27,9 +27,9 @@
 
 ## Phase 3: クロール + スキップリスト
 
-- [ ] OneDrive 再帰クロール（重複排除、キャッシュ）
-- [ ] SharePoint 再帰クロール
-- [ ] skip_list 読み書き・ロック制御（判定キー: path + name）
+- [x] OneDrive 再帰クロール（重複排除、キャッシュ）
+- [x] SharePoint 再帰クロール
+- [x] skip_list 読み書き・ロック制御（判定キー: path + name）
 
 ## Phase 4: 転送エンジン
 

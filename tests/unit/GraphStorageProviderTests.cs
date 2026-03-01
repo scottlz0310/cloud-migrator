@@ -40,12 +40,34 @@ public class GraphStorageProviderTests
     }
 
     [Fact]
-    public async Task ListItemsAsync_ShouldReturnEmptyList_WhenPhase3NotImplemented()
+    public async Task ListItemsAsync_ShouldReturnEmpty_WhenRootPathUnknown()
     {
-        // 検証対象: ListItemsAsync  目的: Phase 3 実装前はスタブとして空リストを返すこと
+        // 検証対象: ListItemsAsync  目的: 不明な rootPath は空リストを返すこと
         var provider = CreateProvider();
 
         var result = await provider.ListItemsAsync("/root");
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListItemsAsync_ShouldReturnEmpty_WhenOneDriveUserIdIsEmpty()
+    {
+        // 検証対象: ListItemsAsync("onedrive")  目的: OneDriveUserId 未設定時は空リストを返すこと
+        var provider = CreateProvider(); // options 省略 → OneDriveUserId = ""
+
+        var result = await provider.ListItemsAsync("onedrive");
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListItemsAsync_ShouldReturnEmpty_WhenSharePointDriveIdIsEmpty()
+    {
+        // 検証対象: ListItemsAsync("sharepoint")  目的: SharePointDriveId 未設定時は空リストを返すこと
+        var provider = CreateProvider(); // options 省略 → SharePointDriveId = ""
+
+        var result = await provider.ListItemsAsync("sharepoint");
 
         result.Should().BeEmpty();
     }
