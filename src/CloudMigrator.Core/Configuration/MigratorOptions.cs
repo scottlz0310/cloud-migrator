@@ -26,6 +26,9 @@ public sealed class MigratorOptions
     // --- パス設定（OPS-04）---
     public PathOptions Paths { get; set; } = new();
 
+    /// <summary>転送先 SharePoint ドライブ内のルートパス（例: "Migration/2026"）。空文字でドライブルート。</summary>
+    public string DestinationRoot { get; set; } = string.Empty;
+
     // --- プロバイダー設定 ---
     public GraphProviderOptions Graph { get; set; } = new();
 }

@@ -2,7 +2,7 @@
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 
-## 現在の状態: Phase 4 完了
+## 現在の状態: Phase 5 完了
 
 ---
 
@@ -41,10 +41,10 @@
 
 ## Phase 5: 実行モード互換
 
-- [ ] `transfer` コマンド（通常実行）
-- [ ] `rebuild-skiplist` コマンド（`--reset` 相当）
-- [ ] `--full-rebuild` 相当動作
-- [ ] 設定変更ハッシュ検知・キャッシュ再生成
+- [x] `transfer` コマンド（通常実行）
+- [x] `rebuild-skiplist` コマンド（`--reset` 相当）
+- [x] `--full-rebuild` 相当動作
+- [x] 設定変更ハッシュ検知・キャッシュ再生成
 
 ## Phase 6: 監視・品質・セキュリティ
 
