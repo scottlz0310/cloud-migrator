@@ -9,6 +9,30 @@
 
 ---
 
+## [0.5.0] - 2026-03-01
+
+### Added
+- `TransferSummary`（`CloudMigrator.Core.Transfer`）- 転送結果サマリーレコード（Success / Failed / Skipped / Elapsed）
+- `UploadSessionStore`（`CloudMigrator.Core.Transfer`）- チャンクアップロードのセッション URL を JSON ファイルへ永続化（FR-05 再開）
+- `TransferEngine`（`CloudMigrator.Core.Transfer`）- 並列転送オーケストレーター（FR-04/05/06/07/08/14）
+  - フォルダを転送先に先行作成（SkipKey の長さ昇順）
+  - `SkipListManager` による転送済み判定・スキップ（FR-07）
+  - `Channel.CreateBounded<TransferJob>` + `Parallel.ForEachAsync` で上限付き並列転送（FR-14）
+  - 転送成功後に skip_list へ追加（FR-08）
+  - 転送失敗時は例外をキャッチしてカウント、処理継続
+- `GraphStorageProvider.SmallUploadAsync` 実装（FR-04）
+  - OneDrive ドライブ ID をキャッシュ（`GetOneDriveDriveIdAsync` - 初回のみ API コール）
+  - `Drives[oneDriveId].Items[id].Content.GetAsync` でダウンロード → SharePoint へ PUT
+- `GraphStorageProvider.LargeUploadAsync` 実装（FR-05）
+  - 一時ファイルへダウンロード（`LargeFileUploadTask` はシーク可能ストリームが必要）
+  - `UploadSessionStore` によるセッション再開対応
+  - `LargeFileUploadTask<DriveItem>` でチャンク送信
+  - 成功時にセッション URL を削除、一時ファイルを `finally` で確実削除
+- `CloudMigrator.Providers.Graph` に `CloudMigrator.Core` プロジェクト参照追加
+- ユニットテスト追加（`TransferEngineTests` 6 ケース、計 40 ケース）
+
+---
+
 ## [0.4.0] - 2026-03-01
 
 ### Added
@@ -102,7 +126,8 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...v0.2.1
