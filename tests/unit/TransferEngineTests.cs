@@ -110,12 +110,12 @@ public sealed class TransferEngineTests : IDisposable
         contains.Should().BeFalse();
     }
 
-    // ─── フォルダ先行作成 ────────────────────────────────────────────────────
+    // ─── フォルダ階層の先行作成（Path から導出）────────────────────────────
 
     [Fact]
-    public async Task RunAsync_PreCreatesFolders_BeforeFileTransfer()
+    public async Task RunAsync_PreCreatesFolderHierarchy_DerivedFromItemPaths()
     {
-        var folder = MakeFolder("docs", "sub");
+        // ファイルの Path = "docs/sub" → "dest/root/docs" と "dest/root/docs/sub" が先行作成されること
         var file = MakeFile("docs/sub", "file.txt");
         var callOrder = new List<string>();
 
@@ -127,12 +127,19 @@ public sealed class TransferEngineTests : IDisposable
                  .Returns(Task.CompletedTask);
 
         var engine = CreateEngine();
-        await engine.RunAsync([folder, file], "dest/root");
+        await engine.RunAsync([file], "dest/root");
 
-        // フォルダ作成がファイル転送より前に呼ばれていること
-        callOrder.Should().HaveCount(2);
-        callOrder[0].Should().StartWith("folder:");
-        callOrder[1].Should().StartWith("file:");
+        var folderCalls = callOrder.Where(x => x.StartsWith("folder:")).ToList();
+        var fileCalls = callOrder.Where(x => x.StartsWith("file:")).ToList();
+
+        // フォルダがファイルより前に呼ばれること
+        folderCalls.Should().NotBeEmpty();
+        fileCalls.Should().HaveCount(1);
+        callOrder.IndexOf(folderCalls.Last()).Should().BeLessThan(callOrder.IndexOf(fileCalls.First()));
+
+        // 必要なフォルダ階層が両方作成されること
+        folderCalls.Should().Contain("folder:dest/root/docs");
+        folderCalls.Should().Contain("folder:dest/root/docs/sub");
     }
 
     // ─── 複数ファイルの部分成功 ──────────────────────────────────────────────

@@ -49,14 +49,42 @@ public sealed class TransferEngine
         var sw = Stopwatch.StartNew();
 
         // ─── 1. フォルダを先行作成（親→子の順）(FR-06) ─────────────────
-        var folders = sourceItems
-            .Where(i => i.IsFolder)
-            .OrderBy(i => i.SkipKey.Length)
-            .ToList();
+        // ListItemsAsync がフォルダを返さない実装でも動作するよう、
+        // 1) IsFolder == true なアイテムの SkipKey
+        // 2) 全アイテムの Path から導出したフォルダ階層
+        // の両方から転送先フォルダパスを重複排除して作成する。
+        var destRootNormalized = destRoot.TrimEnd('/');
+        var folderPathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var folder in folders)
+        // 1) 明示的なフォルダアイテム（存在すれば）
+        foreach (var folder in sourceItems.Where(i => i.IsFolder))
         {
-            var destFolderPath = $"{destRoot.TrimEnd('/')}/{folder.SkipKey.TrimStart('/')}";
+            var destFolderPath = $"{destRootNormalized}/{folder.SkipKey.TrimStart('/')}";
+            folderPathSet.Add(destFolderPath);
+        }
+
+        // 2) ファイル（およびフォルダ）の Path からフォルダ階層を導出
+        foreach (var item in sourceItems)
+        {
+            if (string.IsNullOrWhiteSpace(item.Path))
+                continue;
+
+            var relativePath = item.Path.Trim('/');
+            if (string.IsNullOrEmpty(relativePath))
+                continue;
+
+            var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var current = destRootNormalized;
+            foreach (var segment in segments)
+            {
+                current = $"{current}/{segment}";
+                folderPathSet.Add(current);
+            }
+        }
+
+        // 親フォルダから順に EnsureFolderAsync を呼び出す
+        foreach (var destFolderPath in folderPathSet.OrderBy(p => p.Length))
+        {
             await _destProvider.EnsureFolderAsync(destFolderPath, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -67,7 +95,7 @@ public sealed class TransferEngine
 
         foreach (var item in sourceItems.Where(i => !i.IsFolder))
         {
-            if (await _skipList.ContainsAsync(item.SkipKey).ConfigureAwait(false))
+            if (await _skipList.ContainsAsync(item.SkipKey, cancellationToken).ConfigureAwait(false))
             {
                 skipped++;
                 _logger.LogDebug("スキップ（skip_list 登録済み）: {SkipKey}", item.SkipKey);
@@ -116,7 +144,7 @@ public sealed class TransferEngine
                 try
                 {
                     await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
-                    await _skipList.AddAsync(job.Source.SkipKey).ConfigureAwait(false);
+                    await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
                     Interlocked.Increment(ref success);
                     _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
                 }

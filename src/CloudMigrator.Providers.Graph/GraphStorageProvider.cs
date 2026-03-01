@@ -1,9 +1,9 @@
-using CloudMigrator.Core.Transfer;
 using CloudMigrator.Providers.Abstractions;
 using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Kiota.Abstractions;
 
 namespace CloudMigrator.Providers.Graph;
@@ -221,24 +221,24 @@ public sealed class GraphStorageProvider : IStorageProvider
 
         if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(driveId))
         {
-            _logger.LogWarning(
-                "OneDriveUserId または SharePointDriveId が未設定のためスキップ: {SkipKey}",
+            _logger.LogError(
+                "OneDriveUserId または SharePointDriveId が未設定のため転送できません: {SkipKey}",
                 job.Source.SkipKey);
-            return;
+            throw new InvalidOperationException(
+                "OneDriveUserId または SharePointDriveId が未設定のため、小ファイルアップロード処理を実行できません。");
         }
 
         _logger.LogDebug("小ファイルアップロード開始: {SkipKey} ({Bytes} bytes)",
             job.Source.SkipKey, job.Source.SizeBytes);
 
-        // OneDrive からダウンロード
+        // OneDrive からダウンロードし、SharePoint へ PUT
         var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
-        var stream = await _client.Drives[oneDriveId].Items[job.Source.Id].Content
+        await using var stream = await _client.Drives[oneDriveId].Items[job.Source.Id].Content
             .GetAsync(cancellationToken: ct)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"ダウンロードストリームが null です: {job.Source.SkipKey}");
 
-        // SharePoint へパスベース PUT
         var relPath = job.DestinationFullPath.TrimStart('/');
         await _client.Drives[driveId].Root.ItemWithPath(relPath).Content
             .PutAsync(stream, cancellationToken: ct)
@@ -258,10 +258,11 @@ public sealed class GraphStorageProvider : IStorageProvider
 
         if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(driveId))
         {
-            _logger.LogWarning(
-                "OneDriveUserId または SharePointDriveId が未設定のためスキップ: {SkipKey}",
+            _logger.LogError(
+                "OneDriveUserId または SharePointDriveId が未設定のため転送できません: {SkipKey}",
                 job.Source.SkipKey);
-            return;
+            throw new InvalidOperationException(
+                "OneDriveUserId または SharePointDriveId が未設定のため、大容量ファイルアップロード処理を実行できません。");
         }
 
         _logger.LogDebug("大容量ファイルアップロード開始: {SkipKey} ({Bytes} bytes)",
@@ -274,7 +275,7 @@ public sealed class GraphStorageProvider : IStorageProvider
         {
             // 1. OneDrive からテンポラリファイルにダウンロード（LargeFileUploadTask はシーク可能な Stream が必要）
             var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
-            var downloadStream = await _client.Drives[oneDriveId].Items[job.Source.Id].Content
+            await using var downloadStream = await _client.Drives[oneDriveId].Items[job.Source.Id].Content
                 .GetAsync(cancellationToken: ct)
                 .ConfigureAwait(false)
                 ?? throw new InvalidOperationException(
@@ -284,9 +285,11 @@ public sealed class GraphStorageProvider : IStorageProvider
                 await downloadStream.CopyToAsync(tempWrite, ct).ConfigureAwait(false);
 
             // 2. 既存セッション URL の確認（再開可能か）
+            // セッションキーには転送先パスを使用（ソースキーだと destRoot 変更時に誤用される）
+            var sessionKey = relPath;
             UploadSession? uploadSession = null;
             var savedUrl = _sessionStore is not null
-                ? await _sessionStore.GetAsync(job.Source.SkipKey, ct).ConfigureAwait(false)
+                ? await _sessionStore.GetAsync(sessionKey, ct).ConfigureAwait(false)
                 : null;
 
             if (savedUrl is not null)
@@ -306,16 +309,44 @@ public sealed class GraphStorageProvider : IStorageProvider
                         $"アップロードセッションの作成に失敗: {job.Source.SkipKey}");
 
                 if (_sessionStore is not null && uploadSession.UploadUrl is not null)
-                    await _sessionStore.SetAsync(job.Source.SkipKey, uploadSession.UploadUrl, ct)
+                    await _sessionStore.SetAsync(sessionKey, uploadSession.UploadUrl, ct)
                         .ConfigureAwait(false);
             }
 
-            // 4. LargeFileUploadTask でチャンク送信
+            // 4. LargeFileUploadTask でチャンク送信（セッション期限切れ時は再作成してリトライ）
             await using var uploadStream = File.OpenRead(tempPath);
             var uploadTask = new LargeFileUploadTask<DriveItem>(
                 uploadSession, uploadStream, _chunkSizeBytes, _client.RequestAdapter);
 
-            var result = await uploadTask.UploadAsync().ConfigureAwait(false);
+            UploadResult<DriveItem> result;
+            try
+            {
+                result = await uploadTask.UploadAsync().ConfigureAwait(false);
+            }
+            catch (ODataError ex) when (ex.ResponseStatusCode is 404 or 410)
+            {
+                // セッション期限切れ: ストア削除 → 新規セッション作成 → リトライ
+                _logger.LogWarning("アップロードセッション期限切れ。再作成します: {SkipKey}", job.Source.SkipKey);
+                if (_sessionStore is not null)
+                    await _sessionStore.RemoveAsync(sessionKey, ct).ConfigureAwait(false);
+
+                uploadStream.Seek(0, SeekOrigin.Begin);
+                uploadSession = await _client.Drives[driveId].Root
+                    .ItemWithPath(relPath)
+                    .CreateUploadSession
+                    .PostAsync(new(), cancellationToken: ct)
+                    .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        $"セッション再作成に失敗: {job.Source.SkipKey}");
+
+                if (_sessionStore is not null && uploadSession.UploadUrl is not null)
+                    await _sessionStore.SetAsync(sessionKey, uploadSession.UploadUrl, ct)
+                        .ConfigureAwait(false);
+
+                uploadTask = new LargeFileUploadTask<DriveItem>(
+                    uploadSession, uploadStream, _chunkSizeBytes, _client.RequestAdapter);
+                result = await uploadTask.UploadAsync().ConfigureAwait(false);
+            }
 
             if (!result.UploadSucceeded)
                 throw new InvalidOperationException(
@@ -323,7 +354,7 @@ public sealed class GraphStorageProvider : IStorageProvider
 
             // 5. 成功時はセッション削除
             if (_sessionStore is not null)
-                await _sessionStore.RemoveAsync(job.Source.SkipKey, ct).ConfigureAwait(false);
+                await _sessionStore.RemoveAsync(sessionKey, ct).ConfigureAwait(false);
 
             _logger.LogInformation("大容量ファイルアップロード完了: {SkipKey}", job.Source.SkipKey);
         }

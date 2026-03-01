@@ -91,9 +91,9 @@ public class GraphStorageProviderTests
     }
 
     [Fact]
-    public async Task UploadFileAsync_SmallFile_ShouldCompleteWithoutException()
+    public async Task UploadFileAsync_SmallFile_ShouldThrow_WhenOneDriveUserIdIsEmpty()
     {
-        // 検証対象: UploadFileAsync（小ファイルパス）  目的: 4MB 未満はスタブとして正常完了すること
+        // 検証対象: UploadFileAsync（小ファイルパス）  目的: 必須設定が未設定の場合は例外をスローすること
         var provider = CreateProvider();
         var job = new TransferJob
         {
@@ -103,13 +103,14 @@ public class GraphStorageProviderTests
 
         var act = async () => await provider.UploadFileAsync(job);
 
-        await act.Should().NotThrowAsync();
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*未設定*");
     }
 
     [Fact]
-    public async Task UploadFileAsync_LargeFile_ShouldCompleteWithoutException()
+    public async Task UploadFileAsync_LargeFile_ShouldThrow_WhenOneDriveUserIdIsEmpty()
     {
-        // 検証対象: UploadFileAsync（大ファイルパス）  目的: 4MB 以上はスタブとして正常完了すること
+        // 検証対象: UploadFileAsync（大ファイルパス）  目的: 必須設定が未設定の場合は例外をスローすること
         var provider = CreateProvider();
         var largeFileSizeBytes = 5L * 1024 * 1024; // 5MB
         var job = new TransferJob
@@ -120,7 +121,8 @@ public class GraphStorageProviderTests
 
         var act = async () => await provider.UploadFileAsync(job);
 
-        await act.Should().NotThrowAsync();
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*未設定*");
     }
 
     [Fact]
