@@ -61,13 +61,14 @@ public static class ConfigHashChecker
     }
 
     /// <summary>
-    /// キャッシュファイル群（OneDrive・SharePoint キャッシュ）を削除する。
-    /// skip_list は削除しない（--full-rebuild 時は呼び出し元が別途削除）。
+    /// キャッシュファイル群（OneDrive・SharePoint キャッシュ・skip_list）を削除する。
+    /// 設定変更時に呼び出され、FR-10 に従って skip_list も無効化する。
     /// </summary>
     public static void ClearCaches(PathOptions paths, ILogger logger)
     {
         DeleteIfExists(paths.OneDriveCache, logger);
         DeleteIfExists(paths.SharePointCache, logger);
+        DeleteIfExists(paths.SkipList, logger);
     }
 
     /// <summary>スキップリストを削除する（--full-rebuild 時に使用）。</summary>
@@ -83,12 +84,12 @@ public static class ConfigHashChecker
             if (File.Exists(filePath))
             {
                 File.Delete(filePath);
-                logger.LogInformation("キャッシュを削除しました: {Path}", filePath);
+                logger.LogInformation("ファイルを削除しました: {Path}", filePath);
             }
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            logger.LogWarning(ex, "キャッシュ削除に失敗しました: {Path}", filePath);
+            logger.LogWarning(ex, "ファイル削除に失敗しました: {Path}", filePath);
         }
     }
 }

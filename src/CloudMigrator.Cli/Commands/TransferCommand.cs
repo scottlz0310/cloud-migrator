@@ -44,8 +44,9 @@ internal static class TransferCommand
 
         if (hashChanged)
         {
-            logger.LogWarning("設定変更を検知しました。キャッシュをクリアします。");
+            logger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
             ConfigHashChecker.ClearCaches(opts.Paths, logger);
+            ConfigHashChecker.ClearSkipList(opts.Paths, logger);
             await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, hash, ct).ConfigureAwait(false);
         }
 
@@ -102,10 +103,41 @@ internal static class TransferCommand
         var spItems = await svc.StorageProvider.ListItemsAsync("sharepoint", ct).ConfigureAwait(false);
         await svc.CrawlCache.SaveAsync(svc.Options.Paths.SharePointCache, spItems, ct).ConfigureAwait(false);
 
+        // DestinationRoot が設定されている場合は、その配下のみを対象にし、
+        // SkipKey から DestinationRoot プレフィックスを除去してソース側と同じキー体系で保存する。
+        var destinationRoot = svc.Options.DestinationRoot;
+        var hasDestinationRoot = !string.IsNullOrWhiteSpace(destinationRoot);
+        if (hasDestinationRoot)
+            destinationRoot = destinationRoot.Trim().Trim('/');
+
         int added = 0;
         foreach (var item in spItems.Where(i => !i.IsFolder))
         {
-            await svc.SkipListManager.AddAsync(item.SkipKey, ct).ConfigureAwait(false);
+            var skipKey = item.SkipKey;
+
+            if (hasDestinationRoot)
+            {
+                if (!skipKey.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (skipKey.Length == destinationRoot.Length)
+                    continue;
+
+                if (skipKey.Length > destinationRoot.Length &&
+                    (skipKey[destinationRoot.Length] == '/' || skipKey[destinationRoot.Length] == '\\'))
+                {
+                    skipKey = skipKey.Substring(destinationRoot.Length + 1);
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(skipKey))
+                continue;
+
+            await svc.SkipListManager.AddAsync(skipKey, ct).ConfigureAwait(false);
             added++;
         }
 
