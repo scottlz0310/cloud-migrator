@@ -38,6 +38,16 @@ public static class GraphClientFactory
                 || response is null
         };
 
+        // CreateDefaultHandlers が生成した RetryHandler を、カスタムオプション付きのものと差し替える
+        for (var i = 0; i < handlers.Count; i++)
+        {
+            if (handlers[i] is RetryHandler)
+            {
+                handlers[i] = new RetryHandler(retryOption);
+                break;
+            }
+        }
+
         var httpClient = KiotaClientFactory.Create(handlers);
         httpClient.Timeout = TimeSpan.FromSeconds(timeoutSec);
         httpClient.DefaultRequestHeaders.Add("client-request-id", Guid.NewGuid().ToString());
