@@ -155,7 +155,7 @@ public sealed class GraphStorageProvider : IStorageProvider
         }
     }
 
-    private static StorageItem? DriveItemToStorageItem(DriveItem item, string currentPath)
+    internal static StorageItem? DriveItemToStorageItem(DriveItem item, string currentPath)
     {
         if (string.IsNullOrEmpty(item.Name))
             return null;

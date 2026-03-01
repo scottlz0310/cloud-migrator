@@ -210,23 +210,39 @@ public class GraphStorageProviderTests
     }
 
     [Fact]
-    public async Task ListItemsAsync_ShouldSetSizeBytesToNull_ForFolders_WhenFolderIncrementallyReturned()
+    public void DriveItemToStorageItem_ShouldSetSizeBytesToNull_ForFolderItems()
     {
-        // 検証対象: DriveItemToStorageItem  目的: フォルダは SizeBytes=null になること
-        // フォルダのみのレスポンスで、フォルダが result に入っていないことも兼ねて確認
-        var response = new DriveItemCollectionResponse
+        // DriveItemToStorageItem を直接呼び出し、フォルダアイテムの SizeBytes が null になることを検証
+        var folderItem = new DriveItem
         {
-            Value = [
-                new() { Id = "folder1", Name = "Archive", Folder = new Folder(), Size = 999 }
-            ]
+            Id = "folder1",
+            Name = "Archive",
+            Folder = new Folder(),
+            Size = 999, // フォルダでも Size が設定されている場合でも null になること
         };
-        var (_, client) = CreateMockClient(response);
-        var options = new GraphStorageOptions { OneDriveUserId = "user123" };
-        var provider = new GraphStorageProvider(client, _mockLogger.Object, options);
 
-        var result = await provider.ListItemsAsync("onedrive");
+        var result = GraphStorageProvider.DriveItemToStorageItem(folderItem, "/root");
 
-        // フォルダは除外されるため result は空
-        result.Should().BeEmpty();
+        result.Should().NotBeNull();
+        result!.SizeBytes.Should().BeNull("フォルダアイテムは意味のあるサイズを持たないため null であること");
+        result.IsFolder.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DriveItemToStorageItem_ShouldSetSizeBytes_ForFileItems()
+    {
+        // ファイルアイテムでは Size がそのまま SizeBytes に設定されることを確認
+        var fileItem = new DriveItem
+        {
+            Id = "file1",
+            Name = "report.pdf",
+            Size = 12345,
+        };
+
+        var result = GraphStorageProvider.DriveItemToStorageItem(fileItem, "/docs");
+
+        result.Should().NotBeNull();
+        result!.SizeBytes.Should().Be(12345);
+        result.IsFolder.Should().BeFalse();
     }
 }
