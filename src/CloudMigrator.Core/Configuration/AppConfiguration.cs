@@ -45,6 +45,13 @@ public static class AppConfiguration
         => Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET") ?? string.Empty;
 
     /// <summary>
+    /// Dropbox アクセストークンを環境変数 MIGRATOR__DROPBOX__ACCESSTOKEN から取得する。
+    /// この値は config.json に書かず、必ず環境変数で提供すること。
+    /// </summary>
+    public static string GetDropboxAccessToken()
+        => Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN") ?? string.Empty;
+
+    /// <summary>
     /// 実行ファイルから configs/config.json を探す（最大4階層上まで）
     /// </summary>
     private static string ResolveConfigPath()

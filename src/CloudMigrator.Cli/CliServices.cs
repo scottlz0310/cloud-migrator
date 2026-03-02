@@ -1,6 +1,7 @@
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Storage;
 using CloudMigrator.Observability;
+using CloudMigrator.Providers.Dropbox;
 using CloudMigrator.Providers.Graph;
 using CloudMigrator.Providers.Graph.Auth;
 using CloudMigrator.Providers.Graph.Http;
@@ -17,6 +18,7 @@ internal sealed class CliServices : IDisposable
     public MigratorOptions Options { get; }
     public ILoggerFactory LoggerFactory { get; }
     public GraphStorageProvider StorageProvider { get; }
+    public DropboxStorageProvider DropboxProvider { get; }
     public CrawlCache CrawlCache { get; }
     public SkipListManager SkipListManager { get; }
 
@@ -24,12 +26,14 @@ internal sealed class CliServices : IDisposable
         MigratorOptions options,
         ILoggerFactory loggerFactory,
         GraphStorageProvider storageProvider,
+        DropboxStorageProvider dropboxProvider,
         CrawlCache crawlCache,
         SkipListManager skipListManager)
     {
         Options = options;
         LoggerFactory = loggerFactory;
         StorageProvider = storageProvider;
+        DropboxProvider = dropboxProvider;
         CrawlCache = crawlCache;
         SkipListManager = skipListManager;
     }
@@ -73,13 +77,34 @@ internal sealed class CliServices : IDisposable
             chunkSizeMb: options.ChunkSizeMb,
             sessionStore: sessionStore);
 
+        var dropboxOptions = new DropboxStorageOptions
+        {
+            RootPath = options.Dropbox.RootPath,
+            SimpleUploadLimitMb = options.Dropbox.SimpleUploadLimitMb,
+            UploadChunkSizeMb = options.Dropbox.UploadChunkSizeMb,
+        };
+        var dropboxProvider = new DropboxStorageProvider(
+            loggerFactory.CreateLogger<DropboxStorageProvider>(),
+            AppConfiguration.GetDropboxAccessToken(),
+            dropboxOptions);
+
         var crawlCache = new CrawlCache(loggerFactory.CreateLogger<CrawlCache>());
         var skipListManager = new SkipListManager(
             options.Paths.SkipList,
             loggerFactory.CreateLogger<SkipListManager>());
 
-        return new CliServices(options, loggerFactory, storageProvider, crawlCache, skipListManager);
+        return new CliServices(
+            options,
+            loggerFactory,
+            storageProvider,
+            dropboxProvider,
+            crawlCache,
+            skipListManager);
     }
 
-    public void Dispose() => LoggerFactory.Dispose();
+    public void Dispose()
+    {
+        DropboxProvider.Dispose();
+        LoggerFactory.Dispose();
+    }
 }

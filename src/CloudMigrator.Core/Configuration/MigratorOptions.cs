@@ -34,6 +34,7 @@ public sealed class MigratorOptions
 
     // --- プロバイダー設定 ---
     public GraphProviderOptions Graph { get; set; } = new();
+    public DropboxProviderOptions Dropbox { get; set; } = new();
 }
 
 /// <summary>
@@ -57,6 +58,7 @@ public sealed class PathOptions
     public string SkipList { get; set; } = "logs/skip_list.json";
     public string OneDriveCache { get; set; } = "logs/onedrive_files.json";
     public string SharePointCache { get; set; } = "logs/sharepoint_current_files.json";
+    public string DropboxCache { get; set; } = "logs/dropbox_files.json";
     public string TransferLog { get; set; } = "logs/transfer.log";
     public string ConfigHash { get; set; } = "logs/config_hash.txt";
 }
@@ -84,4 +86,20 @@ public sealed class GraphProviderOptions
 
     /// <summary>SharePoint ドキュメントライブラリ ID</summary>
     public string SharePointDriveId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Dropbox プロバイダー固有の設定。
+/// 機密値（AccessToken）は環境変数から取得し、config.json には含めない。
+/// </summary>
+public sealed class DropboxProviderOptions
+{
+    /// <summary>Dropbox 側のルートパス（空文字の場合は Dropbox ルート）。</summary>
+    public string RootPath { get; set; } = string.Empty;
+
+    /// <summary>単純アップロードの上限サイズ（MB）。超過時は upload session を使用。</summary>
+    public int SimpleUploadLimitMb { get; set; } = 100;
+
+    /// <summary>upload session のチャンクサイズ（MB）。</summary>
+    public int UploadChunkSizeMb { get; set; } = 8;
 }

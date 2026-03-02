@@ -14,6 +14,7 @@ rootCmd.Add(RebuildSkipListCommand.Build());
 rootCmd.Add(WatchdogCommand.Build());
 rootCmd.Add(QualityMetricsCommand.Build());
 rootCmd.Add(SecurityScanCommand.Build());
+rootCmd.Add(FileCrawlerCommand.Build());
 
 return await rootCmd.Parse(args).InvokeAsync(new InvocationConfiguration(), cts.Token);
 

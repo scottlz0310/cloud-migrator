@@ -2,7 +2,7 @@
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 
-## 現在の状態: Phase 6 完了
+## 現在の状態: Phase 7 完了
 
 ---
 
@@ -55,8 +55,8 @@
 
 ## Phase 7: 補助 CLI・運用機能
 
-- [ ] `file-crawler` サブコマンド（onedrive/sharepoint/skiplist/compare/validate/explore）
-- [ ] Dropbox プロバイダースケルトン + 開発ガイド
+- [x] `file-crawler` サブコマンド（onedrive/sharepoint/skiplist/compare/validate/explore）
+- [x] Dropbox プロバイダー本実装
 
 ## Phase 8: E2E・性能検証・切替
 

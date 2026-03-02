@@ -82,6 +82,21 @@ public class ConfigHashCheckerTests : IDisposable
     }
 
     [Fact]
+    public void ComputeHash_DifferentDropboxRoot_ReturnsDifferentHash()
+    {
+        // 検証対象: ComputeHash  目的: Dropbox.RootPath の違いがハッシュに反映されること
+        var opts1 = CreateOptions();
+        opts1.Dropbox.RootPath = "";
+        var opts2 = CreateOptions();
+        opts2.Dropbox.RootPath = "archive/2026";
+
+        var h1 = ConfigHashChecker.ComputeHash(opts1);
+        var h2 = ConfigHashChecker.ComputeHash(opts2);
+
+        h1.Should().NotBe(h2);
+    }
+
+    [Fact]
     public void ComputeHash_DestinationRootNormalization_ProducesSameHash()
     {
         // 検証対象: ComputeHash  目的: バックスラッシュ・末尾スラッシュ・空白の表記揺れでハッシュが変わらないこと

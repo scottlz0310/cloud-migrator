@@ -9,6 +9,30 @@
 
 ---
 
+## [0.8.0] - 2026-03-02
+
+### Added
+- `FileCrawlerCommand`（`CloudMigrator.Cli.Commands`）- `file-crawler` サブコマンド（FR-18）
+  - `onedrive` / `sharepoint` / `dropbox` の再帰クロール + キャッシュ保存
+  - `skiplist` / `compare` / `validate` / `explore` の補助運用サブコマンドを追加
+- `DropboxStorageProvider`（`CloudMigrator.Providers.Dropbox`）- Dropbox 本実装
+  - `ListItemsAsync`: `files/list_folder` + `list_folder/continue` による再帰クロール
+  - `UploadFileAsync`: `files/download` + `files/upload` / `upload_session` による転送
+  - `EnsureFolderAsync`: `files/create_folder_v2` による階層フォルダ作成（409 Conflict は既存扱い）
+- `DropboxStorageOptions`（`CloudMigrator.Providers.Dropbox`）- `RootPath` / `SimpleUploadLimitMb` / `UploadChunkSizeMb`
+- `MigratorOptions.Dropbox`（`CloudMigrator.Core.Configuration`）- Dropbox 設定を追加
+- `PathOptions.DropboxCache`（`CloudMigrator.Core.Configuration`）- Dropbox キャッシュパスを追加
+- `AppConfiguration.GetDropboxAccessToken()` - `MIGRATOR__DROPBOX__ACCESSTOKEN` を取得
+- `DropboxStorageProviderTests` / `FileCrawlerCommandTests` を追加
+
+### Changed
+- `CliServices` に Dropbox プロバイダーの初期化と破棄を追加
+- `Program.cs` に `file-crawler` サブコマンドを登録
+- `ConfigHashChecker.ComputeHash` が `Dropbox.RootPath` 変更を検知するよう拡張
+- `configs/config.json` / `sample.env` / `README.md` / `task.md` / `docs/implementation-plan.md` を Phase 7 内容に更新
+
+---
+
 ## [0.7.0] - 2026-03-02
 
 ### Added
@@ -179,7 +203,10 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...v0.3.0

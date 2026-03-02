@@ -12,7 +12,7 @@ public static class ConfigHashChecker
 {
     /// <summary>
     /// 設定の SHA-256 ハッシュを計算する。
-    /// Graph 資格情報・OneDrive/SharePoint ID など転送結果に影響する値を対象とする。
+    /// Graph/Dropbox の識別子・ルートパスなど転送結果に影響する値を対象とする。
     /// </summary>
     public static string ComputeHash(MigratorOptions options)
     {
@@ -22,6 +22,11 @@ public static class ConfigHashChecker
         sb.Append(options.Graph.OneDriveUserId).Append('|');
         sb.Append(options.Graph.SharePointSiteId).Append('|');
         sb.Append(options.Graph.SharePointDriveId).Append('|');
+        sb.Append(
+            (options.Dropbox.RootPath ?? string.Empty)
+                .Trim()
+                .Replace('\\', '/')
+                .Trim('/')).Append('|');
         // Trim, バックスラッシュ正規化, 末尾スラッシュ除去して表記揺れによるハッシュ差異を防ぐ
         sb.Append(
             (options.DestinationRoot ?? string.Empty)

@@ -23,8 +23,8 @@
 | 並列処理 | `Parallel.ForEachAsync` + `System.Threading.Channels` |
 | テスト | xUnit + FluentAssertions + Moq |
 
-### 将来拡張（Dropbox 等）
-`IStorageProvider` で provider を抽象化済み。Graph 実装はその1実装として構築し、Dropbox は空スケルトンを保持。
+### プロバイダー拡張（Dropbox 等）
+`IStorageProvider` で provider を抽象化し、Graph / Dropbox の実装を並行して提供する。
 
 ---
 
@@ -88,7 +88,7 @@ cloud-migrator/
 │  ├─ CloudMigrator.Core/                   # ドメイン・ユースケース
 │  ├─ CloudMigrator.Providers.Abstractions/ # IStorageProvider 等の契約
 │  ├─ CloudMigrator.Providers.Graph/        # Graph 認証・転送実装
-│  ├─ CloudMigrator.Providers.Dropbox/      # 将来拡張（空スケルトン）
+│  ├─ CloudMigrator.Providers.Dropbox/      # Dropbox 実装
 │  ├─ CloudMigrator.Observability/          # 構造化ログ・メトリクス
 │  └─ CloudMigrator.Testing/               # テスト共通ユーティリティ
 ├─ tests/
@@ -119,7 +119,7 @@ cloud-migrator/
 | Phase 4 | 転送エンジン（small/large/フォルダ作成/並列/セッション再開） | ⬜ 未着手 |
 | Phase 5 | 実行モード互換（--reset/--full-rebuild/通常実行/設定ハッシュ） | ⬜ 未着手 |
 | Phase 6 | 監視・品質・セキュリティ（watchdog/メトリクス/アラート） | ⬜ 未着手 |
-| Phase 7 | 補助 CLI・運用機能（file_crawler/validate/Dropbox スケルトン） | ⬜ 未着手 |
+| Phase 7 | 補助 CLI・運用機能（file_crawler/validate/Dropbox 実装） | ⬜ 未着手 |
 | Phase 8 | E2E・性能検証・本番切替 | ⬜ 未着手 |
 
 ---
