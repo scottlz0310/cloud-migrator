@@ -2,7 +2,7 @@
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 
-## 現在の状態: Phase 5 完了
+## 現在の状態: Phase 6 完了
 
 ---
 
@@ -48,10 +48,10 @@
 
 ## Phase 6: 監視・品質・セキュリティ
 
-- [ ] `watchdog`（ログ無更新 10 分で再起動）
-- [ ] 品質メトリクス収集（NFR-04）
-- [ ] 品質アラート（NFR-05）
-- [ ] セキュリティスキャン統合（NFR-07）
+- [x] `watchdog`（ログ無更新 10 分で再起動）
+- [x] 品質メトリクス収集（NFR-04）
+- [x] 品質アラート（NFR-05）
+- [x] セキュリティスキャン統合（NFR-07）
 
 ## Phase 7: 補助 CLI・運用機能
 

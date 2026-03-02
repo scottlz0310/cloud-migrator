@@ -29,8 +29,27 @@ public sealed class MigratorOptions
     /// <summary>転送先 SharePoint ドライブ内のルートパス（例: "Migration/2026"）。空文字でドライブルート。</summary>
     public string DestinationRoot { get; set; } = string.Empty;
 
+    // --- Watchdog 設定 ---
+    public WatchdogOptions Watchdog { get; set; } = new();
+
     // --- プロバイダー設定 ---
     public GraphProviderOptions Graph { get; set; } = new();
+}
+
+/// <summary>
+/// watchdog コマンドの設定（FR-16/FR-17）。
+/// ログ無更新を検知して transfer プロセスを再起動する。
+/// </summary>
+public sealed class WatchdogOptions
+{
+    /// <summary>ログ無更新のタイムアウト（分）。デフォルト 10 分。</summary>
+    public int TimeoutMinutes { get; set; } = 10;
+
+    /// <summary>watchdog がポーリングする間隔（秒）。デフォルト 30 秒。</summary>
+    public int PollIntervalSeconds { get; set; } = 30;
+
+    /// <summary>再起動時に実行するサブコマンド引数。デフォルト ["transfer"]。</summary>
+    public string[] TransferArgs { get; set; } = ["transfer"];
 }
 
 public sealed class PathOptions
