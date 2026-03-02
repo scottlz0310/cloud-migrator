@@ -9,6 +9,37 @@
 
 ---
 
+## [0.7.0] - 2025-07-04
+
+### Added
+- `WatchdogCommand`（`CloudMigrator.Cli.Commands`）- `watchdog` サブコマンド（FR-16/FR-17）
+  - `transfer` プロセスを起動し、ログ無更新タイムアウト（デフォルト 10 分）でフリーズを検知・自動再起動
+  - フリーズ検知時はプロセスをキルして `ExitCodes.FrozenRestart = -999` で再起動シグナルを返す
+  - `transfer` 正常終了（exit 0）で watchdog も停止（FR-17）
+- `QualityMetricsCommand`（`CloudMigrator.Cli.Commands`）- `quality-metrics` サブコマンド（NFR-04/05）
+  - `.trx` ファイル（VisualStudio TeamTest 形式）からテスト合否を集計
+  - Cobertura XML から行カバレッジ率（line-rate × 100）を取得
+  - カバレッジ < 60% または失敗テスト > 0 件で exit code 1（品質アラート）
+  - JSON 形式でレポートを標準出力
+- `SecurityScanCommand`（`CloudMigrator.Cli.Commands`）- `security-scan` サブコマンド（NFR-07）
+  - `dotnet list package --vulnerable` を実行して脆弱パッケージを検出
+  - 脆弱パッケージが 1 件以上あれば exit code 1
+  - JSON 形式でセキュリティレポートを標準出力
+- `WatchdogOptions`（`CloudMigrator.Core.Configuration.MigratorOptions`）- watchdog 設定（TimeoutMinutes / PollIntervalSeconds / TransferArgs）
+- `WatchdogCommandTests`（`CloudMigrator.Tests.Unit`）- 4 ユニットテスト追加
+- `QualityMetricsCommandTests`（`CloudMigrator.Tests.Unit`）- 6 ユニットテスト追加
+- `SecurityScanCommandTests`（`CloudMigrator.Tests.Unit`）- 4 ユニットテスト追加
+- `AssemblyInfo.cs`（`CloudMigrator.Cli`）- `[InternalsVisibleTo("CloudMigrator.Tests.Unit")]` 追加
+
+### Changed
+- `.github/workflows/ci.yml` - カバレッジ収集（`--collect:"XPlat Code Coverage"`）追加、`dotnet format --verify-no-changes` チェック追加、`quality-gate` ジョブ（品質メトリクス + セキュリティスキャン）追加
+- `Program.cs` - `watchdog` / `quality-metrics` / `security-scan` の 3 サブコマンドを追加登録
+- `CloudMigrator.Cli.csproj` - `Microsoft.Extensions.Logging.Console` パッケージ追加
+- `CloudMigrator.Tests.Unit.csproj` - `CloudMigrator.Cli` プロジェクト参照追加、`coverlet.collector` パッケージ追加
+- `CloudMigrator.Tests.Integration.csproj` - `coverlet.collector` パッケージ追加
+
+---
+
 ## [0.6.0] - 2026-03-08
 
 ### Added
