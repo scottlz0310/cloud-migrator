@@ -100,67 +100,14 @@ public class WatchdogCommandTests : IDisposable
     }
 
     /// <summary>
-    /// WatchdogCommand の private メソッド MonitorFreezeAsync をリフレクション不使用でテストするためのヘルパー。
+    /// WatchdogCommand の internal メソッド MonitorFreezeAsync を直接呼び出すラッパー。
     /// </summary>
-    private static async Task<bool> InvokeMonitorFreezeAsync(
+    private static Task<bool> InvokeMonitorFreezeAsync(
         string logPath,
         TimeSpan timeout,
         TimeSpan pollInterval,
         CancellationToken ct)
     {
-        // internal メソッドを呼び出すテスト用ラッパーとして
-        // WatchdogCommand.RunTransferWithWatchAsync は外部プロセスを起動するため直接テストせず、
-        // フリーズ検知ロジックを同等の動作で検証する
-        return await FreezeDetector.DetectAsync(logPath, timeout, pollInterval, ct);
-    }
-}
-
-/// <summary>
-/// WatchdogCommand のフリーズ検知ロジックを独立してテストするためのヘルパー。
-/// WatchdogCommand.MonitorFreezeAsync と同一ロジック。
-/// </summary>
-internal static class FreezeDetector
-{
-    public static async Task<bool> DetectAsync(
-        string logPath,
-        TimeSpan timeout,
-        TimeSpan pollInterval,
-        CancellationToken ct)
-    {
-        var lastModified = GetLastModified(logPath);
-        // ファイル未存在の場合は現在時刻を基準にしてカウントを開始する
-        if (lastModified == DateTime.MinValue)
-            lastModified = DateTime.UtcNow;
-
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(pollInterval, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return false;
-            }
-
-            var current = GetLastModified(logPath);
-            if (current > lastModified)
-            {
-                lastModified = current;
-                continue;
-            }
-
-            var elapsed = DateTime.UtcNow - lastModified;
-            if (elapsed >= timeout)
-                return true;
-        }
-
-        return false;
-    }
-
-    private static DateTime GetLastModified(string path)
-    {
-        try { return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue; }
-        catch { return DateTime.MinValue; }
+        return WatchdogCommand.MonitorFreezeAsync(logPath, timeout, pollInterval, ct);
     }
 }

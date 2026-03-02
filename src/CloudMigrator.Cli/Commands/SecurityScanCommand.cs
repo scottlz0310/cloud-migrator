@@ -50,17 +50,30 @@ internal static partial class SecurityScanCommand
 
     internal static async Task RunAsync(string project, string? outputPath, CancellationToken ct)
     {
-        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(b => b.AddConsole());
+        // JSON を stdout に出力するため、ログは stderr に寄せて混在を避ける
+        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(b => b.AddConsole(
+            options => options.LogToStandardErrorThreshold = LogLevel.Trace));
         var logger = loggerFactory.CreateLogger("security-scan");
 
         logger.LogInformation("セキュリティスキャンを開始します: {Project}", project);
 
-        var (stdout, stderr, exitCode) = await RunDotnetCommandAsync(
-            $"list \"{project}\" package --vulnerable --include-transitive",
-            ct).ConfigureAwait(false);
+        // 外部コマンド引数として渡すため、引用符や制御文字を禁止する
+        if (project.Contains('"') || project.Any(char.IsControl))
+            throw new ArgumentException(
+                "プロジェクト/ソリューションパスに使用できない文字が含まれています。--project の値を確認してください。",
+                nameof(project));
 
-        if (exitCode != 0 && !string.IsNullOrWhiteSpace(stderr))
-            logger.LogWarning("dotnet list package stderr: {Stderr}", stderr);
+        var (stdout, stderr, exitCode) = await RunDotnetCommandAsync(project, ct).ConfigureAwait(false);
+
+        if (exitCode != 0)
+        {
+            logger.LogError(
+                "dotnet list package の実行に失敗しました。ExitCode={ExitCode}, stderr={Stderr}",
+                exitCode,
+                string.IsNullOrWhiteSpace(stderr) ? "<empty>" : stderr);
+            Environment.ExitCode = 1;
+            return;
+        }
 
         var vulnerabilities = ParseVulnerabilities(stdout);
 
@@ -100,7 +113,8 @@ internal static partial class SecurityScanCommand
 
     /// <summary>
     /// dotnet CLI の出力から脆弱パッケージ行をパースする。
-    /// 出力例: "   > PackageName  1.0.0  2.0.0  https://ghsa..."
+    /// 出力例: "   > PackageName  ResolvedVersion  https://ghsa..."
+    /// Requested 列（最新要求バージョン）はオプションであり、Resolved バージョンのみを保持する。
     /// </summary>
     internal static List<VulnerablePackage> ParseVulnerabilities(string output)
     {
@@ -138,9 +152,10 @@ internal static partial class SecurityScanCommand
     }
 
     private static async Task<(string Stdout, string Stderr, int ExitCode)> RunDotnetCommandAsync(
-        string arguments, CancellationToken ct)
+        string project, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo("dotnet", arguments)
+        // ArgumentList を使って要素単位で引数を組み立て（引数インジェクション対策）
+        var psi = new ProcessStartInfo("dotnet")
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -148,6 +163,11 @@ internal static partial class SecurityScanCommand
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        psi.ArgumentList.Add("list");
+        psi.ArgumentList.Add(project);
+        psi.ArgumentList.Add("package");
+        psi.ArgumentList.Add("--vulnerable");
+        psi.ArgumentList.Add("--include-transitive");
 
         using var process = new Process { StartInfo = psi };
         var stdoutSb = new StringBuilder();
@@ -168,7 +188,11 @@ internal static partial class SecurityScanCommand
     [GeneratedRegex(@"Project '(.+?)' has the following vulnerable", RegexOptions.IgnoreCase)]
     private static partial Regex ProjectLineRegex();
 
-    [GeneratedRegex(@">\s+(\S+)\s+(\S+)\s+(https?://\S+)\s*(\S*)")]
+    // パッケージ行の形式:
+    //   > PackageId [Requested]? Resolved URL [Severity]?
+    // Requested 列（最新要求バージョン）はオプション。バージョンは「数字で始まるトークン」としてマッチ。
+    // キャプチャグループ: 1=PackageId, 2=Resolved, 3=AdvisoryUrl, 4=Severity(省略可)
+    [GeneratedRegex(@">\s+(\S+)\s+(?:\d[\w.\-+]*\s+)?(\d[\w.\-+]*)\s+(https?://\S+)\s*(\S*)")]
     private static partial Regex PackageLineRegex();
 }
 

@@ -74,10 +74,8 @@ jobs:
         run: dotnet test tests/unit/CloudMigrator.Tests.Unit.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory QualityResults --logger "trx;LogFileName=test-results.trx"
 
       - name: 品質メトリクスチェック
-        run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- quality-metrics --trx-dir QualityResults --cobertura-dir QualityResults
-        continue-on-error: true
+        run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- quality-metrics --trx-dir QualityResults --coverage-xml QualityResults/coverage.cobertura.xml
 
       - name: セキュリティスキャン
         run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- security-scan
-        continue-on-error: true
 

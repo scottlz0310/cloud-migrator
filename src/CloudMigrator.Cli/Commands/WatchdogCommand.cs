@@ -36,21 +36,21 @@ internal static class WatchdogCommand
             watchdogOpts.TimeoutMinutes,
             watchdogOpts.PollIntervalSeconds);
 
-        int restartCount = 0;
+        int launchCount = 0;
         int exitCode;
 
         do
         {
             ct.ThrowIfCancellationRequested();
 
-            logger.LogInformation("transfer プロセスを起動します（再起動回数: {Count}）", restartCount);
+            logger.LogInformation("transfer プロセスを起動します（起動回数: {Count}）", launchCount + 1);
             exitCode = await RunTransferWithWatchAsync(
                 watchdogOpts,
                 opts.Paths.TransferLog,
                 logger,
                 ct).ConfigureAwait(false);
 
-            restartCount++;
+            launchCount++;
 
             // ExitCode=0: 正常完了。FR-17: 転送残あり判断は watchdog が再実行で確認
             if (exitCode == 0)
@@ -61,7 +61,7 @@ internal static class WatchdogCommand
 
             if (exitCode == ExitCodes.FrozenRestart)
             {
-                logger.LogWarning("フリーズ検知による再起動 #{Count}", restartCount);
+                logger.LogWarning("フリーズ検知による再起動 （起動 {Count} 回目）", launchCount);
                 // 短い待機後に再試行
                 await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
                 continue;
@@ -73,7 +73,7 @@ internal static class WatchdogCommand
 
         } while (!ct.IsCancellationRequested);
 
-        logger.LogInformation("watchdog 終了（再起動合計 {Count} 回）", restartCount);
+        logger.LogInformation("watchdog 終了（合計起動 {Count} 回）", launchCount);
     }
 
     /// <summary>
@@ -86,18 +86,28 @@ internal static class WatchdogCommand
         ILogger logger,
         CancellationToken ct)
     {
-        var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName
+        // FDD（フレームワーク依存）と自己完結型の両方に対応してプロセスを起動する。
+        // FDD: ProcessPath = dotnet.exe, GetCommandLineArgs()[0] = CloudMigrator.Cli.dll
+        // 自己完結型: ProcessPath = CloudMigrator.Cli.exe
+        var processPath = Environment.ProcessPath
             ?? throw new InvalidOperationException("実行ファイルパスを取得できません。");
+        var cmdArgs = Environment.GetCommandLineArgs();
+        var entryDll = cmdArgs.Length > 0 ? cmdArgs[0] : string.Empty;
+        var isFdd = !string.IsNullOrEmpty(entryDll)
+            && !string.Equals(processPath, entryDll, StringComparison.OrdinalIgnoreCase)
+            && entryDll.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
 
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = exePath,
-            ArgumentList = { },
+            FileName = processPath,
             UseShellExecute = false,
             RedirectStandardOutput = false,
             RedirectStandardError = false,
         };
+        // FDD の場合: dotnet CloudMigrator.Cli.dll transfer ...
+        if (isFdd)
+            process.StartInfo.ArgumentList.Add(entryDll);
         foreach (var arg in watchdogOpts.TransferArgs)
             process.StartInfo.ArgumentList.Add(arg);
 
@@ -107,16 +117,12 @@ internal static class WatchdogCommand
 
         var timeout = TimeSpan.FromMinutes(watchdogOpts.TimeoutMinutes);
         var pollInterval = TimeSpan.FromSeconds(watchdogOpts.PollIntervalSeconds);
-        var lastModified = GetLogLastModified(logPath);
-        // ファイル未存在の場合は現在時刻を基準にしてカウントを開始する
-        if (lastModified == DateTime.MinValue)
-            lastModified = DateTime.UtcNow;
 
         using var freezeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // フリーズ監視ループ
         var monitorTask = MonitorFreezeAsync(
-            logPath, timeout, pollInterval, lastModified, logger, freezeCts.Token);
+            logPath, timeout, pollInterval, freezeCts.Token);
 
         // プロセス完了待機
         var waitTask = process.WaitForExitAsync(ct);
@@ -150,14 +156,17 @@ internal static class WatchdogCommand
     /// ログファイルの更新が timeout を超えた場合に true を返す。
     /// キャンセル時は false を返す。
     /// </summary>
-    private static async Task<bool> MonitorFreezeAsync(
+    internal static async Task<bool> MonitorFreezeAsync(
         string logPath,
         TimeSpan timeout,
         TimeSpan pollInterval,
-        DateTime lastModified,
-        ILogger logger,
         CancellationToken ct)
     {
+        var lastModified = GetLogLastModified(logPath);
+        // ファイル未存在の場合は現在時刻を基準にしてカウントを開始する
+        if (lastModified == DateTime.MinValue)
+            lastModified = DateTime.UtcNow;
+
         while (!ct.IsCancellationRequested)
         {
             try
@@ -173,16 +182,11 @@ internal static class WatchdogCommand
             if (current > lastModified)
             {
                 lastModified = current;
-                logger.LogDebug("ログ更新確認: {LastModified:O}", current);
                 continue;
             }
 
             // 最後の更新からの経過時間を確認
             var elapsed = DateTime.UtcNow - lastModified;
-            logger.LogDebug(
-                "ログ未更新経過: {Elapsed:hh\\:mm\\:ss} / タイムアウト: {Timeout:hh\\:mm\\:ss}",
-                elapsed, timeout);
-
             if (elapsed >= timeout)
                 return true; // フリーズ検知
         }

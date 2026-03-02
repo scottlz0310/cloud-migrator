@@ -62,7 +62,9 @@ internal static class QualityMetricsCommand
         string? outputPath,
         CancellationToken ct)
     {
-        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(b => b.AddConsole());
+        // JSON を stdout に出力するため、ログは stderr に寄せて混在を避ける
+        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(b => b.AddConsole(
+            options => options.LogToStandardErrorThreshold = LogLevel.Trace));
         var logger = loggerFactory.CreateLogger("quality-metrics");
 
         // .trx 解析
@@ -118,6 +120,12 @@ internal static class QualityMetricsCommand
     /// <summary>指定ディレクトリ以下の .trx ファイルを再帰的に解析してテスト集計を返す。</summary>
     internal static TestMetrics ParseTrxFiles(string dir, ILogger logger)
     {
+        if (!Directory.Exists(dir))
+        {
+            logger.LogWarning(".trx ディレクトリが見つかりません: {Dir}", dir);
+            return new TestMetrics();
+        }
+
         var trxFiles = Directory.GetFiles(dir, "*.trx", SearchOption.AllDirectories);
         int passed = 0, failed = 0, skipped = 0;
 
