@@ -32,17 +32,17 @@ public class ConfigHashCheckerTests : IDisposable
         string sharePointSiteId = "site1",
         string sharePointDriveId = "drive1",
         string destinationRoot = "") => new()
-    {
-        Graph = new GraphProviderOptions
         {
-            ClientId = clientId,
-            TenantId = tenantId,
-            OneDriveUserId = oneDriveUserId,
-            SharePointSiteId = sharePointSiteId,
-            SharePointDriveId = sharePointDriveId,
-        },
-        DestinationRoot = destinationRoot,
-    };
+            Graph = new GraphProviderOptions
+            {
+                ClientId = clientId,
+                TenantId = tenantId,
+                OneDriveUserId = oneDriveUserId,
+                SharePointSiteId = sharePointSiteId,
+                SharePointDriveId = sharePointDriveId,
+            },
+            DestinationRoot = destinationRoot,
+        };
 
     private PathOptions CreatePaths(string? skipList = null, string? oneDriveCache = null, string? spCache = null) => new()
     {
