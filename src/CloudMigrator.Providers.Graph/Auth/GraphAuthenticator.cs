@@ -42,7 +42,9 @@ public sealed class GraphAuthenticator : IAccessTokenProvider
         CancellationToken cancellationToken = default)
     {
         if (_app is null)
-            throw new InvalidOperationException(_configurationErrorMessage);
+            throw new InvalidOperationException(
+                _configurationErrorMessage ??
+                "Graph 認証情報が不足しています。MIGRATOR__GRAPH__CLIENTID / TENANTID / CLIENTSECRET を設定してください。");
 
         // MSAL がトークンをキャッシュ。有効期限 5 分前に自動再取得する。
         var result = await _app

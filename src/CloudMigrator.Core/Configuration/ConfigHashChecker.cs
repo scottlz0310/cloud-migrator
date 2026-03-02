@@ -72,13 +72,14 @@ public static class ConfigHashChecker
     }
 
     /// <summary>
-    /// キャッシュファイル群（OneDrive・SharePoint キャッシュ・skip_list）をすべて削除する。
+    /// キャッシュファイル群（OneDrive・SharePoint・Dropbox キャッシュ・skip_list）をすべて削除する。
     /// 設定変更時に呼び出され、FR-10 に従ってキャッシュと skip_list を一括無効化する。
     /// </summary>
     public static void ClearAll(PathOptions paths, ILogger logger)
     {
         DeleteIfExists(paths.OneDriveCache, logger);
         DeleteIfExists(paths.SharePointCache, logger);
+        DeleteIfExists(paths.DropboxCache, logger);
         DeleteIfExists(paths.SkipList, logger);
     }
 

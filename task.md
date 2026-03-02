@@ -55,7 +55,7 @@
 
 ## Phase 7: 補助 CLI・運用機能
 
-- [x] `file-crawler` サブコマンド（onedrive/sharepoint/skiplist/compare/validate/explore）
+- [x] `file-crawler` サブコマンド（onedrive/sharepoint/dropbox/skiplist/compare/validate/explore）
 - [x] Dropbox プロバイダー本実装
 
 ## Phase 8: E2E・性能検証・切替

@@ -119,7 +119,7 @@ cloud-migrator/
 | Phase 4 | 転送エンジン（small/large/フォルダ作成/並列/セッション再開） | ⬜ 未着手 |
 | Phase 5 | 実行モード互換（--reset/--full-rebuild/通常実行/設定ハッシュ） | ⬜ 未着手 |
 | Phase 6 | 監視・品質・セキュリティ（watchdog/メトリクス/アラート） | ⬜ 未着手 |
-| Phase 7 | 補助 CLI・運用機能（file_crawler/validate/Dropbox 実装） | ⬜ 未着手 |
+| Phase 7 | 補助 CLI・運用機能（file-crawler/validate/Dropbox 実装） | ⬜ 未着手 |
 | Phase 8 | E2E・性能検証・本番切替 | ⬜ 未着手 |
 
 ---

@@ -44,14 +44,19 @@ public class ConfigHashCheckerTests : IDisposable
             DestinationRoot = destinationRoot,
         };
 
-    private PathOptions CreatePaths(string? skipList = null, string? oneDriveCache = null, string? spCache = null) => new()
-    {
-        SkipList = skipList ?? Path.Combine(_testDir, "skip_list.json"),
-        OneDriveCache = oneDriveCache ?? Path.Combine(_testDir, "onedrive.json"),
-        SharePointCache = spCache ?? Path.Combine(_testDir, "sp.json"),
-        ConfigHash = _hashFile,
-        TransferLog = Path.Combine(_testDir, "transfer.log"),
-    };
+    private PathOptions CreatePaths(
+        string? skipList = null,
+        string? oneDriveCache = null,
+        string? spCache = null,
+        string? dropboxCache = null) => new()
+        {
+            SkipList = skipList ?? Path.Combine(_testDir, "skip_list.json"),
+            OneDriveCache = oneDriveCache ?? Path.Combine(_testDir, "onedrive.json"),
+            SharePointCache = spCache ?? Path.Combine(_testDir, "sp.json"),
+            DropboxCache = dropboxCache ?? Path.Combine(_testDir, "dropbox.json"),
+            ConfigHash = _hashFile,
+            TransferLog = Path.Combine(_testDir, "transfer.log"),
+        };
 
     [Fact]
     public void ComputeHash_SameOptions_ReturnsSameHash()
@@ -172,16 +177,18 @@ public class ConfigHashCheckerTests : IDisposable
     [Fact]
     public void ClearAll_DeletesAllFiles_WhenAllExist()
     {
-        // 検証対象: ClearAll  目的: OneDrive キャッシュ・SP キャッシュ・skip_list の 3 ファイルを削除すること
+        // 検証対象: ClearAll  目的: OneDrive/SharePoint/Dropbox キャッシュと skip_list を削除すること
         var paths = CreatePaths();
         File.WriteAllText(paths.OneDriveCache, "[]");
         File.WriteAllText(paths.SharePointCache, "[]");
+        File.WriteAllText(paths.DropboxCache, "[]");
         File.WriteAllText(paths.SkipList, "[]");
 
         ConfigHashChecker.ClearAll(paths, NullLogger.Instance);
 
         File.Exists(paths.OneDriveCache).Should().BeFalse();
         File.Exists(paths.SharePointCache).Should().BeFalse();
+        File.Exists(paths.DropboxCache).Should().BeFalse();
         File.Exists(paths.SkipList).Should().BeFalse();
     }
 

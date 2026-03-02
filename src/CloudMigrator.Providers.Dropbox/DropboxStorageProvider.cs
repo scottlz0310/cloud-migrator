@@ -211,7 +211,6 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
     private async Task UploadSimpleAsync(string destinationPath, string localPath, CancellationToken ct)
     {
-        var bytes = await File.ReadAllBytesAsync(localPath, ct).ConfigureAwait(false);
         using var response = await SendWithRetryAsync(
             () =>
             {
@@ -225,7 +224,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                     mute = true,
                     strict_conflict = false,
                 }));
-                request.Content = new ByteArrayContent(bytes);
+                request.Content = new StreamContent(File.OpenRead(localPath));
                 request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                 return request;
             },
@@ -396,12 +395,16 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                 if (!ShouldRetry(response.StatusCode) || attempt >= _maxRetry)
                     return response;
 
+                var delay = GetRetryDelay(response, attempt);
                 _logger.LogWarning(
-                    "Dropbox API の一時エラーのため再試行します: {Operation} status={StatusCode} attempt={Attempt}",
+                    "Dropbox API の一時エラーのため再試行します: {Operation} status={StatusCode} attempt={Attempt} delayMs={DelayMs}",
                     operation,
                     (int)response.StatusCode,
-                    attempt + 1);
+                    attempt + 1,
+                    (int)delay.TotalMilliseconds);
                 response.Dispose();
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+                continue;
             }
             catch (HttpRequestException ex) when (attempt < _maxRetry)
             {
@@ -437,6 +440,22 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         var backoffMs = Math.Min(5000, 200 * (1 << Math.Min(attempt, 5)));
         var jitterMs = Random.Shared.Next(0, 250);
         return TimeSpan.FromMilliseconds(backoffMs + jitterMs);
+    }
+
+    private static TimeSpan GetRetryDelay(HttpResponseMessage response, int attempt)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter?.Delta is TimeSpan delta && delta > TimeSpan.Zero)
+            return delta;
+
+        if (retryAfter?.Date is DateTimeOffset date)
+        {
+            var wait = date - DateTimeOffset.UtcNow;
+            if (wait > TimeSpan.Zero)
+                return wait;
+        }
+
+        return ComputeRetryDelay(attempt);
     }
 
     private void AddFileEntries(IEnumerable<DropboxEntry>? entries, List<StorageItem> result)
