@@ -22,6 +22,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     private readonly ILogger<DropboxStorageProvider> _logger;
     private readonly string _accessToken;
     private readonly DropboxStorageOptions _options;
+    private readonly int _maxRetry;
     private readonly int _simpleUploadLimitBytes;
     private readonly int _uploadChunkSizeBytes;
 
@@ -31,13 +32,16 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         ILogger<DropboxStorageProvider> logger,
         string accessToken,
         DropboxStorageOptions? options = null,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null,
+        int maxRetry = 3,
+        bool disposeHttpClient = false)
     {
         _logger = logger;
         _accessToken = accessToken;
         _options = options ?? new DropboxStorageOptions();
         _httpClient = httpClient ?? new HttpClient();
-        _ownsHttpClient = httpClient is null;
+        _ownsHttpClient = httpClient is null || disposeHttpClient;
+        _maxRetry = Math.Max(0, maxRetry);
         _simpleUploadLimitBytes = Math.Max(1, _options.SimpleUploadLimitMb) * 1024 * 1024;
         _uploadChunkSizeBytes = Math.Max(1, _options.UploadChunkSizeMb) * 1024 * 1024;
     }
@@ -103,7 +107,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
         var sourcePath = BuildSourceFilePath(job.Source);
         var destinationPath = NormalizeFilePath(job.DestinationFullPath);
-        var tempPath = Path.GetTempFileName();
+        var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
 
         try
         {
@@ -147,22 +151,30 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         foreach (var segment in segments)
         {
             currentPath = $"{currentPath}/{segment}";
-            using var request = CreateApiRequest(
+            using var response = await SendWithRetryAsync(
+                () => CreateApiRequest(
+                    "files/create_folder_v2",
+                    new CreateFolderRequest
+                    {
+                        Path = currentPath,
+                        Autorename = false,
+                    }),
                 "files/create_folder_v2",
-                new CreateFolderRequest
-                {
-                    Path = currentPath,
-                    Autorename = false,
-                });
-
-            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
                 continue;
 
             if (response.StatusCode == HttpStatusCode.Conflict)
             {
-                _logger.LogDebug("Dropbox フォルダは既に存在します: {Path}", currentPath);
-                continue;
+                var conflictBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                if (IsFolderAlreadyExistsConflict(conflictBody))
+                {
+                    _logger.LogDebug("Dropbox フォルダは既に存在します: {Path}", currentPath);
+                    continue;
+                }
+
+                throw new InvalidOperationException(
+                    $"Dropbox API 呼び出しに失敗しました: files/create_folder_v2 ({(int)response.StatusCode}) {conflictBody}");
             }
 
             await ThrowDropboxErrorAsync(response, "files/create_folder_v2", cancellationToken)
@@ -172,14 +184,17 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
     private async Task DownloadToTempFileAsync(string sourcePath, string tempPath, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/download");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-        request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new { path = sourcePath }));
-
-        using var response = await _httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            ct).ConfigureAwait(false);
+        using var response = await SendWithRetryAsync(
+            () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/download");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new { path = sourcePath }));
+                return request;
+            },
+            "files/download",
+            ct,
+            HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             await ThrowDropboxErrorAsync(response, "files/download", ct).ConfigureAwait(false);
 
@@ -196,21 +211,26 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
     private async Task UploadSimpleAsync(string destinationPath, string localPath, CancellationToken ct)
     {
-        await using var fileStream = File.OpenRead(localPath);
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-        request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
-        {
-            path = destinationPath,
-            mode = "overwrite",
-            autorename = false,
-            mute = true,
-            strict_conflict = false,
-        }));
-        request.Content = new StreamContent(fileStream);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-
-        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+        var bytes = await File.ReadAllBytesAsync(localPath, ct).ConfigureAwait(false);
+        using var response = await SendWithRetryAsync(
+            () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
+                {
+                    path = destinationPath,
+                    mode = "overwrite",
+                    autorename = false,
+                    mute = true,
+                    strict_conflict = false,
+                }));
+                request.Content = new ByteArrayContent(bytes);
+                request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                return request;
+            },
+            "files/upload",
+            ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             await ThrowDropboxErrorAsync(response, "files/upload", ct).ConfigureAwait(false);
     }
@@ -240,13 +260,18 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
     private async Task<string> StartUploadSessionAsync(CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload_session/start");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-        request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new { close = false }));
-        request.Content = new ByteArrayContent([]);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-
-        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+        using var response = await SendWithRetryAsync(
+            () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload_session/start");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new { close = false }));
+                request.Content = new ByteArrayContent([]);
+                request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                return request;
+            },
+            "files/upload_session/start",
+            ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             await ThrowDropboxErrorAsync(response, "files/upload_session/start", ct).ConfigureAwait(false);
 
@@ -259,17 +284,22 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
     private async Task AppendUploadSessionAsync(string sessionId, long offset, byte[] chunk, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload_session/append_v2");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-        request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
-        {
-            cursor = new { session_id = sessionId, offset },
-            close = false,
-        }));
-        request.Content = new ByteArrayContent(chunk);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-
-        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+        using var response = await SendWithRetryAsync(
+            () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload_session/append_v2");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
+                {
+                    cursor = new { session_id = sessionId, offset },
+                    close = false,
+                }));
+                request.Content = new ByteArrayContent(chunk);
+                request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                return request;
+            },
+            "files/upload_session/append_v2",
+            ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             await ThrowDropboxErrorAsync(response, "files/upload_session/append_v2", ct).ConfigureAwait(false);
     }
@@ -281,24 +311,29 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         byte[] chunk,
         CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload_session/finish");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-        request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
-        {
-            cursor = new { session_id = sessionId, offset },
-            commit = new
+        using var response = await SendWithRetryAsync(
+            () =>
             {
-                path = destinationPath,
-                mode = "overwrite",
-                autorename = false,
-                mute = true,
-                strict_conflict = false,
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload_session/finish");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
+                {
+                    cursor = new { session_id = sessionId, offset },
+                    commit = new
+                    {
+                        path = destinationPath,
+                        mode = "overwrite",
+                        autorename = false,
+                        mute = true,
+                        strict_conflict = false,
+                    },
+                }));
+                request.Content = new ByteArrayContent(chunk);
+                request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                return request;
             },
-        }));
-        request.Content = new ByteArrayContent(chunk);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-
-        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            "files/upload_session/finish",
+            ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             await ThrowDropboxErrorAsync(response, "files/upload_session/finish", ct).ConfigureAwait(false);
     }
@@ -309,8 +344,10 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         CancellationToken ct)
         where TRequest : class
     {
-        using var request = CreateApiRequest(endpoint, payload);
-        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+        using var response = await SendWithRetryAsync(
+            () => CreateApiRequest(endpoint, payload),
+            endpoint,
+            ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             await ThrowDropboxErrorAsync(response, endpoint, ct).ConfigureAwait(false);
 
@@ -338,6 +375,68 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         throw new InvalidOperationException(
             $"Dropbox API 呼び出しに失敗しました: {endpoint} ({(int)response.StatusCode}) {body}");
+    }
+
+    private static bool IsFolderAlreadyExistsConflict(string responseBody)
+        => responseBody.Contains("path/conflict/folder", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        Func<HttpRequestMessage> requestFactory,
+        string operation,
+        CancellationToken ct,
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                using var request = requestFactory();
+                var response = await _httpClient.SendAsync(request, completionOption, ct).ConfigureAwait(false);
+                if (!ShouldRetry(response.StatusCode) || attempt >= _maxRetry)
+                    return response;
+
+                _logger.LogWarning(
+                    "Dropbox API の一時エラーのため再試行します: {Operation} status={StatusCode} attempt={Attempt}",
+                    operation,
+                    (int)response.StatusCode,
+                    attempt + 1);
+                response.Dispose();
+            }
+            catch (HttpRequestException ex) when (attempt < _maxRetry)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Dropbox API の通信エラーのため再試行します: {Operation} attempt={Attempt}",
+                    operation,
+                    attempt + 1);
+            }
+            catch (TaskCanceledException ex) when (!ct.IsCancellationRequested && attempt < _maxRetry)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Dropbox API のタイムアウトのため再試行します: {Operation} attempt={Attempt}",
+                    operation,
+                    attempt + 1);
+            }
+
+            await Task.Delay(ComputeRetryDelay(attempt), ct).ConfigureAwait(false);
+        }
+    }
+
+    private static bool ShouldRetry(HttpStatusCode statusCode)
+        => statusCode == HttpStatusCode.RequestTimeout
+            || (int)statusCode == 429
+            || statusCode == HttpStatusCode.InternalServerError
+            || statusCode == HttpStatusCode.BadGateway
+            || statusCode == HttpStatusCode.ServiceUnavailable
+            || statusCode == HttpStatusCode.GatewayTimeout;
+
+    private static TimeSpan ComputeRetryDelay(int attempt)
+    {
+        var backoffMs = Math.Min(5000, 200 * (1 << Math.Min(attempt, 5)));
+        var jitterMs = Random.Shared.Next(0, 250);
+        return TimeSpan.FromMilliseconds(backoffMs + jitterMs);
     }
 
     private void AddFileEntries(IEnumerable<DropboxEntry>? entries, List<StorageItem> result)

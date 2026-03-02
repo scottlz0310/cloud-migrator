@@ -292,7 +292,10 @@ internal static class FileCrawlerCommand
             .Where(IsInvalidSkipKey)
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var missingAll = skipSet.Except(sourceSet, StringComparer.OrdinalIgnoreCase)
+        var validSkipSet = skipSet
+            .Where(x => !IsInvalidSkipKey(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missingAll = validSkipSet.Except(sourceSet, StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var invalidSamples = invalidAll

@@ -22,12 +22,13 @@ public static class ConfigHashChecker
         sb.Append(options.Graph.OneDriveUserId).Append('|');
         sb.Append(options.Graph.SharePointSiteId).Append('|');
         sb.Append(options.Graph.SharePointDriveId).Append('|');
+        // Dropbox.RootPath / DestinationRoot は Trim + バックスラッシュ→スラッシュ変換 +
+        // 末尾スラッシュ除去で正規化し、表記揺れによるハッシュ差異を防ぐ
         sb.Append(
             (options.Dropbox.RootPath ?? string.Empty)
                 .Trim()
                 .Replace('\\', '/')
                 .Trim('/')).Append('|');
-        // Trim, バックスラッシュ正規化, 末尾スラッシュ除去して表記揺れによるハッシュ差異を防ぐ
         sb.Append(
             (options.DestinationRoot ?? string.Empty)
                 .Trim()

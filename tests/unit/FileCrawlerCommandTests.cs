@@ -38,7 +38,7 @@ public class FileCrawlerCommandTests
         result.SkipListCount.Should().Be(3);
         result.SourceCount.Should().Be(1);
         result.InvalidCount.Should().Be(1);
-        result.MissingCount.Should().Be(2);
+        result.MissingCount.Should().Be(1);
         result.InvalidSamples.Should().ContainSingle().Which.Should().Be("/invalid-leading");
         result.MissingSamples.Should().Contain("legacy/missing.txt");
     }

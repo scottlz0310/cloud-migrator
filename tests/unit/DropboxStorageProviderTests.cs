@@ -127,6 +127,29 @@ public class DropboxStorageProviderTests
             .Should().BeTrue();
     }
 
+    [Fact]
+    public async Task EnsureFolderAsync_ShouldThrow_WhenConflictIsNotFolder()
+    {
+        // 検証対象: EnsureFolderAsync  目的: フォルダ以外の conflict は例外として扱うこと
+        var handler = new StubHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Conflict)
+        {
+            Content = new StringContent("""{ "error_summary": "path/conflict/file/..." }""")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            "token",
+            new DropboxStorageOptions(),
+            httpClient);
+
+        var act = async () => await provider.EnsureFolderAsync("/dest");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*files/create_folder_v2*");
+    }
+
     private static HttpResponseMessage JsonResponse(string json)
     {
         return new HttpResponseMessage(HttpStatusCode.OK)

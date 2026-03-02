@@ -83,10 +83,17 @@ internal sealed class CliServices : IDisposable
             SimpleUploadLimitMb = options.Dropbox.SimpleUploadLimitMb,
             UploadChunkSizeMb = options.Dropbox.UploadChunkSizeMb,
         };
+        var dropboxHttpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(Math.Max(1, options.TimeoutSec)),
+        };
         var dropboxProvider = new DropboxStorageProvider(
             loggerFactory.CreateLogger<DropboxStorageProvider>(),
             AppConfiguration.GetDropboxAccessToken(),
-            dropboxOptions);
+            dropboxOptions,
+            dropboxHttpClient,
+            options.RetryCount,
+            disposeHttpClient: true);
 
         var crawlCache = new CrawlCache(loggerFactory.CreateLogger<CrawlCache>());
         var skipListManager = new SkipListManager(
