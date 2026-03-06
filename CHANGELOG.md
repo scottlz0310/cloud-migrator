@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+### Added
+- `CloudMigrator.Setup.Cli` プロジェクトを追加（独立セットアップCLI）
+  - `doctor`: 必須設定（Graph系）と主要パスの診断
+  - `init`: `config.json` / `.env` テンプレートの冪等生成（`--force` 上書き）
+  - `verify`: Graph トークン取得と OneDrive / SharePoint 識別子の疎通確認
+- `SetupDoctorCommandTests` / `SetupInitCommandTests` / `SetupVerifyCommandTests` を追加
+
+### Changed
+- `CloudMigrator.slnx` に `CloudMigrator.Setup.Cli` を追加
+- `CloudMigrator.Tests.Unit.csproj` に `CloudMigrator.Setup.Cli` 参照を追加
+- `README.md` / `usage.md` に Setup Tool の実行手順を追記
+
 ---
 
 ## [0.8.0] - 2026-03-02

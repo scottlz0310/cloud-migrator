@@ -6,6 +6,7 @@
     <Project Path="src/CloudMigrator.Providers.Abstractions/CloudMigrator.Providers.Abstractions.csproj" />
     <Project Path="src/CloudMigrator.Providers.Dropbox/CloudMigrator.Providers.Dropbox.csproj" />
     <Project Path="src/CloudMigrator.Providers.Graph/CloudMigrator.Providers.Graph.csproj" />
+    <Project Path="src/CloudMigrator.Setup.Cli/CloudMigrator.Setup.Cli.csproj" />
     <Project Path="src/CloudMigrator.Testing/CloudMigrator.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/" />

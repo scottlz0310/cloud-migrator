@@ -73,7 +73,7 @@
 | OPS-02 | 現行 `.env` キー互換（Graph 資格情報、OneDrive/SharePoint ID 群） |
 | OPS-03 | `config/config.json` 相当（chunk_size_mb, large_file_threshold_mb, max_parallel_transfers, retry_count, timeout_sec, paths） |
 | OPS-04 | ログ/レポート/キャッシュ出力先の外部設定可能化 |
-| OPS-05 | CLI サブコマンド互換（transfer/rebuild-skiplist/watchdog/quality-metrics/security-scan/file-crawler） |
+| OPS-05 | CLI サブコマンド互換（transfer/rebuild-skiplist/watchdog/quality-metrics/security-scan/file-crawler）+ Setup CLI（doctor/init/verify） |
 | OPS-06 | CI 品質ゲート互換（lint/format/type/test+coverage/security） |
 | OPS-07 | Renovate/依存更新運用の維持 |
 
@@ -85,6 +85,7 @@
 cloud-migrator/
 ├─ src/
 │  ├─ CloudMigrator.Cli/                    # System.CommandLine によるエントリーポイント
+│  ├─ CloudMigrator.Setup.Cli/              # 初期設定支援 CLI（doctor/init/verify）
 │  ├─ CloudMigrator.Core/                   # ドメイン・ユースケース
 │  ├─ CloudMigrator.Providers.Abstractions/ # IStorageProvider 等の契約
 │  ├─ CloudMigrator.Providers.Graph/        # Graph 認証・転送実装

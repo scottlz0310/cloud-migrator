@@ -64,3 +64,10 @@
 - [ ] 並列数・チャンクサイズ最適化
 - [ ] 本番切替計画・段階カットオーバー
 - [ ] 運用手順書（セットアップ/日次/障害対応/ロールバック）
+
+## Issue 16: Setup Tool（MVP）
+
+- [x] `CloudMigrator.Setup.Cli` プロジェクト追加（独立CLI）
+- [x] `doctor` / `init` / `verify` コマンド実装
+- [x] ユニットテスト追加（doctor/init/verify）
+- [x] `README.md` / `usage.md` への利用手順追記
