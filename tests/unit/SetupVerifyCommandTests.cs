@@ -30,6 +30,37 @@ public class SetupVerifyCommandTests
     }
 
     [Fact]
+    public void BuildPreflightErrors_ShouldNotReportOnedriveUserId_WhenSkipOnedriveIsTrue()
+    {
+        // 検証対象: BuildPreflightErrors  目的: skipOnedrive=true の場合は OneDrive 識別子不足を報告しないこと
+        var options = new MigratorOptions();
+
+        var errors = VerifyCommand.BuildPreflightErrors(
+            options,
+            clientSecret: string.Empty,
+            skipOnedrive: true,
+            skipSharepoint: false);
+
+        errors.Should().NotContain(x => x.Contains("MIGRATOR__GRAPH__ONEDRIVEUSERID"));
+    }
+
+    [Fact]
+    public void BuildPreflightErrors_ShouldNotReportSharepointIds_WhenSkipSharepointIsTrue()
+    {
+        // 検証対象: BuildPreflightErrors  目的: skipSharepoint=true の場合は SharePoint 識別子不足を報告しないこと
+        var options = new MigratorOptions();
+
+        var errors = VerifyCommand.BuildPreflightErrors(
+            options,
+            clientSecret: string.Empty,
+            skipOnedrive: false,
+            skipSharepoint: true);
+
+        errors.Should().NotContain(x => x.Contains("MIGRATOR__GRAPH__SHAREPOINTSITEID"));
+        errors.Should().NotContain(x => x.Contains("MIGRATOR__GRAPH__SHAREPOINTDRIVEID"));
+    }
+
+    [Fact]
     public void TryReadId_ShouldReturnId_WhenTopLevelIdExists()
     {
         // 検証対象: TryReadId  目的: Graphレスポンスのidを抽出できること
