@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\CloudMigrator.Testing\CloudMigrator.Testing.csproj" />
     <ProjectReference Include="..\..\src\CloudMigrator.Cli\CloudMigrator.Cli.csproj" />
     <ProjectReference Include="..\..\src\CloudMigrator.Core\CloudMigrator.Core.csproj" />
+    <ProjectReference Include="..\..\src\CloudMigrator.Setup.Cli\CloudMigrator.Setup.Cli.csproj" />
     <ProjectReference Include="..\..\src\CloudMigrator.Observability\CloudMigrator.Observability.csproj" />
     <ProjectReference Include="..\..\src\CloudMigrator.Providers.Dropbox\CloudMigrator.Providers.Dropbox.csproj" />
     <ProjectReference Include="..\..\src\CloudMigrator.Providers.Graph\CloudMigrator.Providers.Graph.csproj" />
