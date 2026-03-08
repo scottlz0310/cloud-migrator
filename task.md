@@ -75,12 +75,12 @@
 
 ## Issue 17: Setup Tool UX再設計（Interactive）
 
-- [ ] `bootstrap`（仮称）コマンド追加（対話型セットアップ入口）
-- [ ] 対話入力: 必須 Graph 情報（ClientId / TenantId / ClientSecret）ガイド
-- [ ] 対話入力: OneDrive UPN + SharePoint サイトURLから SiteId / DriveId 自動解決
-- [ ] Drive 名候補提示（既定: `Documents`）と選択導線
-- [ ] 対話完了後に `.env` / `configs/config.json` へ反映（既存ファイル保護あり）
-- [ ] `doctor` / `verify` への接続（自動実行オプション含む）を整備
-- [ ] 既存 `init` の非対話オプション互換を維持（自動化/CI用途）
-- [ ] ユニットテスト追加（対話フロー、異常系、Graph解決失敗系）
-- [ ] `README.md` / `usage.md` / `CHANGELOG.md` へ新フローを反映
+- [x] `bootstrap` コマンド追加（対話型セットアップ入口）
+- [x] 対話入力: 必須 Graph 情報（ClientId / TenantId / ClientSecret）ガイド
+- [x] 対話入力: OneDrive UPN + SharePoint サイトURLから SiteId / DriveId 自動解決
+- [x] Drive 名候補提示（既定: `Documents`）と選択導線
+- [x] 対話完了後に `.env` / `configs/config.json` へ反映（既存ファイル保護あり）
+- [x] `doctor` / `verify` への接続（自動実行オプション含む）を整備
+- [x] 既存 `init` の非対話オプション互換を維持（自動化/CI用途）
+- [x] ユニットテスト追加（ParseDrives/SelectDriveのロジック、異常系）
+- [x] `usage.md` / `CHANGELOG.md` へ新フローを反映

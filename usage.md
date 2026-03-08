@@ -99,10 +99,33 @@ dotnet run --project src/CloudMigrator.Cli -- security-scan --project CloudMigra
 `CloudMigrator.Setup.Cli` は実行前セットアップの診断とテンプレート生成を行います。
 
 ```bash
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap   # 初回利用者向け対話型セットアップ
 dotnet run --project src/CloudMigrator.Setup.Cli -- doctor
 dotnet run --project src/CloudMigrator.Setup.Cli -- init
 dotnet run --project src/CloudMigrator.Setup.Cli -- verify
 ```
+
+### bootstrap（対話型セットアップウィザード）
+
+**初回利用者向け**の対話型ウィザードです。  
+ClientId / TenantId / ClientSecret / UPN / サイトURL を順に入力するだけで、Graph API から識別子を自動解決し、`config.json` と `.env` を生成します。  
+既存ファイルがある場合は対話的に上書き確認を行います（`--force` を指定した場合は確認なしで上書きします）。
+
+```bash
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --config-path configs/config.json --env-path .env
+```
+
+ウィザードの流れ：
+1. **Azure AD 認証情報** — Client ID / Tenant ID / Client Secret を入力
+2. **OneDrive ユーザー** — ユーザーのUPN（例: `user@contoso.com`）を入力
+3. **SharePoint サイトURL** — 移行先サイトのURLを入力
+4. **ドキュメントライブラリ選択** — Graph から候補を取得し、番号で選択
+5. **設定ファイル生成** — `config.json` と `.env` を生成
+6. **完了後の案内** — `verify` コマンドの実行を促す
+
+> **注意**: Client Secret はセキュリティ上の理由から `.env` / `config.json` には保存されません。  
+> ウィザード終了後、表示される環境変数設定コマンドでシェルに手動設定してください。
 
 ### doctor
 
