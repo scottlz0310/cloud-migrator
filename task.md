@@ -65,8 +65,8 @@
 - [x] `CliServices.cs` での `storageOptions` マッピング追加
 - [x] `sample.env` / `DefaultEnvTemplate` に `MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER` キー追加
 - [x] `bootstrap` ウィザードにフォルダ入力ステップ追加（省略可・env変数プリフィル対応）
-- [ ] ユニットテスト追加（フォルダ解決ロジック）
-- [ ] ビルド・テスト確認、コミット、PR 作成
+- [x] ユニットテスト追加（3件: フォルダ反映・コメントアウト・空維持）
+- [ ] ビルド・テスト確認、コミット、PR作成 → PR #23
 
 
 - [ ] E2E テスト（実 Graph API or ステージング）

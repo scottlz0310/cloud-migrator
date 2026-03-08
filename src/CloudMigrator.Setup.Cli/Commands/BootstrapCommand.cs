@@ -156,8 +156,9 @@ internal static class BootstrapCommand
         // ステップ 2: OneDrive / SharePoint 情報
         console.WriteLine("--- ステップ 2/3: OneDrive / SharePoint 設定 ---");
         var oneDriveUserUpn = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）", defaultOneDriveUpn);
-        console.WriteLine("  ヒント: フォルダパスを指定しない場合は Enter でドライブ全体を転送対象とします。");
-        var oneDriveSourceFolder = console.Prompt("転送元フォルダパス（省略可。例: Documents/Projects）", defaultSourceFolder);
+        console.WriteLine("  ヒント: フォルダパスを指定しない場合は Enter でドライブ全体を転送対象とします。前回値が表示されている場合でも \"-\" を入力するとクリアしてドライブ全体を指定できます。");
+        var oneDriveSourceFolderInput = console.Prompt("転送元フォルダパス（省略可。例: Documents/Projects）", defaultSourceFolder);
+        var oneDriveSourceFolder = oneDriveSourceFolderInput == "-" ? string.Empty : oneDriveSourceFolderInput;
 
         // SharePoint 再利用チェック: SiteId + DriveId が既存の場合は URL 入力を省略できる
         var reuseSharePoint = false;
@@ -522,8 +523,10 @@ internal static class BootstrapCommand
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID", oneDriveUserId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTSITEID", siteId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTDRIVEID", driveId);
-        if (!string.IsNullOrWhiteSpace(sourceFolder))
-            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", sourceFolder);
+        // 空/未指定の場合は既存の環境変数を明示的にクリアする（古い値が残って誤動作するのを防ぐ）
+        Environment.SetEnvironmentVariable(
+            "MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER",
+            string.IsNullOrWhiteSpace(sourceFolder) ? null : sourceFolder);
     }
 
     internal static string ApplyBootstrapEnvTemplate(
@@ -642,18 +645,28 @@ internal static class BootstrapCommand
 
     /// <summary>
     /// config.json のみ（env変数を含まない）から設定を読み込む。
-    /// ファイルが存在しない場合はデフォルト値を返す。
+    /// ファイルが存在しない場合やJSONが壊れている場合はデフォルト値を返す。
     /// </summary>
     internal static MigratorOptions LoadConfigJsonOptions(string configPath)
     {
         if (!File.Exists(configPath))
             return new MigratorOptions();
 
-        var cfg = new ConfigurationBuilder()
-            .AddJsonFile(configPath, optional: true, reloadOnChange: false)
-            .Build();
+        try
+        {
+            var cfg = new ConfigurationBuilder()
+                .AddJsonFile(configPath, optional: true, reloadOnChange: false)
+                .Build();
 
-        return cfg.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>() ?? new MigratorOptions();
+            return cfg.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>() ?? new MigratorOptions();
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidDataException or System.IO.IOException)
+        {
+            // 壊れた config.json はウィザードを止めず、前回値なしとして続行する
+            Console.Error.WriteLine(
+                $"[WARN] configs/config.json の解析に失敗しました（前回値は使用しません）: {ex.Message}");
+            return new MigratorOptions();
+        }
     }
 
     /// <summary>

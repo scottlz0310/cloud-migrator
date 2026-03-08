@@ -89,15 +89,38 @@ public sealed class GraphStorageProvider : IStorageProvider
         if (!string.IsNullOrWhiteSpace(_options.OneDriveSourceFolder))
         {
             var folderPath = _options.OneDriveSourceFolder.Trim('/');
-            // Graph API のパス指定表記: /drives/{driveId}/items/root:/{path}:
-            var folderItem = await _client.Drives[driveId].Items[$"root:/{folderPath}:"]
-                .GetAsync(cancellationToken: ct).ConfigureAwait(false);
-            startItemId = folderItem?.Id
-                ?? throw new InvalidOperationException(
-                    $"OneDrive の指定フォルダが見つかりません: '{folderPath}' (UserId={_options.OneDriveUserId})");
-            startLabel = folderPath;
-            _logger.LogInformation(
-                "OneDrive クロール開始フォルダ: {Folder} (ItemId={ItemId})", folderPath, startItemId);
+
+            if (string.IsNullOrEmpty(folderPath))
+            {
+                // "/" や "///" のようにスラッシュのみ指定された場合はドライブ全体（root）扱い
+                _logger.LogInformation(
+                    "OneDriveSourceFolder がスラッシュのみのためドライブルートからクロールします (UserId={UserId})",
+                    _options.OneDriveUserId);
+            }
+            else
+            {
+                // Graph SDK の Root.ItemWithPath() を使用してパス正規化をSDKに委任する
+                Microsoft.Graph.Models.DriveItem? folderItem;
+                try
+                {
+                    folderItem = await _client.Drives[driveId].Root
+                        .ItemWithPath(folderPath)
+                        .GetAsync(cancellationToken: ct).ConfigureAwait(false);
+                }
+                catch (ApiException ex) when (ex.ResponseStatusCode == 404 || ex.ResponseStatusCode == 400)
+                {
+                    throw new InvalidOperationException(
+                        $"OneDrive の指定フォルダが見つかりません: '{folderPath}' (UserId={_options.OneDriveUserId})",
+                        ex);
+                }
+
+                startItemId = folderItem?.Id
+                    ?? throw new InvalidOperationException(
+                        $"OneDrive の指定フォルダが見つかりません: '{folderPath}' (UserId={_options.OneDriveUserId})");
+                startLabel = folderPath;
+                _logger.LogInformation(
+                    "OneDrive クロール開始フォルダ: {Folder} (ItemId={ItemId})", folderPath, startItemId);
+            }
         }
 
         var result = new List<StorageItem>();
