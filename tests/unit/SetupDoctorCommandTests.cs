@@ -30,7 +30,7 @@ public class SetupDoctorCommandTests
             options,
             graphClientSecret: string.Empty,
             dropboxAccessToken: string.Empty,
-            configPath: null,
+            resolvedConfigPath: null,
             strictDropbox: false);
 
         var errorNames = results
@@ -68,7 +68,7 @@ public class SetupDoctorCommandTests
             options,
             graphClientSecret: "secret",
             dropboxAccessToken: string.Empty,
-            configPath: null,
+            resolvedConfigPath: null,
             strictDropbox: true);
 
         results.Should().ContainSingle(x =>
