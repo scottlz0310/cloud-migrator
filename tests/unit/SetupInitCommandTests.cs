@@ -117,6 +117,30 @@ public sealed class SetupInitCommandTests : IDisposable
     }
 
     [Fact]
+    public void ApplyGraphValuesToEnvTemplate_ShouldAppendNewKeys_WhenKeysNotPresent()
+    {
+        // 検証対象: ApplyGraphValuesToEnvTemplate (UpsertEnvVariable 末尾追記分岐)  目的: .envにGraph関連キーが存在しない場合に末尾へ追記できること
+        var envTemplate = "SOME_OTHER_KEY=existing-value\n";
+
+        var updated = InitCommand.ApplyGraphValuesToEnvTemplate(
+            envTemplate,
+            oneDriveUserId: "user@contoso.com",
+            sharePointSiteId: "new-site-id",
+            sharePointDriveId: "new-drive-id",
+            graphClientId: "new-client-id",
+            graphTenantId: "new-tenant-id");
+
+        // 元のキーが保持されること
+        updated.Should().Contain("SOME_OTHER_KEY=existing-value");
+        // 新規キーが末尾に追記されること
+        updated.Should().Contain("MIGRATOR__GRAPH__CLIENTID=new-client-id");
+        updated.Should().Contain("MIGRATOR__GRAPH__TENANTID=new-tenant-id");
+        updated.Should().Contain("MIGRATOR__GRAPH__ONEDRIVEUSERID=user@contoso.com");
+        updated.Should().Contain("MIGRATOR__GRAPH__SHAREPOINTSITEID=new-site-id");
+        updated.Should().Contain("MIGRATOR__GRAPH__SHAREPOINTDRIVEID=new-drive-id");
+    }
+
+    [Fact]
     public void ParseSharePointSiteUrl_ShouldExtractHostAndPath()
     {
         // 検証対象: ParseSharePointSiteUrl  目的: SharePoint URLからホスト名とサイトパスを抽出できること

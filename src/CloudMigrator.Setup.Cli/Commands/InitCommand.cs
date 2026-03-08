@@ -395,39 +395,51 @@ internal static class InitCommand
             .GetAuthorizationTokenAsync(new Uri("https://graph.microsoft.com/v1.0/"), cancellationToken: ct)
             .ConfigureAwait(false);
 
-        using var httpClient = new HttpClient();
+        using var httpClient = new HttpClient
+        {
+            // VerifyCommand と同様に、Graph 呼び出しに対する明示的なタイムアウトを設定する。
+            Timeout = TimeSpan.FromSeconds(30),
+        };
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var oneDriveUserBody = await GetGraphJsonAsync(
-            httpClient,
-            $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(oneDriveUserId)}?$select=id,userPrincipalName",
-            "onedrive.user",
-            ct).ConfigureAwait(false);
-        var effectiveOneDriveUser = TryReadProperty(oneDriveUserBody, "userPrincipalName") ?? oneDriveUserId;
+        try
+        {
+            var oneDriveUserBody = await GetGraphJsonAsync(
+                httpClient,
+                $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(oneDriveUserId)}?$select=id,userPrincipalName",
+                "onedrive.user",
+                ct).ConfigureAwait(false);
+            var effectiveOneDriveUser = TryReadProperty(oneDriveUserBody, "userPrincipalName") ?? oneDriveUserId;
 
-        var address = ParseSharePointSiteUrl(sharePointSiteUrl);
-        var siteBody = await GetGraphJsonAsync(
-            httpClient,
-            BuildSiteLookupUrl(address.HostName, address.SitePath),
-            "sharepoint.site",
-            ct).ConfigureAwait(false);
-        var siteId = VerifyCommand.TryReadId(siteBody)
-            ?? throw new InvalidOperationException("SharePoint サイトIDの抽出に失敗しました。");
+            var address = ParseSharePointSiteUrl(sharePointSiteUrl);
+            var siteBody = await GetGraphJsonAsync(
+                httpClient,
+                BuildSiteLookupUrl(address.HostName, address.SitePath),
+                "sharepoint.site",
+                ct).ConfigureAwait(false);
+            var siteId = TryReadProperty(siteBody, "id")
+                ?? throw new InvalidOperationException("SharePoint サイトIDの抽出に失敗しました。");
 
-        var drivesBody = await GetGraphJsonAsync(
-            httpClient,
-            $"https://graph.microsoft.com/v1.0/sites/{Uri.EscapeDataString(siteId)}/drives?$select=id,name,webUrl",
-            "sharepoint.drives",
-            ct).ConfigureAwait(false);
-        var driveId = FindDriveIdByName(drivesBody, sharePointDriveName);
+            var drivesBody = await GetGraphJsonAsync(
+                httpClient,
+                $"https://graph.microsoft.com/v1.0/sites/{Uri.EscapeDataString(siteId)}/drives?$select=id,name,webUrl",
+                "sharepoint.drives",
+                ct).ConfigureAwait(false);
+            var driveId = FindDriveIdByName(drivesBody, sharePointDriveName);
 
-        return new ResolvedGraphIdentifiers(
-            effectiveOneDriveUser,
-            siteId,
-            driveId,
-            sharePointDriveName,
-            options.Graph.ClientId,
-            options.Graph.TenantId);
+            return new ResolvedGraphIdentifiers(
+                effectiveOneDriveUser,
+                siteId,
+                driveId,
+                sharePointDriveName,
+                options.Graph.ClientId,
+                options.Graph.TenantId);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // HttpClient.Timeout によるタイムアウトなど、ユーザー起因ではないキャンセルを分かりやすいエラーに変換する。
+            throw new InvalidOperationException("Microsoft Graph への接続がタイムアウトしました。ネットワーク状態や Graph の応答状況を確認してください。");
+        }
     }
 
     private static async Task<string> GetGraphJsonAsync(

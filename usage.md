@@ -130,7 +130,7 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- init --resolve-graph-ids --o
 - `--onedrive-user-id`: 生成する `config.json` / `.env` に OneDrive ユーザーIDまたはUPNを反映
 - `--sharepoint-site-id`: 生成する設定に SharePoint サイトIDを反映
 - `--sharepoint-drive-id`: 生成する設定に SharePoint ドライブIDを反映
-- `--resolve-graph-ids`: Graph API から SharePoint サイト/ドライブIDを自動解決（`--sharepoint-site-url` 必須）
+- `--resolve-graph-ids`: Graph API から SharePoint サイト/ドライブIDを自動解決（`--sharepoint-site-url` と `--onedrive-user-id` 必須）
 - `--sharepoint-site-url`: 自動解決に使う SharePoint サイトURL
 - `--sharepoint-drive-name`: 自動解決時に選択するドキュメントライブラリ名（既定: `Documents`）
 
@@ -156,6 +156,12 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- verify --skip-sharepoint
 > VS Code と Copilot CLI は設定先が別のため、利用するクライアントごとに設定します。
 
 ### 6.1 テナント側の事前準備（管理者、1回のみ）
+
+> **⚠️ 注意（テナント管理者専用・最小権限原則）**  
+> 以下のコマンドには `Application.ReadWrite.All`（アプリ登録の読み書き）、`DelegatedPermissionGrant.ReadWrite.All`（委任アクセス許可の付与）など、**テナント全体に影響する強力な権限スコープ**が含まれます。  
+> これらは MCP Server 向けサービスプリンシパルのプロビジョニングに必要なため要求されますが、誤用すると意図しないアプリへの権限昇格やアクセス許可の過剰付与につながります。  
+> **必ず Entra テナント管理者が自己の業務端末で実行し**、不要になったら権限を見直してください。  
+> 参考: [Microsoft Entra のアプリ登録セキュリティベストプラクティス](https://learn.microsoft.com/en-us/entra/identity-platform/security-best-practices-for-app-registration)
 
 管理者権限の PowerShell で以下を実行します。
 
