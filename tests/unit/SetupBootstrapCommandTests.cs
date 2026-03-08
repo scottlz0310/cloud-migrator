@@ -133,7 +133,7 @@ internal sealed class TestBootstrapConsole : IBootstrapConsole
 
     public void WriteLine(string message = "") => Output.Add(message);
     public string Prompt(string label, string? defaultValue = null) => defaultValue ?? "";
-    public string PromptMasked(string label) => "test-secret";
+    public string PromptMasked(string label, bool hasExistingValue = false) => "test-secret";
     public bool PromptBool(string label, bool defaultValue = false) => defaultValue;
 
     public int PromptInt(string label, int min, int max, int? defaultValue = null)

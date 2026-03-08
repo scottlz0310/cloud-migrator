@@ -111,6 +111,9 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- verify
 ClientId / TenantId / ClientSecret / UPN / サイトURL を順に入力するだけで、Graph API から識別子を自動解決し、`config.json` と `.env` を生成します。  
 既存ファイルがある場合は対話的に上書き確認を行います（`--force` を指定した場合は確認なしで上書きします）。
 
+**環境変数プリフィル**: 起動時に以下の環境変数が設定済みであれば自動検出し、Enter キーで現在値をそのまま使用できます（Bitwarden+dsx 等で環境変数管理している場合に便利）。
+- `MIGRATOR__GRAPH__CLIENTID` / `MIGRATOR__GRAPH__TENANTID` / `MIGRATOR__GRAPH__CLIENTSECRET` / `MIGRATOR__GRAPH__ONEDRIVEUSERID`
+
 ```bash
 dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap
 dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --config-path configs/config.json --env-path .env

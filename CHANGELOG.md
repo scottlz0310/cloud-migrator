@@ -8,6 +8,11 @@
 ## [Unreleased]
 
 ### Added
+- `bootstrap` 環境変数プリフィル機能を追加
+  - 起動時に `MIGRATOR__GRAPH__CLIENTID` / `MIGRATOR__GRAPH__TENANTID` / `MIGRATOR__GRAPH__CLIENTSECRET` / `MIGRATOR__GRAPH__ONEDRIVEUSERID` を自動検出
+  - 設定済みの場合は Enter で現在値をそのまま使用可能（Bitwarden+dsx 等での環境変数管理をサポート）
+- `bootstrap` OneDriveユーザー情報取得の403エラーを graceful fallback に変更
+  - `User.Read.All` が未付与の環境でも入力UPNをそのまま使用してセットアップを継続
 - `bootstrap` 対話型セットアップウィザードを `CloudMigrator.Setup.Cli` に追加
   - 認証情報・OneDriveユーザー・SharePointサイトURLを対話入力するだけでセットアップ完了
   - Graph API から候補ドライブを自動取得してインタラクティブ選択

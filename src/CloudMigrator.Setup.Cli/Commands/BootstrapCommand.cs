@@ -76,16 +76,41 @@ internal static class BootstrapCommand
         console.WriteLine("各項目を入力してください。Ctrl+C で中断できます。");
         console.WriteLine();
 
+        // 環境変数から設定を事前読み込み（Bitwarden+dsx 等で管理している場合に活用）
+        var envClientId = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID");
+        var envTenantId = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID");
+        var envClientSecret = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET");
+        var envOneDriveUpn = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID");
+
+        var presetItems = new (string Name, bool HasValue)[]
+        {
+            ("MIGRATOR__GRAPH__CLIENTID", !string.IsNullOrEmpty(envClientId)),
+            ("MIGRATOR__GRAPH__TENANTID", !string.IsNullOrEmpty(envTenantId)),
+            ("MIGRATOR__GRAPH__CLIENTSECRET（シークレット）", !string.IsNullOrEmpty(envClientSecret)),
+            ("MIGRATOR__GRAPH__ONEDRIVEUSERID", !string.IsNullOrEmpty(envOneDriveUpn)),
+        };
+        var presetCount = presetItems.Count(x => x.HasValue);
+
+        if (presetCount > 0)
+        {
+            console.WriteLine($"ℹ️  環境変数から {presetCount} 件の設定を検出しました。設定済みの項目は Enter で現在値を使用できます。");
+            foreach (var (name, hasValue) in presetItems.Where(x => x.HasValue))
+                console.WriteLine($"     ✓ {name}");
+            console.WriteLine();
+        }
+
         // ステップ 1: Azure AD アプリ登録情報
         console.WriteLine("--- ステップ 1/3: Azure AD アプリ登録情報 ---");
-        var clientId = console.Prompt("ClientId（アプリケーション ID）");
-        var tenantId = console.Prompt("TenantId（ディレクトリ ID）");
-        var clientSecret = console.PromptMasked("ClientSecret（入力は画面に表示されません）");
+        var clientId = console.Prompt("ClientId（アプリケーション ID）", envClientId);
+        var tenantId = console.Prompt("TenantId（ディレクトリ ID）", envTenantId);
+        var hasEnvSecret = !string.IsNullOrEmpty(envClientSecret);
+        var inputSecret = console.PromptMasked("ClientSecret（入力は画面に表示されません）", hasExistingValue: hasEnvSecret);
+        var clientSecret = string.IsNullOrEmpty(inputSecret) && hasEnvSecret ? envClientSecret! : inputSecret;
         console.WriteLine();
 
         // ステップ 2: OneDrive / SharePoint 情報
         console.WriteLine("--- ステップ 2/3: OneDrive / SharePoint 設定 ---");
-        var oneDriveUserUpn = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）");
+        var oneDriveUserUpn = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）", envOneDriveUpn);
         var sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
         console.WriteLine();
 
@@ -316,12 +341,14 @@ internal static class BootstrapCommand
 
         try
         {
-            var userBody = await GetGraphJsonAsync(
+            // ユーザー情報取得（User.Read.All が付与されていない場合は入力UPNをそのまま使用）
+            var userBody = await TryGetGraphJsonAsync(
                 httpClient,
                 $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(oneDriveUserUpn)}?$select=id,userPrincipalName",
-                "onedrive.user",
                 ct).ConfigureAwait(false);
-            var effectiveUser = TryReadProperty(userBody, "userPrincipalName") ?? oneDriveUserUpn;
+            var effectiveUser = userBody is not null
+                ? (TryReadProperty(userBody, "userPrincipalName") ?? oneDriveUserUpn)
+                : oneDriveUserUpn;
 
             var address = InitCommand.ParseSharePointSiteUrl(sharePointSiteUrl);
             var siteBody = await GetGraphJsonAsync(
@@ -361,6 +388,16 @@ internal static class BootstrapCommand
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID", oneDriveUserId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTSITEID", siteId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTDRIVEID", driveId);
+    }
+
+    private static async Task<string?> TryGetGraphJsonAsync(
+        HttpClient httpClient,
+        string url,
+        CancellationToken ct)
+    {
+        using var response = await httpClient.GetAsync(url, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return null;
+        return await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task<string> GetGraphJsonAsync(
@@ -404,7 +441,7 @@ internal interface IBootstrapConsole
 {
     void WriteLine(string message = "");
     string Prompt(string label, string? defaultValue = null);
-    string PromptMasked(string label);
+    string PromptMasked(string label, bool hasExistingValue = false);
     bool PromptBool(string label, bool defaultValue = false);
     int PromptInt(string label, int min, int max, int? defaultValue = null);
 }
@@ -421,9 +458,9 @@ internal sealed class DefaultBootstrapConsole : IBootstrapConsole
         return string.IsNullOrWhiteSpace(input) && defaultValue is not null ? defaultValue : input ?? "";
     }
 
-    public string PromptMasked(string label)
+    public string PromptMasked(string label, bool hasExistingValue = false)
     {
-        Console.Write($"{label}: ");
+        Console.Write(hasExistingValue ? $"{label}（設定済み — Enter でスキップ）: " : $"{label}: ");
         var builder = new StringBuilder();
         ConsoleKeyInfo key;
         while ((key = Console.ReadKey(intercept: true)).Key != ConsoleKey.Enter)
