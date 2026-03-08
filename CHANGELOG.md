@@ -43,6 +43,15 @@
   - 自動解決: `--resolve-graph-ids` + `--sharepoint-site-url` + `--sharepoint-drive-name`
   - 生成時に `config.json` と `.env` へ解決済み識別子を反映可能
 
+### Fixed
+- `doctor` コマンド単独実行時に `configs/config.json` が読み込めない問題を修正（PR #25）
+  - `AppConfiguration.ResolveConfigPath()` をワーキングディレクトリ優先に変更
+  - `AppContext.BaseDirectory` 遡り上限を4→6段に拡張
+  - `Directory.GetParent` パターン採用で末尾セパレータ問題を解消
+  - `DoctorCommand.Run()` で `resolvedConfigPath` を先に決定し `Build` と `BuildChecks` で共有
+  - `BuildChecks` の `config.path` チェックを `--config-path` なし自動検出でも表示
+  - `SetupDoctorCommandTests` に `resolvedConfigPath` 存在チェックのテスト3件追加
+
 ### Changed
 - `CloudMigrator.slnx` に `CloudMigrator.Setup.Cli` を追加
 - `CloudMigrator.Tests.Unit.csproj` に `CloudMigrator.Setup.Cli` 参照を追加
