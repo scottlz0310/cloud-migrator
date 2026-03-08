@@ -459,7 +459,7 @@ internal static class BootstrapCommand
         return updated;
     }
 
-    private static string CommentOutEnvKey(string template, string key)
+    internal static string CommentOutEnvKey(string template, string key)
     {
         var normalized = template.ReplaceLineEndings("\n");
         var pattern = $@"^{Regex.Escape(key)}=.*$";
@@ -474,7 +474,7 @@ internal static class BootstrapCommand
         return replaced.Replace("\n", Environment.NewLine);
     }
 
-    private static async Task<string?> TryGetGraphJsonAsync(
+    internal static async Task<string?> TryGetGraphJsonAsync(
         HttpClient httpClient,
         string url,
         string probeName,

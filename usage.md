@@ -108,11 +108,14 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- verify
 ### bootstrap（対話型セットアップウィザード）
 
 **初回利用者向け**の対話型ウィザードです。  
-ClientId / TenantId / ClientSecret / UPN / サイトURL を順に入力するだけで、Graph API から識別子を自動解決し、`config.json` と `.env` を生成します。  
+ClientId / TenantId / ClientSecret / UPN / サイトURL を順に入力するだけで、Graph API から識別子を自動解決し、`config.json` を生成します。  
+認証情報の保存先（`.env`）は設定状況によって異なります（後述）。  
 既存ファイルがある場合は対話的に上書き確認を行います（`--force` を指定した場合は確認なしで上書きします）。
 
 **環境変数プリフィル**: 起動時に以下の環境変数が設定済みであれば自動検出し、Enter キーで現在値をそのまま使用できます（Bitwarden+dsx 等で環境変数管理している場合に便利）。
 - `MIGRATOR__GRAPH__CLIENTID` / `MIGRATOR__GRAPH__TENANTID` / `MIGRATOR__GRAPH__CLIENTSECRET` / `MIGRATOR__GRAPH__ONEDRIVEUSERID`
+
+**`.env` 生成の条件**: 認証情報（ClientId / TenantId / ClientSecret / UPN）がすべて環境変数から取得された場合、`.env` は生成されません。代わりに取得済みの SharePoint ID / Drive ID のみコンソールに表示されます。一部だけ環境変数から取得された場合は、該当行をコメントアウトした `.env` を生成します（`.env` ローダーによる空値上書きを防ぎます）。
 
 ```bash
 dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap
@@ -120,11 +123,12 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --config-path conf
 ```
 
 ウィザードの流れ：
-1. **Azure AD 認証情報** — Client ID / Tenant ID / Client Secret を入力
-2. **OneDrive ユーザー** — ユーザーのUPN（例: `user@contoso.com`）を入力
+1. **Azure AD 認証情報** — Client ID / Tenant ID / Client Secret を入力（環境変数設定済みなら Enter でスキップ）
+2. **OneDrive ユーザー** — ユーザーのUPN（例: `user@contoso.com`）を入力（環境変数設定済みなら Enter でスキップ）
 3. **SharePoint サイトURL** — 移行先サイトのURLを入力
 4. **ドキュメントライブラリ選択** — Graph から候補を取得し、番号で選択
-5. **設定ファイル生成** — `config.json` と `.env` を生成
+5. **設定ファイル生成** — `config.json` を生成し、`.env` は認証情報の取得元に応じて条件付きで生成  
+   （全認証情報が環境変数由来の場合は `.env` を生成せず、SharePoint ID / Drive ID をコンソールに表示）
 6. **完了後の案内** — `verify` コマンドの実行を促す
 
 > **注意**: Client Secret はセキュリティ上の理由から `.env` / `config.json` には保存されません。  
