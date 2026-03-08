@@ -59,4 +59,81 @@ public sealed class SetupInitCommandTests : IDisposable
         results.Should().ContainSingle(x => x.Status == InitFileStatus.Written);
         (await File.ReadAllTextAsync(filePath)).Should().Be("new-config");
     }
+
+    [Fact]
+    public void ApplyGraphValuesToConfigTemplate_ShouldSetGraphIdentifiers()
+    {
+        // 検証対象: ApplyGraphValuesToConfigTemplate  目的: 指定したGraph識別子をconfigテンプレートへ反映できること
+        var template =
+            """
+            {
+              "migrator": {
+                "graph": {
+                  "oneDriveUserId": "",
+                  "sharePointSiteId": "",
+                  "sharePointDriveId": ""
+                }
+              }
+            }
+            """;
+
+        var updated = InitCommand.ApplyGraphValuesToConfigTemplate(
+            template,
+            oneDriveUserId: "user@contoso.com",
+            sharePointSiteId: "site-id",
+            sharePointDriveId: "drive-id");
+
+        updated.Should().Contain("\"oneDriveUserId\": \"user@contoso.com\"");
+        updated.Should().Contain("\"sharePointSiteId\": \"site-id\"");
+        updated.Should().Contain("\"sharePointDriveId\": \"drive-id\"");
+    }
+
+    [Fact]
+    public void ApplyGraphValuesToEnvTemplate_ShouldUpsertVariables()
+    {
+        // 検証対象: ApplyGraphValuesToEnvTemplate  目的: Graph関連キーを.envテンプレートに上書き反映できること
+        var envTemplate =
+            """
+            MIGRATOR__GRAPH__CLIENTID=old-client
+            MIGRATOR__GRAPH__TENANTID=old-tenant
+            MIGRATOR__GRAPH__ONEDRIVEUSERID=old-user
+            MIGRATOR__GRAPH__SHAREPOINTSITEID=old-site
+            MIGRATOR__GRAPH__SHAREPOINTDRIVEID=old-drive
+            """;
+
+        var updated = InitCommand.ApplyGraphValuesToEnvTemplate(
+            envTemplate,
+            oneDriveUserId: "user@contoso.com",
+            sharePointSiteId: "site-id",
+            sharePointDriveId: "drive-id",
+            graphClientId: "client-id",
+            graphTenantId: "tenant-id");
+
+        updated.Should().Contain("MIGRATOR__GRAPH__CLIENTID=client-id");
+        updated.Should().Contain("MIGRATOR__GRAPH__TENANTID=tenant-id");
+        updated.Should().Contain("MIGRATOR__GRAPH__ONEDRIVEUSERID=user@contoso.com");
+        updated.Should().Contain("MIGRATOR__GRAPH__SHAREPOINTSITEID=site-id");
+        updated.Should().Contain("MIGRATOR__GRAPH__SHAREPOINTDRIVEID=drive-id");
+    }
+
+    [Fact]
+    public void ParseSharePointSiteUrl_ShouldExtractHostAndPath()
+    {
+        // 検証対象: ParseSharePointSiteUrl  目的: SharePoint URLからホスト名とサイトパスを抽出できること
+        var address = InitCommand.ParseSharePointSiteUrl("https://contoso.sharepoint.com/sites/migration/");
+
+        address.HostName.Should().Be("contoso.sharepoint.com");
+        address.SitePath.Should().Be("/sites/migration");
+    }
+
+    [Fact]
+    public void FindDriveIdByName_ShouldReturnDriveId_WhenDriveNameMatches()
+    {
+        // 検証対象: FindDriveIdByName  目的: Graph drives応答から指定ライブラリ名のidを取得できること
+        var json = """{"value":[{"id":"drive-1","name":"Documents"},{"id":"drive-2","name":"Archive"}]}""";
+
+        var driveId = InitCommand.FindDriveIdByName(json, "Documents");
+
+        driveId.Should().Be("drive-1");
+    }
 }

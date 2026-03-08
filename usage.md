@@ -117,12 +117,22 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- doctor --config-path configs
 ### init
 
 `config.json` / `.env` テンプレートを冪等に生成します。  
-既存ファイルは上書きせず、`--force` 指定時のみ上書きします。
+既存ファイルは上書きせず、`--force` 指定時のみ上書きします。  
+必要に応じて Graph 識別子の直接指定・自動解決も行えます。
 
 ```bash
 dotnet run --project src/CloudMigrator.Setup.Cli -- init
 dotnet run --project src/CloudMigrator.Setup.Cli -- init --config-path configs/config.json --env-path .env --force
+dotnet run --project src/CloudMigrator.Setup.Cli -- init --onedrive-user-id user@contoso.com --sharepoint-site-id <site-id> --sharepoint-drive-id <drive-id>
+dotnet run --project src/CloudMigrator.Setup.Cli -- init --resolve-graph-ids --onedrive-user-id user@contoso.com --sharepoint-site-url https://contoso.sharepoint.com/sites/migration --sharepoint-drive-name Documents
 ```
+
+- `--onedrive-user-id`: 生成する `config.json` / `.env` に OneDrive ユーザーIDまたはUPNを反映
+- `--sharepoint-site-id`: 生成する設定に SharePoint サイトIDを反映
+- `--sharepoint-drive-id`: 生成する設定に SharePoint ドライブIDを反映
+- `--resolve-graph-ids`: Graph API から SharePoint サイト/ドライブIDを自動解決（`--sharepoint-site-url` 必須）
+- `--sharepoint-site-url`: 自動解決に使う SharePoint サイトURL
+- `--sharepoint-drive-name`: 自動解決時に選択するドキュメントライブラリ名（既定: `Documents`）
 
 ### verify
 
@@ -139,3 +149,73 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- verify --skip-sharepoint
 2. `file-crawler compare` / `validate` で整合性確認
 3. `transfer` で本転送
 4. 長時間実行時は `watchdog` を使用
+
+## 6. Microsoft MCP Server for Enterprise の設定（任意）
+
+> ここは `dotnet run` による移行処理そのものとは独立した、運用補助手順です。  
+> VS Code と Copilot CLI は設定先が別のため、利用するクライアントごとに設定します。
+
+### 6.1 テナント側の事前準備（管理者、1回のみ）
+
+管理者権限の PowerShell で以下を実行します。
+
+```powershell
+Install-Module Microsoft.Entra.Beta -Force -AllowClobber
+Connect-Entra -Scopes 'Application.ReadWrite.All','Directory.Read.All','DelegatedPermissionGrant.ReadWrite.All'
+Grant-EntraBetaMCPServerPermission -ApplicationName VisualStudioCode
+```
+
+### 6.2 VS Code で使う場合
+
+1. MCP サーバーを追加します（拡張機能画面の `@mcp` から追加、または `mcp.json` を編集）。
+2. `mcp.json` に以下を設定します。
+
+```json
+{
+  "servers": {
+    "microsoft-enterprise": {
+      "type": "http",
+      "url": "https://mcp.svc.cloud.microsoft/enterprise"
+    }
+  }
+}
+```
+
+3. Copilot Chat のエージェントモードで自然言語クエリを実行して疎通確認します。
+
+### 6.3 Copilot CLI で使う場合
+
+1. Copilot CLI を起動します。
+
+```bash
+copilot
+```
+
+2. 対話画面で MCP サーバーを追加します。
+
+```text
+/mcp add
+```
+
+3. 入力項目を以下で設定し、`Ctrl+S` で保存します。
+   - Name: `microsoft-enterprise`
+   - Type: `http`
+   - URL: `https://mcp.svc.cloud.microsoft/enterprise`
+
+4. 登録を確認します。
+
+```text
+/mcp show
+/mcp show microsoft-enterprise
+```
+
+5. 動作確認として、Graph 問い合わせを自然言語で実行します。
+
+```text
+テナント内の有効ユーザー数を教えて
+```
+
+補足:
+- VS Code の設定は `.vscode/mcp.json`（または VS Code ユーザープロファイル）に保存されます。
+- Copilot CLI の設定は `~/.copilot/mcp-config.json`（Windows では `%USERPROFILE%\.copilot\mcp-config.json`）に保存されます。
+- VS Code 側の設定は Copilot CLI に自動反映されません（逆も同様）。

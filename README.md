@@ -58,6 +58,7 @@ dotnet run --project src/CloudMigrator.Cli -- file-crawler dropbox
 # セットアップ支援コマンド
 dotnet run --project src/CloudMigrator.Setup.Cli -- doctor
 dotnet run --project src/CloudMigrator.Setup.Cli -- init
+dotnet run --project src/CloudMigrator.Setup.Cli -- init --resolve-graph-ids --onedrive-user-id user@contoso.com --sharepoint-site-url https://contoso.sharepoint.com/sites/migration
 dotnet run --project src/CloudMigrator.Setup.Cli -- verify
 ```
 
