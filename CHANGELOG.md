@@ -8,6 +8,21 @@
 ## [Unreleased]
 
 ### Added
+- **Issue #18: OneDrive 転送元フォルダ指定（FR-02 完全実装）**
+  - `GraphStorageOptions` / `MigratorOptions.GraphProviderOptions` に `OneDriveSourceFolder` プロパティを追加
+  - `GraphStorageProvider` でフォルダパスを `Root.ItemWithPath()` で itemId に解決し、指定フォルダ配下のみクロール
+  - 指定フォルダが存在しない場合（404/400）は `InvalidOperationException` に変換
+  - スラッシュのみ（`/`、`///`）指定時はドライブルートにフォールバック
+  - `CliServices.cs` へ `OneDriveSourceFolder` マッピング追加
+  - `sample.env` / `DefaultEnvTemplate` に `MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER` キー追加
+  - `bootstrap` ウィザードにフォルダ入力ステップ追加（省略可・`"-"` でクリア可）
+  - `GraphStorageProviderTests` にテスト3件追加（フォルダ解決・404変換・スラッシュフォールバック）
+- **bootstrap config.json プリフィル機能**
+  - 既存 `configs/config.json` の値を次回起動時のデフォルト値として使用（env 変数優先）
+  - env 由来・config.json 由来で別々に検出通知を表示
+  - SharePoint SiteId+DriveId が既存の場合は「前回設定を使用しますか？」で入力スキップ可能
+  - `LoadConfigJsonOptions`（JSON のみ読み込み）ヘルパー追加（例外時フォールバック対応）
+  - `SetupBootstrapCommandTests` にテスト3件追加（ファイルなし・値取得・env 非汚染）
 - `bootstrap` 環境変数プリフィル機能を追加
   - 起動時に `MIGRATOR__GRAPH__CLIENTID` / `MIGRATOR__GRAPH__TENANTID` / `MIGRATOR__GRAPH__CLIENTSECRET` / `MIGRATOR__GRAPH__ONEDRIVEUSERID` を自動検出
   - 設定済みの場合は Enter で現在値をそのまま使用可能（Bitwarden+dsx 等での環境変数管理をサポート）
