@@ -42,7 +42,7 @@ internal static class DoctorCommand
         // configPath 未指定の場合は自動探索した実際のパスを取得して表示に使う
         var resolvedConfigPath = configPath ?? AppConfiguration.ResolveConfigPath();
 
-        var config = AppConfiguration.Build(configPath);
+        var config = AppConfiguration.Build(resolvedConfigPath);
         var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
             ?? new MigratorOptions();
 

@@ -71,7 +71,11 @@ public static class AppConfiguration
             var candidate = Path.Combine(dir, "configs", "config.json");
             if (File.Exists(candidate))
                 return candidate;
-            dir = Path.GetDirectoryName(dir) ?? dir;
+
+            var parent = Directory.GetParent(dir);
+            if (parent is null)
+                break;
+            dir = parent.FullName;
         }
         // 見つからない場合はワーキングディレクトリ基準の標準パスを返す（optional: true なので起動は継続する）
         return cwdCandidate;
