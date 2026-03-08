@@ -532,6 +532,8 @@ internal static class InitCommand
 
         # OneDrive / SharePoint 対象リソース
         MIGRATOR__GRAPH__ONEDRIVEUSERID=user@example.com
+        # 転送元 OneDrive のルートフォルダパス（省略時はドライブ全体。例: Documents/Projects）
+        MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=
         MIGRATOR__GRAPH__SHAREPOINTSITEID=your-site-id-here
         MIGRATOR__GRAPH__SHAREPOINTDRIVEID=your-drive-id-here
 

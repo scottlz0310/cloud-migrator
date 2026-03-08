@@ -247,4 +247,98 @@ public class GraphStorageProviderTests
         result!.SizeBytes.Should().Be(12345);
         result.IsFolder.Should().BeFalse();
     }
+
+    // ── OneDriveSourceFolder クロール挙動テスト ────────────────────────
+
+    private static (Mock<IRequestAdapter> adapter, GraphServiceClient client) CreateMockClientWithFolderItem(
+        DriveItemCollectionResponse itemsResponse,
+        DriveItem? folderItem = null,
+        ApiException? folderException = null)
+    {
+        var mockAdapter = new Mock<IRequestAdapter>();
+        mockAdapter.Setup(a => a.SerializationWriterFactory)
+            .Returns(new Mock<ISerializationWriterFactory>().Object);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+
+        mockAdapter.Setup(a => a.SendAsync(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<Drive>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Drive { Id = "drive123" });
+
+        var folderSetup = mockAdapter.Setup(a => a.SendAsync(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()));
+        if (folderException is not null)
+            folderSetup.ThrowsAsync(folderException);
+        else
+            folderSetup.ReturnsAsync(folderItem);
+
+        mockAdapter.SetupSequence(a => a.SendAsync(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<DriveItemCollectionResponse>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(itemsResponse)
+            .ReturnsAsync((DriveItemCollectionResponse?)null);
+
+        return (mockAdapter, new GraphServiceClient(mockAdapter.Object));
+    }
+
+    [Fact]
+    public async Task ListItemsAsync_ShouldUseDriveRoot_WhenSourceFolderIsSlashOnly()
+    {
+        // 検証対象: ListItemsAsync  目的: SourceFolder が "/" のみの場合はドライブルートからクロールすること
+        var response = new DriveItemCollectionResponse
+        {
+            Value = [new() { Id = "file1", Name = "readme.txt", Size = 100 }]
+        };
+        var (_, client) = CreateMockClient(response);
+        // "/" は Trim('/') で "" になるため DriveItem 取得をスキップしドライブ全体を対象とする
+        var options = new GraphStorageOptions { OneDriveUserId = "user123", OneDriveSourceFolder = "/" };
+        var provider = new GraphStorageProvider(client, _mockLogger.Object, options);
+
+        var result = await provider.ListItemsAsync("onedrive");
+
+        result.Should().HaveCount(1);
+        result[0].Name.Should().Be("readme.txt");
+    }
+
+    [Fact]
+    public async Task ListItemsAsync_ShouldThrowInvalidOperation_WhenSourceFolderNotFound()
+    {
+        // 検証対象: ListItemsAsync  目的: 存在しないフォルダ指定時に404 ApiException が InvalidOperationException に変換されること
+        var response = new DriveItemCollectionResponse { Value = [] };
+        var apiException = new ApiException("Not Found") { ResponseStatusCode = 404 };
+        var (_, client) = CreateMockClientWithFolderItem(response, folderException: apiException);
+        var options = new GraphStorageOptions { OneDriveUserId = "user123", OneDriveSourceFolder = "NonExistent/Folder" };
+        var provider = new GraphStorageProvider(client, _mockLogger.Object, options);
+
+        var act = async () => await provider.ListItemsAsync("onedrive");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*指定フォルダが見つかりません*NonExistent/Folder*");
+    }
+
+    [Fact]
+    public async Task ListItemsAsync_ShouldReturnFilesFromSubfolder_WhenSourceFolderResolvesSuccessfully()
+    {
+        // 検証対象: ListItemsAsync  目的: 有効なフォルダパスが解決された場合にフォルダ配下のファイルを返すこと
+        var response = new DriveItemCollectionResponse
+        {
+            Value = [new() { Id = "file99", Name = "archive.zip", Size = 5000 }]
+        };
+        var folderItem = new DriveItem { Id = "folder-item-id", Name = "Documents" };
+        var (_, client) = CreateMockClientWithFolderItem(response, folderItem: folderItem);
+        var options = new GraphStorageOptions { OneDriveUserId = "user123", OneDriveSourceFolder = "Documents" };
+        var provider = new GraphStorageProvider(client, _mockLogger.Object, options);
+
+        var result = await provider.ListItemsAsync("onedrive");
+
+        result.Should().HaveCount(1);
+        result[0].Name.Should().Be("archive.zip");
+    }
 }
