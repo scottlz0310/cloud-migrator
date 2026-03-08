@@ -9,6 +9,7 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 var rootCmd = new RootCommand("CloudMigrator Setup - 初期設定診断・テンプレート生成・疎通確認ツール");
+rootCmd.Add(BootstrapCommand.Build());
 rootCmd.Add(DoctorCommand.Build());
 rootCmd.Add(InitCommand.Build());
 rootCmd.Add(VerifyCommand.Build());

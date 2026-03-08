@@ -474,7 +474,7 @@ internal static class InitCommand
         return normalized[..maxLength] + "...";
     }
 
-    private static async Task<string> LoadTemplateAsync(
+    internal static async Task<string> LoadTemplateAsync(
         string relativePath,
         string fallbackContent,
         CancellationToken ct)
@@ -511,7 +511,7 @@ internal static class InitCommand
         return null;
     }
 
-    private static string BuildDefaultConfigTemplate()
+    internal static string BuildDefaultConfigTemplate()
     {
         var model = new { Migrator = new MigratorOptions() };
         return JsonSerializer.Serialize(
@@ -523,7 +523,7 @@ internal static class InitCommand
             });
     }
 
-    private const string DefaultEnvTemplate =
+    internal const string DefaultEnvTemplate =
         """
         # Microsoft Graph API 認証情報（必須）
         MIGRATOR__GRAPH__CLIENTID=your-client-id-here
