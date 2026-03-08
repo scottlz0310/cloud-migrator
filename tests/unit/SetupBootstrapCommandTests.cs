@@ -36,6 +36,17 @@ public sealed class SetupBootstrapCommandTests
     }
 
     [Fact]
+    public void ParseDrives_ShouldThrow_WhenJsonIsInvalid()
+    {
+        // 検証対象: ParseDrives  目的: 不正なJSONでInvalidOperationExceptionにラップされてスローされること
+        var json = "not-json{{{";
+
+        var act = () => BootstrapCommand.ParseDrives(json);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*JSON 解析に失敗*");
+    }
+
+    [Fact]
     public void ParseDrives_ShouldSkipEntries_WhenIdOrNameIsEmpty()
     {
         // 検証対象: ParseDrives  目的: idまたはnameが空のエントリをスキップすること

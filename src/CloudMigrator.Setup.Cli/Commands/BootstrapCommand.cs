@@ -109,6 +109,13 @@ internal static class BootstrapCommand
             Environment.ExitCode = 1;
             return;
         }
+        catch (HttpRequestException ex)
+        {
+            console.WriteLine($"[ERR]  ネットワーク接続に失敗しました: {ex.Message}");
+            console.WriteLine("インターネット接続やプロキシ設定を確認してください。");
+            Environment.ExitCode = 1;
+            return;
+        }
         catch (MsalException ex)
         {
             console.WriteLine($"[ERR]  トークン取得に失敗しました: {ex.Message}");
@@ -161,9 +168,16 @@ internal static class BootstrapCommand
             clientId,
             tenantId);
 
+        // 既存ファイルがある場合は対話的に上書き確認する（--force 指定時はスキップ）
+        bool EffectiveForce(string path) =>
+            force || (File.Exists(path) && console.PromptBool($"  {path} は既に存在します。上書きしますか？"));
+
+        var configForce = EffectiveForce(configPath);
+        var envForce = EffectiveForce(envPath);
+
         var results = new List<InitFileResult>(capacity: 2);
-        await InitCommand.WriteTemplateAsync(configPath, configTemplate, force, results, ct).ConfigureAwait(false);
-        await InitCommand.WriteTemplateAsync(envPath, envTemplate, force, results, ct).ConfigureAwait(false);
+        await InitCommand.WriteTemplateAsync(configPath, configTemplate, configForce, results, ct).ConfigureAwait(false);
+        await InitCommand.WriteTemplateAsync(envPath, envTemplate, envForce, results, ct).ConfigureAwait(false);
 
         foreach (var result in results)
         {
@@ -250,20 +264,27 @@ internal static class BootstrapCommand
     /// </summary>
     internal static IReadOnlyList<DriveEntry> ParseDrives(string drivesJson)
     {
-        using var doc = JsonDocument.Parse(drivesJson);
-        if (!doc.RootElement.TryGetProperty("value", out var values) || values.ValueKind != JsonValueKind.Array)
-            throw new InvalidOperationException("Graph drives 応答の形式が不正です。");
-
-        var drives = new List<DriveEntry>();
-        foreach (var elem in values.EnumerateArray())
+        try
         {
-            var name = elem.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
-            var id = elem.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
-            if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(name))
-                drives.Add(new DriveEntry(id, name));
-        }
+            using var doc = JsonDocument.Parse(drivesJson);
+            if (!doc.RootElement.TryGetProperty("value", out var values) || values.ValueKind != JsonValueKind.Array)
+                throw new InvalidOperationException("Graph drives 応答の形式が不正です。");
 
-        return drives.AsReadOnly();
+            var drives = new List<DriveEntry>();
+            foreach (var elem in values.EnumerateArray())
+            {
+                var name = elem.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
+                var id = elem.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(name))
+                    drives.Add(new DriveEntry(id, name));
+            }
+
+            return drives.AsReadOnly();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Graph drives 応答の JSON 解析に失敗しました。応答形式が不正です。", ex);
+        }
     }
 
     private static async Task<(string OneDriveUser, string SiteId, IReadOnlyList<DriveEntry> Drives)> ResolveGraphInfoAsync(
@@ -323,6 +344,10 @@ internal static class BootstrapCommand
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             throw new InvalidOperationException("Microsoft Graph への接続がタイムアウトしました。ネットワーク状態や Graph の応答状況を確認してください。");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException($"Microsoft Graph への接続に失敗しました: {ex.Message}", ex);
         }
     }
 

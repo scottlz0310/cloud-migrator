@@ -109,7 +109,7 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- verify
 
 **初回利用者向け**の対話型ウィザードです。  
 ClientId / TenantId / ClientSecret / UPN / サイトURL を順に入力するだけで、Graph API から識別子を自動解決し、`config.json` と `.env` を生成します。  
-既存ファイルがある場合は上書き確認を行います。
+既存ファイルがある場合は対話的に上書き確認を行います（`--force` を指定した場合は確認なしで上書きします）。
 
 ```bash
 dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap
