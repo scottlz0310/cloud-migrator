@@ -52,19 +52,32 @@ public static class AppConfiguration
         => Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN") ?? string.Empty;
 
     /// <summary>
-    /// 実行ファイルから configs/config.json を探す（最大4階層上まで）
+    /// configs/config.json を探す。
+    /// 優先順位:
+    ///   1. 現在のワーキングディレクトリ（dotnet run はリポジトリルートから実行されることが多い）
+    ///   2. AppContext.BaseDirectory から最大 6 階層上まで遡って検索
+    ///      （dotnet run 時は bin/Debug/net10.0/ が起点となるため、リポジトリルートに届くよう余裕を持たせる）
     /// </summary>
-    private static string ResolveConfigPath()
+    public static string ResolveConfigPath()
     {
+        // ワーキングディレクトリを最優先で確認
+        var cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), "configs", "config.json");
+        if (File.Exists(cwdCandidate))
+            return cwdCandidate;
+
         var dir = AppContext.BaseDirectory;
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < 6; i++)
         {
             var candidate = Path.Combine(dir, "configs", "config.json");
             if (File.Exists(candidate))
                 return candidate;
-            dir = Path.GetDirectoryName(dir) ?? dir;
+
+            var parent = Directory.GetParent(dir);
+            if (parent is null)
+                break;
+            dir = parent.FullName;
         }
-        // 見つからない場合は標準パスを返す（optional: true なので起動は継続する）
-        return Path.Combine(AppContext.BaseDirectory, "configs", "config.json");
+        // 見つからない場合はワーキングディレクトリ基準の標準パスを返す（optional: true なので起動は継続する）
+        return cwdCandidate;
     }
 }

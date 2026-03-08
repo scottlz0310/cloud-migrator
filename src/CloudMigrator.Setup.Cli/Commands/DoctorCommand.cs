@@ -39,7 +39,10 @@ internal static class DoctorCommand
     {
         ct.ThrowIfCancellationRequested();
 
-        var config = AppConfiguration.Build(configPath);
+        // configPath 未指定の場合は自動探索した実際のパスを取得して表示に使う
+        var resolvedConfigPath = configPath ?? AppConfiguration.ResolveConfigPath();
+
+        var config = AppConfiguration.Build(resolvedConfigPath);
         var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
             ?? new MigratorOptions();
 
@@ -47,7 +50,7 @@ internal static class DoctorCommand
             options,
             AppConfiguration.GetGraphClientSecret(),
             AppConfiguration.GetDropboxAccessToken(),
-            configPath,
+            resolvedConfigPath,
             strictDropbox);
 
         var errorCount = 0;
@@ -80,7 +83,7 @@ internal static class DoctorCommand
         MigratorOptions options,
         string graphClientSecret,
         string dropboxAccessToken,
-        string? configPath,
+        string? resolvedConfigPath,
         bool strictDropbox)
     {
         var checks = new List<DoctorCheckResult>
@@ -119,14 +122,14 @@ internal static class DoctorCommand
                 "設定済み"));
         }
 
-        if (!string.IsNullOrWhiteSpace(configPath))
+        if (!string.IsNullOrWhiteSpace(resolvedConfigPath))
         {
-            checks.Add(File.Exists(configPath)
-                ? new DoctorCheckResult(DoctorCheckStatus.Ok, "config.path", $"検出: {configPath}")
+            checks.Add(File.Exists(resolvedConfigPath)
+                ? new DoctorCheckResult(DoctorCheckStatus.Ok, "config.path", $"検出: {resolvedConfigPath}")
                 : new DoctorCheckResult(
                     DoctorCheckStatus.Warning,
                     "config.path",
-                    $"指定ファイルが見つかりません: {configPath}（環境変数のみで実行されます）"));
+                    $"設定ファイルが見つかりません: {resolvedConfigPath}（環境変数のみで実行されます）"));
         }
 
         return checks;

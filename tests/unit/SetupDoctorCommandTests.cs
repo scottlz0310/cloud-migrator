@@ -30,7 +30,7 @@ public class SetupDoctorCommandTests
             options,
             graphClientSecret: string.Empty,
             dropboxAccessToken: string.Empty,
-            configPath: null,
+            resolvedConfigPath: null,
             strictDropbox: false);
 
         var errorNames = results
@@ -68,11 +68,68 @@ public class SetupDoctorCommandTests
             options,
             graphClientSecret: "secret",
             dropboxAccessToken: string.Empty,
-            configPath: null,
+            resolvedConfigPath: null,
             strictDropbox: true);
 
         results.Should().ContainSingle(x =>
             x.Name == "dropbox.accessToken" &&
             x.Status == DoctorCheckStatus.Error);
+    }
+
+    [Fact]
+    public void BuildChecks_ShouldShowConfigPathOk_WhenResolvedPathExists()
+    {
+        // 検証対象: BuildChecks  目的: resolvedConfigPath が存在するファイルを指す場合 config.path チェックが OK になること
+        var tmpFile = Path.GetTempFileName();
+        try
+        {
+            var results = DoctorCommand.BuildChecks(
+                new MigratorOptions(),
+                graphClientSecret: string.Empty,
+                dropboxAccessToken: string.Empty,
+                resolvedConfigPath: tmpFile,
+                strictDropbox: false);
+
+            results.Should().ContainSingle(x =>
+                x.Name == "config.path" &&
+                x.Status == DoctorCheckStatus.Ok &&
+                x.Message.Contains(tmpFile));
+        }
+        finally
+        {
+            File.Delete(tmpFile);
+        }
+    }
+
+    [Fact]
+    public void BuildChecks_ShouldShowConfigPathWarning_WhenResolvedPathNotFound()
+    {
+        // 検証対象: BuildChecks  目的: resolvedConfigPath が存在しないパスを指す場合 config.path チェックが Warning になること
+        var nonExistentPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString(), "config.json");
+
+        var results = DoctorCommand.BuildChecks(
+            new MigratorOptions(),
+            graphClientSecret: string.Empty,
+            dropboxAccessToken: string.Empty,
+            resolvedConfigPath: nonExistentPath,
+            strictDropbox: false);
+
+        results.Should().ContainSingle(x =>
+            x.Name == "config.path" &&
+            x.Status == DoctorCheckStatus.Warning);
+    }
+
+    [Fact]
+    public void BuildChecks_ShouldNotIncludeConfigPath_WhenResolvedPathIsNull()
+    {
+        // 検証対象: BuildChecks  目的: resolvedConfigPath が null の場合 config.path チェックが結果に含まれないこと
+        var results = DoctorCommand.BuildChecks(
+            new MigratorOptions(),
+            graphClientSecret: string.Empty,
+            dropboxAccessToken: string.Empty,
+            resolvedConfigPath: null,
+            strictDropbox: false);
+
+        results.Should().NotContain(x => x.Name == "config.path");
     }
 }
