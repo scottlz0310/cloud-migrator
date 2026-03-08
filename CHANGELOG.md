@@ -12,7 +12,7 @@
   - 認証情報・OneDriveユーザー・SharePointサイトURLを対話入力するだけでセットアップ完了
   - Graph API から候補ドライブを自動取得してインタラクティブ選択
   - `config.json` / `.env` 生成を一連のフローで統合
-  - `SetupBootstrapCommandTests` を追加（99件テスト）
+  - `SetupBootstrapCommandTests` を追加（8件追加）
 - `CloudMigrator.Setup.Cli` プロジェクトを追加（独立セットアップCLI）
   - `doctor`: 必須設定（Graph系）と主要パスの診断
   - `init`: `config.json` / `.env` テンプレートの冪等生成（`--force` 上書き）

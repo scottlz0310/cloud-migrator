@@ -85,7 +85,7 @@ internal static class BootstrapCommand
 
         // ステップ 2: OneDrive / SharePoint 情報
         console.WriteLine("--- ステップ 2/3: OneDrive / SharePoint 設定 ---");
-        var oneDriveUserId = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）");
+        var oneDriveUserUpn = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）");
         var sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
         console.WriteLine();
 
@@ -100,7 +100,7 @@ internal static class BootstrapCommand
         try
         {
             (effectiveOneDriveUser, siteId, drives) = await ResolveGraphInfoAsync(
-                clientId, tenantId, clientSecret, oneDriveUserId, sharePointSiteUrl, ct).ConfigureAwait(false);
+                clientId, tenantId, clientSecret, oneDriveUserUpn, sharePointSiteUrl, ct).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {
@@ -291,7 +291,7 @@ internal static class BootstrapCommand
         string clientId,
         string tenantId,
         string clientSecret,
-        string oneDriveUserId,
+        string oneDriveUserUpn,
         string sharePointSiteUrl,
         CancellationToken ct)
     {
@@ -301,7 +301,7 @@ internal static class BootstrapCommand
             throw new InvalidOperationException("TenantId が入力されていません。");
         if (string.IsNullOrWhiteSpace(clientSecret))
             throw new InvalidOperationException("ClientSecret が入力されていません。");
-        if (string.IsNullOrWhiteSpace(oneDriveUserId))
+        if (string.IsNullOrWhiteSpace(oneDriveUserUpn))
             throw new InvalidOperationException("OneDrive ユーザーのUPN が入力されていません。");
         if (string.IsNullOrWhiteSpace(sharePointSiteUrl))
             throw new InvalidOperationException("SharePoint サイトURL が入力されていません。");
@@ -318,10 +318,10 @@ internal static class BootstrapCommand
         {
             var userBody = await GetGraphJsonAsync(
                 httpClient,
-                $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(oneDriveUserId)}?$select=id,userPrincipalName",
+                $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(oneDriveUserUpn)}?$select=id,userPrincipalName",
                 "onedrive.user",
                 ct).ConfigureAwait(false);
-            var effectiveUser = TryReadProperty(userBody, "userPrincipalName") ?? oneDriveUserId;
+            var effectiveUser = TryReadProperty(userBody, "userPrincipalName") ?? oneDriveUserUpn;
 
             var address = InitCommand.ParseSharePointSiteUrl(sharePointSiteUrl);
             var siteBody = await GetGraphJsonAsync(
@@ -433,7 +433,7 @@ internal sealed class DefaultBootstrapConsole : IBootstrapConsole
                 builder.Remove(builder.Length - 1, 1);
                 Console.Write("\b \b");
             }
-            else if (key.Key != ConsoleKey.Backspace)
+            else if (key.Key != ConsoleKey.Backspace && !char.IsControl(key.KeyChar) && key.KeyChar != '\0')
             {
                 builder.Append(key.KeyChar);
                 Console.Write('*');
