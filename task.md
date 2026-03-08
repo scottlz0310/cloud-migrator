@@ -93,3 +93,10 @@
 - [x] 既存 `init` の非対話オプション互換を維持（自動化/CI用途）
 - [x] ユニットテスト追加（ParseDrives/SelectDriveのロジック、異常系）
 - [x] `usage.md` / `CHANGELOG.md` へ新フローを反映
+
+## バグ修正: doctor config.json 読み取り（PR #25）
+
+- [x] `AppConfiguration.ResolveConfigPath()` をワーキングディレクトリ優先に修正
+- [x] `AppContext.BaseDirectory` 遡り上限を4→6段に拡張
+- [x] `DoctorCommand.Run()` で `resolvedConfigPath` を先に決定して `Build`/`BuildChecks` で共有
+- [x] `SetupDoctorCommandTests` にテスト3件追加（121件全通過確認）→ PR #25 マージ済み
