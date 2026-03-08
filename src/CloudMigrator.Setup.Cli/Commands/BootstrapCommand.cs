@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CloudMigrator.Providers.Graph.Auth;
 using Microsoft.Identity.Client;
 
@@ -114,6 +115,13 @@ internal static class BootstrapCommand
         var sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
         console.WriteLine();
 
+        // env変数由来フラグ（全て env変数から取得した場合は .env 生成をスキップ）
+        var secretFromEnv = hasEnvSecret && string.IsNullOrEmpty(inputSecret);
+        var clientIdFromEnv = !string.IsNullOrEmpty(envClientId) && clientId == envClientId;
+        var tenantIdFromEnv = !string.IsNullOrEmpty(envTenantId) && tenantId == envTenantId;
+        var upnFromEnv = !string.IsNullOrEmpty(envOneDriveUpn) && oneDriveUserUpn == envOneDriveUpn;
+        var allAuthFromEnv = clientIdFromEnv && tenantIdFromEnv && secretFromEnv && upnFromEnv;
+
         // ステップ 3: Graph API でID解決
         console.WriteLine("--- ステップ 3/3: Graph API 接続 ---");
         console.WriteLine("Graph API に接続してIDを解決しています...");
@@ -174,10 +182,6 @@ internal static class BootstrapCommand
             Path.Combine("configs", "config.json"),
             InitCommand.BuildDefaultConfigTemplate(),
             ct).ConfigureAwait(false);
-        var envTemplate = await InitCommand.LoadTemplateAsync(
-            "sample.env",
-            InitCommand.DefaultEnvTemplate,
-            ct).ConfigureAwait(false);
 
         configTemplate = InitCommand.ApplyGraphValuesToConfigTemplate(
             configTemplate,
@@ -185,24 +189,33 @@ internal static class BootstrapCommand
             siteId,
             selectedDrive.Id);
 
-        envTemplate = InitCommand.ApplyGraphValuesToEnvTemplate(
-            envTemplate,
-            effectiveOneDriveUser,
-            siteId,
-            selectedDrive.Id,
-            clientId,
-            tenantId);
-
         // 既存ファイルがある場合は対話的に上書き確認する（--force 指定時はスキップ）
         bool EffectiveForce(string path) =>
             force || (File.Exists(path) && console.PromptBool($"  {path} は既に存在します。上書きしますか？"));
 
         var configForce = EffectiveForce(configPath);
-        var envForce = EffectiveForce(envPath);
-
         var results = new List<InitFileResult>(capacity: 2);
         await InitCommand.WriteTemplateAsync(configPath, configTemplate, configForce, results, ct).ConfigureAwait(false);
-        await InitCommand.WriteTemplateAsync(envPath, envTemplate, envForce, results, ct).ConfigureAwait(false);
+
+        // .env 生成: 全認証情報が env変数由来の場合はスキップ（平文保存を避ける）
+        if (!allAuthFromEnv)
+        {
+            var envTemplate = await InitCommand.LoadTemplateAsync(
+                "sample.env",
+                InitCommand.DefaultEnvTemplate,
+                ct).ConfigureAwait(false);
+
+            envTemplate = ApplyBootstrapEnvTemplate(
+                envTemplate,
+                effectiveOneDriveUser, upnFromEnv,
+                siteId, selectedDrive.Id,
+                clientId, clientIdFromEnv,
+                tenantId, tenantIdFromEnv,
+                secretFromEnv);
+
+            var envForce = EffectiveForce(envPath);
+            await InitCommand.WriteTemplateAsync(envPath, envTemplate, envForce, results, ct).ConfigureAwait(false);
+        }
 
         foreach (var result in results)
         {
@@ -215,6 +228,14 @@ internal static class BootstrapCommand
             console.WriteLine(msg);
         }
 
+        if (allAuthFromEnv)
+        {
+            console.WriteLine($"ℹ️  すべての認証情報が環境変数から取得済みのため .env の生成をスキップしました。");
+            console.WriteLine($"   以下の識別子を環境変数マネージャーに追加してください：");
+            console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTSITEID={siteId}");
+            console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTDRIVEID={selectedDrive.Id}");
+        }
+
         if (results.Any(r => r.Status == InitFileStatus.Error))
         {
             Environment.ExitCode = 1;
@@ -222,11 +243,15 @@ internal static class BootstrapCommand
         }
 
         console.WriteLine();
-        console.WriteLine("ℹ️  MIGRATOR__GRAPH__CLIENTSECRET はセキュリティのため設定ファイルに保存されていません。");
-        console.WriteLine("   シェル環境に手動で設定してください:");
-        console.WriteLine("     PowerShell: $env:MIGRATOR__GRAPH__CLIENTSECRET = \"<your-secret>\"");
-        console.WriteLine("     bash/zsh  : export MIGRATOR__GRAPH__CLIENTSECRET=\"<your-secret>\"");
-        console.WriteLine();
+        // ClientSecret の手動設定案内（env変数から取得済みの場合はスキップ）
+        if (!secretFromEnv)
+        {
+            console.WriteLine("ℹ️  MIGRATOR__GRAPH__CLIENTSECRET はセキュリティのため設定ファイルに保存されていません。");
+            console.WriteLine("   シェル環境に手動で設定してください:");
+            console.WriteLine("     PowerShell: $env:MIGRATOR__GRAPH__CLIENTSECRET = \"<your-secret>\"");
+            console.WriteLine("     bash/zsh  : export MIGRATOR__GRAPH__CLIENTSECRET=\"<your-secret>\"");
+            console.WriteLine();
+        }
 
         // doctor で設定診断
         console.WriteLine("設定を診断しています（doctor）...");
@@ -246,9 +271,10 @@ internal static class BootstrapCommand
         console.WriteLine("  セットアップ完了！");
         console.WriteLine("=================================================================");
         console.WriteLine($"  config.json : {Path.GetFullPath(configPath)}");
-        console.WriteLine($"  .env        : {Path.GetFullPath(envPath)}");
+        if (!allAuthFromEnv)
+            console.WriteLine($"  .env        : {Path.GetFullPath(envPath)}");
         console.WriteLine();
-        console.WriteLine("  次のステップ: .env を読み込んで transfer コマンドを実行してください。");
+        console.WriteLine("  次のステップ: transfer コマンドを実行してください。");
     }
 
     /// <summary>
@@ -388,6 +414,57 @@ internal static class BootstrapCommand
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID", oneDriveUserId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTSITEID", siteId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTDRIVEID", driveId);
+    }
+
+    private static string ApplyBootstrapEnvTemplate(
+        string template,
+        string effectiveOneDriveUser, bool upnFromEnv,
+        string siteId, string driveId,
+        string clientId, bool clientIdFromEnv,
+        string tenantId, bool tenantIdFromEnv,
+        bool secretFromEnv)
+    {
+        var updated = template;
+
+        // auth値: env変数由来 → コメントアウト（.envローダーによる空値上書きを防ぐ）
+        //         手動入力   → 値を反映
+        updated = clientIdFromEnv
+            ? CommentOutEnvKey(updated, "MIGRATOR__GRAPH__CLIENTID")
+            : InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__CLIENTID", clientId);
+
+        updated = tenantIdFromEnv
+            ? CommentOutEnvKey(updated, "MIGRATOR__GRAPH__TENANTID")
+            : InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__TENANTID", tenantId);
+
+        // ClientSecret は常にプレースホルダーのまま（セキュリティ上 .env に保存しない）
+        // env変数から取得済みの場合はコメントアウトして誤設定を防ぐ
+        if (secretFromEnv)
+            updated = CommentOutEnvKey(updated, "MIGRATOR__GRAPH__CLIENTSECRET");
+
+        updated = upnFromEnv
+            ? CommentOutEnvKey(updated, "MIGRATOR__GRAPH__ONEDRIVEUSERID")
+            : InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__ONEDRIVEUSERID", effectiveOneDriveUser);
+
+        // Graph解決済みID は常に反映（新規取得値のため）
+        updated = InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__SHAREPOINTSITEID", siteId);
+        updated = InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__SHAREPOINTDRIVEID", driveId);
+
+        return updated;
+    }
+
+    private static string CommentOutEnvKey(string template, string key)
+    {
+        var normalized = template.ReplaceLineEndings("\n");
+        var pattern = $@"^{Regex.Escape(key)}=.*$";
+        if (!Regex.IsMatch(normalized, pattern, RegexOptions.Multiline))
+            return template;
+
+        var replaced = Regex.Replace(
+            normalized,
+            pattern,
+            $"# {key}= # シェル環境変数から取得済み（.env への保存をスキップ）",
+            RegexOptions.Multiline);
+        return replaced.Replace("\n", Environment.NewLine);
     }
 
     private static async Task<string?> TryGetGraphJsonAsync(
