@@ -78,17 +78,23 @@ internal static class BootstrapCommand
         console.WriteLine();
 
         // 環境変数から設定を事前読み込み（Bitwarden+dsx 等で管理している場合に活用）
-        var envClientId = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID");
-        var envTenantId = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID");
-        var envClientSecret = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET");
-        var envOneDriveUpn = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID");
+        // 空白のみの値は未設定として扱い、既定値には Trim 済みの値のみを使用する
+        var envClientIdRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID");
+        var envTenantIdRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID");
+        var envClientSecretRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET");
+        var envOneDriveUpnRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID");
+
+        var envClientId = string.IsNullOrWhiteSpace(envClientIdRaw) ? null : envClientIdRaw.Trim();
+        var envTenantId = string.IsNullOrWhiteSpace(envTenantIdRaw) ? null : envTenantIdRaw.Trim();
+        var envClientSecret = string.IsNullOrWhiteSpace(envClientSecretRaw) ? null : envClientSecretRaw.Trim();
+        var envOneDriveUpn = string.IsNullOrWhiteSpace(envOneDriveUpnRaw) ? null : envOneDriveUpnRaw.Trim();
 
         var presetItems = new (string Name, bool HasValue)[]
         {
-            ("MIGRATOR__GRAPH__CLIENTID", !string.IsNullOrEmpty(envClientId)),
-            ("MIGRATOR__GRAPH__TENANTID", !string.IsNullOrEmpty(envTenantId)),
-            ("MIGRATOR__GRAPH__CLIENTSECRET（シークレット）", !string.IsNullOrEmpty(envClientSecret)),
-            ("MIGRATOR__GRAPH__ONEDRIVEUSERID", !string.IsNullOrEmpty(envOneDriveUpn)),
+            ("MIGRATOR__GRAPH__CLIENTID", !string.IsNullOrWhiteSpace(envClientId)),
+            ("MIGRATOR__GRAPH__TENANTID", !string.IsNullOrWhiteSpace(envTenantId)),
+            ("MIGRATOR__GRAPH__CLIENTSECRET（シークレット）", !string.IsNullOrWhiteSpace(envClientSecret)),
+            ("MIGRATOR__GRAPH__ONEDRIVEUSERID", !string.IsNullOrWhiteSpace(envOneDriveUpn)),
         };
         var presetCount = presetItems.Count(x => x.HasValue);
 
@@ -104,7 +110,7 @@ internal static class BootstrapCommand
         console.WriteLine("--- ステップ 1/3: Azure AD アプリ登録情報 ---");
         var clientId = console.Prompt("ClientId（アプリケーション ID）", envClientId);
         var tenantId = console.Prompt("TenantId（ディレクトリ ID）", envTenantId);
-        var hasEnvSecret = !string.IsNullOrEmpty(envClientSecret);
+        var hasEnvSecret = !string.IsNullOrWhiteSpace(envClientSecret);
         var inputSecret = console.PromptMasked("ClientSecret（入力は画面に表示されません）", hasExistingValue: hasEnvSecret);
         var clientSecret = string.IsNullOrEmpty(inputSecret) && hasEnvSecret ? envClientSecret! : inputSecret;
         console.WriteLine();
@@ -117,9 +123,9 @@ internal static class BootstrapCommand
 
         // env変数由来フラグ（全て env変数から取得した場合は .env 生成をスキップ）
         var secretFromEnv = hasEnvSecret && string.IsNullOrEmpty(inputSecret);
-        var clientIdFromEnv = !string.IsNullOrEmpty(envClientId) && clientId == envClientId;
-        var tenantIdFromEnv = !string.IsNullOrEmpty(envTenantId) && tenantId == envTenantId;
-        var upnFromEnv = !string.IsNullOrEmpty(envOneDriveUpn) && oneDriveUserUpn == envOneDriveUpn;
+        var clientIdFromEnv = !string.IsNullOrWhiteSpace(envClientId) && clientId == envClientId;
+        var tenantIdFromEnv = !string.IsNullOrWhiteSpace(envTenantId) && tenantId == envTenantId;
+        var upnFromEnv = !string.IsNullOrWhiteSpace(envOneDriveUpn) && oneDriveUserUpn == envOneDriveUpn;
         var allAuthFromEnv = clientIdFromEnv && tenantIdFromEnv && secretFromEnv && upnFromEnv;
 
         // ステップ 3: Graph API でID解決
@@ -371,6 +377,7 @@ internal static class BootstrapCommand
             var userBody = await TryGetGraphJsonAsync(
                 httpClient,
                 $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(oneDriveUserUpn)}?$select=id,userPrincipalName",
+                "onedrive.user",
                 ct).ConfigureAwait(false);
             var effectiveUser = userBody is not null
                 ? (TryReadProperty(userBody, "userPrincipalName") ?? oneDriveUserUpn)
@@ -470,11 +477,23 @@ internal static class BootstrapCommand
     private static async Task<string?> TryGetGraphJsonAsync(
         HttpClient httpClient,
         string url,
+        string probeName,
         CancellationToken ct)
     {
         using var response = await httpClient.GetAsync(url, ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode) return null;
-        return await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        // 403 Forbidden のみ graceful fallback（User.Read.All が未付与の場合）
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            return null;
+
+        // それ以外（404/401/429 等）は通常エラーとして例外をスロー
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var snippet = body.ReplaceLineEndings(" ").Trim();
+        if (snippet.Length > 180) snippet = snippet[..180] + "...";
+        throw new InvalidOperationException(
+            $"{probeName} の取得に失敗しました: HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {snippet}");
     }
 
     private static async Task<string> GetGraphJsonAsync(
