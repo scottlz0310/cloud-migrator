@@ -13,11 +13,16 @@
   - `init`: `config.json` / `.env` テンプレートの冪等生成（`--force` 上書き）
   - `verify`: Graph トークン取得と OneDrive / SharePoint 識別子の疎通確認
 - `SetupDoctorCommandTests` / `SetupInitCommandTests` / `SetupVerifyCommandTests` を追加
+- `setup init` に Graph 識別子の反映/自動解決オプションを追加
+  - 直接反映: `--onedrive-user-id` / `--sharepoint-site-id` / `--sharepoint-drive-id`
+  - 自動解決: `--resolve-graph-ids` + `--sharepoint-site-url` + `--sharepoint-drive-name`
+  - 生成時に `config.json` と `.env` へ解決済み識別子を反映可能
 
 ### Changed
 - `CloudMigrator.slnx` に `CloudMigrator.Setup.Cli` を追加
 - `CloudMigrator.Tests.Unit.csproj` に `CloudMigrator.Setup.Cli` 参照を追加
 - `README.md` / `usage.md` に Setup Tool の実行手順を追記
+- `README.md` / `usage.md` の `init` 手順を自動解決オプション対応へ更新
 
 ---
 

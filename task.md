@@ -71,3 +71,16 @@
 - [x] `doctor` / `init` / `verify` コマンド実装
 - [x] ユニットテスト追加（doctor/init/verify）
 - [x] `README.md` / `usage.md` への利用手順追記
+- [x] `init` の Graph 識別子反映/自動解決オプション追加（`--resolve-graph-ids` ほか）
+
+## Issue 17: Setup Tool UX再設計（Interactive）
+
+- [ ] `bootstrap`（仮称）コマンド追加（対話型セットアップ入口）
+- [ ] 対話入力: 必須 Graph 情報（ClientId / TenantId / ClientSecret）ガイド
+- [ ] 対話入力: OneDrive UPN + SharePoint サイトURLから SiteId / DriveId 自動解決
+- [ ] Drive 名候補提示（既定: `Documents`）と選択導線
+- [ ] 対話完了後に `.env` / `configs/config.json` へ反映（既存ファイル保護あり）
+- [ ] `doctor` / `verify` への接続（自動実行オプション含む）を整備
+- [ ] 既存 `init` の非対話オプション互換を維持（自動化/CI用途）
+- [ ] ユニットテスト追加（対話フロー、異常系、Graph解決失敗系）
+- [ ] `README.md` / `usage.md` / `CHANGELOG.md` へ新フローを反映
