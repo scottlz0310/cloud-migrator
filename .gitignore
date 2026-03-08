@@ -63,6 +63,7 @@ obj/
 logs/
 .env
 .env.*
+configs/config.json
 
 # テスト結果
 *.trx
