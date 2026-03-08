@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using CloudMigrator.Core.Configuration;
 using CloudMigrator.Providers.Graph.Auth;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Identity.Client;
 
 namespace CloudMigrator.Setup.Cli.Commands;
@@ -77,117 +79,207 @@ internal static class BootstrapCommand
         console.WriteLine("各項目を入力してください。Ctrl+C で中断できます。");
         console.WriteLine();
 
-        // 環境変数から設定を事前読み込み（Bitwarden+dsx 等で管理している場合に活用）
-        // 空白のみの値は未設定として扱い、既定値には Trim 済みの値のみを使用する
-        var envClientIdRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID");
-        var envTenantIdRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID");
-        var envClientSecretRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET");
-        var envOneDriveUpnRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID");
-        var envSourceFolderRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER");
+        // config.json から既存設定を読み込む（JSON のみ、env変数を含まない）
+        // 再実行時のデフォルト値として使用する
+        var cfgOptions = LoadConfigJsonOptions(configPath);
+        var cfgClientId = NullIfWhiteSpace(cfgOptions.Graph.ClientId);
+        var cfgTenantId = NullIfWhiteSpace(cfgOptions.Graph.TenantId);
+        var cfgOneDriveUpn = NullIfWhiteSpace(cfgOptions.Graph.OneDriveUserId);
+        var cfgSourceFolder = NullIfWhiteSpace(cfgOptions.Graph.OneDriveSourceFolder);
+        var cfgSiteId = NullIfWhiteSpace(cfgOptions.Graph.SharePointSiteId);
+        var cfgDriveId = NullIfWhiteSpace(cfgOptions.Graph.SharePointDriveId);
 
-        var envClientId = string.IsNullOrWhiteSpace(envClientIdRaw) ? null : envClientIdRaw.Trim();
-        var envTenantId = string.IsNullOrWhiteSpace(envTenantIdRaw) ? null : envTenantIdRaw.Trim();
-        var envClientSecret = string.IsNullOrWhiteSpace(envClientSecretRaw) ? null : envClientSecretRaw.Trim();
-        var envOneDriveUpn = string.IsNullOrWhiteSpace(envOneDriveUpnRaw) ? null : envOneDriveUpnRaw.Trim();
-        var envSourceFolder = string.IsNullOrWhiteSpace(envSourceFolderRaw) ? null : envSourceFolderRaw.Trim();
+        // 環境変数から設定を読み込む（Bitwarden+dsx 等で管理している場合に活用）
+        // 空白のみの値は未設定として扱う
+        var envClientId = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID"));
+        var envTenantId = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID"));
+        var envClientSecret = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET"));
+        var envOneDriveUpn = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID"));
+        var envSourceFolder = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER"));
+        var envSiteId = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTSITEID"));
+        var envDriveId = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTDRIVEID"));
 
-        var presetItems = new (string Name, bool HasValue)[]
+        // 有効なデフォルト値: 環境変数 > config.json
+        var defaultClientId = envClientId ?? cfgClientId;
+        var defaultTenantId = envTenantId ?? cfgTenantId;
+        var defaultOneDriveUpn = envOneDriveUpn ?? cfgOneDriveUpn;
+        var defaultSourceFolder = envSourceFolder ?? cfgSourceFolder;
+        // 既存 SharePoint 設定（再利用候補）: 環境変数 > config.json
+        var existingSiteId = envSiteId ?? cfgSiteId;
+        var existingDriveId = envDriveId ?? cfgDriveId;
+
+        // 検出済み設定の通知（環境変数由来）
+        var envPresets = new (string Name, bool HasValue)[]
         {
-            ("MIGRATOR__GRAPH__CLIENTID", !string.IsNullOrWhiteSpace(envClientId)),
-            ("MIGRATOR__GRAPH__TENANTID", !string.IsNullOrWhiteSpace(envTenantId)),
-            ("MIGRATOR__GRAPH__CLIENTSECRET（シークレット）", !string.IsNullOrWhiteSpace(envClientSecret)),
-            ("MIGRATOR__GRAPH__ONEDRIVEUSERID", !string.IsNullOrWhiteSpace(envOneDriveUpn)),
-            ("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", !string.IsNullOrWhiteSpace(envSourceFolder)),
+            ("MIGRATOR__GRAPH__CLIENTID", envClientId != null),
+            ("MIGRATOR__GRAPH__TENANTID", envTenantId != null),
+            ("MIGRATOR__GRAPH__CLIENTSECRET（シークレット）", envClientSecret != null),
+            ("MIGRATOR__GRAPH__ONEDRIVEUSERID", envOneDriveUpn != null),
+            ("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", envSourceFolder != null),
         };
-        var presetCount = presetItems.Count(x => x.HasValue);
-
-        if (presetCount > 0)
+        var envPresetCount = envPresets.Count(x => x.HasValue);
+        if (envPresetCount > 0)
         {
-            console.WriteLine($"ℹ️  環境変数から {presetCount} 件の設定を検出しました。設定済みの項目は Enter で現在値を使用できます。");
-            foreach (var (name, hasValue) in presetItems.Where(x => x.HasValue))
+            console.WriteLine($"ℹ️  環境変数から {envPresetCount} 件の設定を検出しました。Enter で現在値を使用できます。");
+            foreach (var (name, _) in envPresets.Where(x => x.HasValue))
+                console.WriteLine($"     ✓ {name}");
+            console.WriteLine();
+        }
+
+        // 検出済み設定の通知（config.json 由来、env未設定の項目のみ）
+        var cfgPresets = new (string Name, bool HasValue)[]
+        {
+            ("MIGRATOR__GRAPH__CLIENTID", cfgClientId != null && envClientId == null),
+            ("MIGRATOR__GRAPH__TENANTID", cfgTenantId != null && envTenantId == null),
+            ("MIGRATOR__GRAPH__ONEDRIVEUSERID", cfgOneDriveUpn != null && envOneDriveUpn == null),
+            ("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", cfgSourceFolder != null && envSourceFolder == null),
+            ("SharePointSiteId + DriveId", cfgSiteId != null && cfgDriveId != null),
+        };
+        var cfgPresetCount = cfgPresets.Count(x => x.HasValue);
+        if (cfgPresetCount > 0)
+        {
+            console.WriteLine($"ℹ️  configs/config.json から {cfgPresetCount} 件の設定を読み込みました。Enter で前回値を使用できます。");
+            foreach (var (name, _) in cfgPresets.Where(x => x.HasValue))
                 console.WriteLine($"     ✓ {name}");
             console.WriteLine();
         }
 
         // ステップ 1: Azure AD アプリ登録情報
         console.WriteLine("--- ステップ 1/3: Azure AD アプリ登録情報 ---");
-        var clientId = console.Prompt("ClientId（アプリケーション ID）", envClientId);
-        var tenantId = console.Prompt("TenantId（ディレクトリ ID）", envTenantId);
-        var hasEnvSecret = !string.IsNullOrWhiteSpace(envClientSecret);
+        var clientId = console.Prompt("ClientId（アプリケーション ID）", defaultClientId);
+        var tenantId = console.Prompt("TenantId（ディレクトリ ID）", defaultTenantId);
+        var hasEnvSecret = envClientSecret != null;
         var inputSecret = console.PromptMasked("ClientSecret（入力は画面に表示されません）", hasExistingValue: hasEnvSecret);
         var clientSecret = string.IsNullOrEmpty(inputSecret) && hasEnvSecret ? envClientSecret! : inputSecret;
         console.WriteLine();
 
         // ステップ 2: OneDrive / SharePoint 情報
         console.WriteLine("--- ステップ 2/3: OneDrive / SharePoint 設定 ---");
-        var oneDriveUserUpn = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）", envOneDriveUpn);
+        var oneDriveUserUpn = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）", defaultOneDriveUpn);
         console.WriteLine("  ヒント: フォルダパスを指定しない場合は Enter でドライブ全体を転送対象とします。");
-        var oneDriveSourceFolder = console.Prompt("転送元フォルダパス（省略可。例: Documents/Projects）", envSourceFolder);
-        var sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
+        var oneDriveSourceFolder = console.Prompt("転送元フォルダパス（省略可。例: Documents/Projects）", defaultSourceFolder);
+
+        // SharePoint 再利用チェック: SiteId + DriveId が既存の場合は URL 入力を省略できる
+        var reuseSharePoint = false;
+        string sharePointSiteUrl = string.Empty;
+        if (!string.IsNullOrWhiteSpace(existingSiteId) && !string.IsNullOrWhiteSpace(existingDriveId))
+        {
+            console.WriteLine();
+            console.WriteLine("  前回の SharePoint 設定を検出しました:");
+            console.WriteLine($"    SiteId : {existingSiteId}");
+            console.WriteLine($"    DriveId: {existingDriveId}");
+            reuseSharePoint = !console.PromptBool(
+                "  SharePoint サイトURL を入力して再解決しますか？ (N = 前回設定を使用)",
+                defaultValue: false);
+        }
+        if (!reuseSharePoint)
+            sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
         console.WriteLine();
 
         // env変数由来フラグ（全て env変数から取得した場合は .env 生成をスキップ）
         var secretFromEnv = hasEnvSecret && string.IsNullOrEmpty(inputSecret);
-        var clientIdFromEnv = !string.IsNullOrWhiteSpace(envClientId) && clientId == envClientId;
-        var tenantIdFromEnv = !string.IsNullOrWhiteSpace(envTenantId) && tenantId == envTenantId;
-        var upnFromEnv = !string.IsNullOrWhiteSpace(envOneDriveUpn) && oneDriveUserUpn == envOneDriveUpn;
-        var sourceFolderFromEnv = !string.IsNullOrWhiteSpace(envSourceFolder) && oneDriveSourceFolder == envSourceFolder;
+        var clientIdFromEnv = envClientId != null && clientId == envClientId;
+        var tenantIdFromEnv = envTenantId != null && tenantId == envTenantId;
+        var upnFromEnv = envOneDriveUpn != null && oneDriveUserUpn == envOneDriveUpn;
+        var sourceFolderFromEnv = envSourceFolder != null && oneDriveSourceFolder == envSourceFolder;
         var allAuthFromEnv = clientIdFromEnv && tenantIdFromEnv && secretFromEnv && upnFromEnv;
 
         // ステップ 3: Graph API でID解決
-        console.WriteLine("--- ステップ 3/3: Graph API 接続 ---");
-        console.WriteLine("Graph API に接続してIDを解決しています...");
-
         string effectiveOneDriveUser;
         string siteId;
-        IReadOnlyList<DriveEntry> drives;
-
-        try
-        {
-            (effectiveOneDriveUser, siteId, drives) = await ResolveGraphInfoAsync(
-                clientId, tenantId, clientSecret, oneDriveUserUpn, sharePointSiteUrl, ct).ConfigureAwait(false);
-        }
-        catch (InvalidOperationException ex)
-        {
-            console.WriteLine($"[ERR]  {ex.Message}");
-            console.WriteLine("セットアップを中断しました。設定値を確認してもう一度お試しください。");
-            Environment.ExitCode = 1;
-            return;
-        }
-        catch (HttpRequestException ex)
-        {
-            console.WriteLine($"[ERR]  ネットワーク接続に失敗しました: {ex.Message}");
-            console.WriteLine("インターネット接続やプロキシ設定を確認してください。");
-            Environment.ExitCode = 1;
-            return;
-        }
-        catch (MsalException ex)
-        {
-            console.WriteLine($"[ERR]  トークン取得に失敗しました: {ex.Message}");
-            console.WriteLine("ClientId / TenantId / ClientSecret を確認してください。");
-            Environment.ExitCode = 1;
-            return;
-        }
-
-        console.WriteLine($"[OK]   OneDrive ユーザー: {effectiveOneDriveUser}");
-        console.WriteLine($"[OK]   SharePoint サイトID: {siteId}");
-        console.WriteLine();
-
-        // ドライブ選択
         DriveEntry selectedDrive;
-        try
-        {
-            selectedDrive = SelectDrive(drives, console);
-        }
-        catch (InvalidOperationException ex)
-        {
-            console.WriteLine($"[ERR]  {ex.Message}");
-            Environment.ExitCode = 1;
-            return;
-        }
 
-        console.WriteLine($"[OK]   ドキュメントライブラリ: {selectedDrive.Name}");
-        console.WriteLine();
+        if (reuseSharePoint)
+        {
+            // SharePoint は既存 ID を再利用し、OneDrive 認証のみ確認する
+            console.WriteLine("--- ステップ 3/3: OneDrive 認証確認 ---");
+            console.WriteLine("OneDrive への接続を確認しています...");
+
+            try
+            {
+                effectiveOneDriveUser = await ResolveOneDriveUserAsync(
+                    clientId, tenantId, clientSecret, oneDriveUserUpn, ct).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                console.WriteLine($"[ERR]  {ex.Message}");
+                console.WriteLine("セットアップを中断しました。設定値を確認してもう一度お試しください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+            catch (HttpRequestException ex)
+            {
+                console.WriteLine($"[ERR]  ネットワーク接続に失敗しました: {ex.Message}");
+                console.WriteLine("インターネット接続やプロキシ設定を確認してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+            catch (MsalException ex)
+            {
+                console.WriteLine($"[ERR]  トークン取得に失敗しました: {ex.Message}");
+                console.WriteLine("ClientId / TenantId / ClientSecret を確認してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            siteId = existingSiteId!;
+            selectedDrive = new DriveEntry(existingDriveId!, "（前回設定）");
+            console.WriteLine($"[OK]   OneDrive ユーザー: {effectiveOneDriveUser}");
+            console.WriteLine($"[OK]   SharePoint SiteId: {siteId}（前回設定を使用）");
+            console.WriteLine($"[OK]   DriveId: {selectedDrive.Id}（前回設定を使用）");
+            console.WriteLine();
+        }
+        else
+        {
+            console.WriteLine("--- ステップ 3/3: Graph API 接続 ---");
+            console.WriteLine("Graph API に接続してIDを解決しています...");
+
+            IReadOnlyList<DriveEntry> drives;
+            try
+            {
+                (effectiveOneDriveUser, siteId, drives) = await ResolveGraphInfoAsync(
+                    clientId, tenantId, clientSecret, oneDriveUserUpn, sharePointSiteUrl, ct).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                console.WriteLine($"[ERR]  {ex.Message}");
+                console.WriteLine("セットアップを中断しました。設定値を確認してもう一度お試しください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+            catch (HttpRequestException ex)
+            {
+                console.WriteLine($"[ERR]  ネットワーク接続に失敗しました: {ex.Message}");
+                console.WriteLine("インターネット接続やプロキシ設定を確認してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+            catch (MsalException ex)
+            {
+                console.WriteLine($"[ERR]  トークン取得に失敗しました: {ex.Message}");
+                console.WriteLine("ClientId / TenantId / ClientSecret を確認してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            console.WriteLine($"[OK]   OneDrive ユーザー: {effectiveOneDriveUser}");
+            console.WriteLine($"[OK]   SharePoint サイトID: {siteId}");
+            console.WriteLine();
+
+            try
+            {
+                selectedDrive = SelectDrive(drives, console);
+            }
+            catch (InvalidOperationException ex)
+            {
+                console.WriteLine($"[ERR]  {ex.Message}");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            console.WriteLine($"[OK]   ドキュメントライブラリ: {selectedDrive.Name}");
+            console.WriteLine();
+        }
 
         // テンプレート生成・ファイル書き込み
         var configTemplate = await InitCommand.LoadTemplateAsync(
@@ -547,6 +639,76 @@ internal static class BootstrapCommand
             return null;
         }
     }
+
+    /// <summary>
+    /// config.json のみ（env変数を含まない）から設定を読み込む。
+    /// ファイルが存在しない場合はデフォルト値を返す。
+    /// </summary>
+    internal static MigratorOptions LoadConfigJsonOptions(string configPath)
+    {
+        if (!File.Exists(configPath))
+            return new MigratorOptions();
+
+        var cfg = new ConfigurationBuilder()
+            .AddJsonFile(configPath, optional: true, reloadOnChange: false)
+            .Build();
+
+        return cfg.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>() ?? new MigratorOptions();
+    }
+
+    /// <summary>
+    /// OneDrive ユーザーの認証のみ確認し、有効な UPN を返す。
+    /// SharePoint 解決はスキップする（前回設定を再利用する場合に使用）。
+    /// </summary>
+    private static async Task<string> ResolveOneDriveUserAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        string oneDriveUserUpn,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(clientId))
+            throw new InvalidOperationException("ClientId が入力されていません。");
+        if (string.IsNullOrWhiteSpace(tenantId))
+            throw new InvalidOperationException("TenantId が入力されていません。");
+        if (string.IsNullOrWhiteSpace(clientSecret))
+            throw new InvalidOperationException("ClientSecret が入力されていません。");
+        if (string.IsNullOrWhiteSpace(oneDriveUserUpn))
+            throw new InvalidOperationException("OneDrive ユーザーのUPN が入力されていません。");
+
+        var authenticator = new GraphAuthenticator(clientId, tenantId, clientSecret);
+        var token = await authenticator
+            .GetAuthorizationTokenAsync(new Uri("https://graph.microsoft.com/v1.0/"), cancellationToken: ct)
+            .ConfigureAwait(false);
+
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        try
+        {
+            var userBody = await TryGetGraphJsonAsync(
+                httpClient,
+                $"https://graph.microsoft.com/v1.0/users/{Uri.EscapeDataString(oneDriveUserUpn)}?$select=id,userPrincipalName",
+                "onedrive.user",
+                ct).ConfigureAwait(false);
+
+            return userBody is not null
+                ? (TryReadProperty(userBody, "userPrincipalName") ?? oneDriveUserUpn)
+                : oneDriveUserUpn;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("Microsoft Graph への接続がタイムアウトしました。");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException($"Microsoft Graph への接続に失敗しました: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>空白のみの文字列を null に正規化する。</summary>
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 /// <summary>BootstrapCommand が使用するドライブ情報。</summary>

@@ -1,5 +1,7 @@
+using CloudMigrator.Core.Configuration;
 using CloudMigrator.Setup.Cli.Commands;
 using FluentAssertions;
+using System.Text.Json;
 
 namespace CloudMigrator.Tests.Unit;
 
@@ -176,6 +178,82 @@ public sealed class SetupBootstrapCommandTests
         // 空フォルダ指定時はキーを書き換えずプレースホルダー（空）のまま維持
         result.Should().Contain("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=");
         result.Should().NotContain("# MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=");
+    }
+
+    // ===== LoadConfigJsonOptions =====
+
+    [Fact]
+    public void LoadConfigJsonOptions_ShouldReturnDefaults_WhenFileNotFound()
+    {
+        // 検証対象: LoadConfigJsonOptions  目的: config.json が存在しない場合にデフォルト値を返すこと
+        var result = BootstrapCommand.LoadConfigJsonOptions("nonexistent_config.json");
+
+        result.Should().NotBeNull();
+        result.Graph.ClientId.Should().BeEmpty();
+        result.Graph.SharePointSiteId.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LoadConfigJsonOptions_ShouldReadValues_WhenConfigJsonExists()
+    {
+        // 検証対象: LoadConfigJsonOptions  目的: config.json が存在する場合に値を正しく読み込むこと
+        var configPath = Path.GetTempFileName();
+        try
+        {
+            var config = new
+            {
+                migrator = new
+                {
+                    graph = new
+                    {
+                        clientId = "test-client-id",
+                        tenantId = "test-tenant-id",
+                        sharePointSiteId = "test-site-id",
+                        sharePointDriveId = "test-drive-id",
+                        oneDriveUserId = "user@example.com",
+                        oneDriveSourceFolder = "Documents/Archive"
+                    }
+                }
+            };
+            File.WriteAllText(configPath, JsonSerializer.Serialize(config));
+
+            var result = BootstrapCommand.LoadConfigJsonOptions(configPath);
+
+            result.Graph.ClientId.Should().Be("test-client-id");
+            result.Graph.TenantId.Should().Be("test-tenant-id");
+            result.Graph.SharePointSiteId.Should().Be("test-site-id");
+            result.Graph.SharePointDriveId.Should().Be("test-drive-id");
+            result.Graph.OneDriveUserId.Should().Be("user@example.com");
+            result.Graph.OneDriveSourceFolder.Should().Be("Documents/Archive");
+        }
+        finally
+        {
+            File.Delete(configPath);
+        }
+    }
+
+    [Fact]
+    public void LoadConfigJsonOptions_ShouldIgnoreEnvVariables_WhenReadingConfigJson()
+    {
+        // 検証対象: LoadConfigJsonOptions  目的: config.json 読み込みが環境変数の影響を受けないこと
+        var configPath = Path.GetTempFileName();
+        try
+        {
+            var config = new { migrator = new { graph = new { clientId = "json-client-id" } } };
+            File.WriteAllText(configPath, JsonSerializer.Serialize(config));
+
+            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID", "env-client-id");
+            var result = BootstrapCommand.LoadConfigJsonOptions(configPath);
+            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID", null);
+
+            // config.json のみを読み込むため、env変数の値は反映されない
+            result.Graph.ClientId.Should().Be("json-client-id");
+        }
+        finally
+        {
+            File.Delete(configPath);
+            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID", null);
+        }
     }
 }
 
