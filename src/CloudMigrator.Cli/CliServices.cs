@@ -61,6 +61,7 @@ internal sealed class CliServices : IDisposable
         {
             OneDriveUserId = options.Graph.OneDriveUserId,
             SharePointDriveId = options.Graph.SharePointDriveId,
+            OneDriveSourceFolder = options.Graph.OneDriveSourceFolder,
         };
 
         var sessionStorePath = Path.Combine(

@@ -83,12 +83,30 @@ public sealed class GraphStorageProvider : IStorageProvider
             ?? throw new InvalidOperationException(
                 $"OneDrive が取得できません: UserId={_options.OneDriveUserId}");
 
+        // 転送元フォルダが指定されている場合はパスを itemId に解決してからクロール開始（FR-02）
+        string? startItemId = null;
+        string startLabel = "root";
+        if (!string.IsNullOrWhiteSpace(_options.OneDriveSourceFolder))
+        {
+            var folderPath = _options.OneDriveSourceFolder.Trim('/');
+            // Graph API のパス指定表記: /drives/{driveId}/items/root:/{path}:
+            var folderItem = await _client.Drives[driveId].Items[$"root:/{folderPath}:"]
+                .GetAsync(cancellationToken: ct).ConfigureAwait(false);
+            startItemId = folderItem?.Id
+                ?? throw new InvalidOperationException(
+                    $"OneDrive の指定フォルダが見つかりません: '{folderPath}' (UserId={_options.OneDriveUserId})");
+            startLabel = folderPath;
+            _logger.LogInformation(
+                "OneDrive クロール開始フォルダ: {Folder} (ItemId={ItemId})", folderPath, startItemId);
+        }
+
         var result = new List<StorageItem>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        await CrawlDriveFolderAsync(driveId, null, string.Empty, result, seen, ct).ConfigureAwait(false);
+        await CrawlDriveFolderAsync(driveId, startItemId, string.Empty, result, seen, ct).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "OneDrive クロール完了: {Count} 件 (UserId={UserId})", result.Count, _options.OneDriveUserId);
+            "OneDrive クロール完了: {Count} 件 (UserId={UserId}, Folder={Folder})",
+            result.Count, _options.OneDriveUserId, startLabel);
         return result;
     }
 

@@ -83,11 +83,13 @@ internal static class BootstrapCommand
         var envTenantIdRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID");
         var envClientSecretRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET");
         var envOneDriveUpnRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID");
+        var envSourceFolderRaw = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER");
 
         var envClientId = string.IsNullOrWhiteSpace(envClientIdRaw) ? null : envClientIdRaw.Trim();
         var envTenantId = string.IsNullOrWhiteSpace(envTenantIdRaw) ? null : envTenantIdRaw.Trim();
         var envClientSecret = string.IsNullOrWhiteSpace(envClientSecretRaw) ? null : envClientSecretRaw.Trim();
         var envOneDriveUpn = string.IsNullOrWhiteSpace(envOneDriveUpnRaw) ? null : envOneDriveUpnRaw.Trim();
+        var envSourceFolder = string.IsNullOrWhiteSpace(envSourceFolderRaw) ? null : envSourceFolderRaw.Trim();
 
         var presetItems = new (string Name, bool HasValue)[]
         {
@@ -95,6 +97,7 @@ internal static class BootstrapCommand
             ("MIGRATOR__GRAPH__TENANTID", !string.IsNullOrWhiteSpace(envTenantId)),
             ("MIGRATOR__GRAPH__CLIENTSECRET（シークレット）", !string.IsNullOrWhiteSpace(envClientSecret)),
             ("MIGRATOR__GRAPH__ONEDRIVEUSERID", !string.IsNullOrWhiteSpace(envOneDriveUpn)),
+            ("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", !string.IsNullOrWhiteSpace(envSourceFolder)),
         };
         var presetCount = presetItems.Count(x => x.HasValue);
 
@@ -118,6 +121,8 @@ internal static class BootstrapCommand
         // ステップ 2: OneDrive / SharePoint 情報
         console.WriteLine("--- ステップ 2/3: OneDrive / SharePoint 設定 ---");
         var oneDriveUserUpn = console.Prompt("OneDrive ユーザーのUPN（例: user@contoso.com）", envOneDriveUpn);
+        console.WriteLine("  ヒント: フォルダパスを指定しない場合は Enter でドライブ全体を転送対象とします。");
+        var oneDriveSourceFolder = console.Prompt("転送元フォルダパス（省略可。例: Documents/Projects）", envSourceFolder);
         var sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
         console.WriteLine();
 
@@ -126,6 +131,7 @@ internal static class BootstrapCommand
         var clientIdFromEnv = !string.IsNullOrWhiteSpace(envClientId) && clientId == envClientId;
         var tenantIdFromEnv = !string.IsNullOrWhiteSpace(envTenantId) && tenantId == envTenantId;
         var upnFromEnv = !string.IsNullOrWhiteSpace(envOneDriveUpn) && oneDriveUserUpn == envOneDriveUpn;
+        var sourceFolderFromEnv = !string.IsNullOrWhiteSpace(envSourceFolder) && oneDriveSourceFolder == envSourceFolder;
         var allAuthFromEnv = clientIdFromEnv && tenantIdFromEnv && secretFromEnv && upnFromEnv;
 
         // ステップ 3: Graph API でID解決
@@ -214,6 +220,7 @@ internal static class BootstrapCommand
             envTemplate = ApplyBootstrapEnvTemplate(
                 envTemplate,
                 effectiveOneDriveUser, upnFromEnv,
+                oneDriveSourceFolder, sourceFolderFromEnv,
                 siteId, selectedDrive.Id,
                 clientId, clientIdFromEnv,
                 tenantId, tenantIdFromEnv,
@@ -240,6 +247,8 @@ internal static class BootstrapCommand
             console.WriteLine($"   以下の識別子を環境変数マネージャーに追加してください：");
             console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTSITEID={siteId}");
             console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTDRIVEID={selectedDrive.Id}");
+            if (!string.IsNullOrWhiteSpace(oneDriveSourceFolder))
+                console.WriteLine($"   MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER={oneDriveSourceFolder}");
         }
 
         if (results.Any(r => r.Status == InitFileStatus.Error))
@@ -261,7 +270,7 @@ internal static class BootstrapCommand
 
         // doctor で設定診断
         console.WriteLine("設定を診断しています（doctor）...");
-        SetEnvForSession(clientId, tenantId, clientSecret, effectiveOneDriveUser, siteId, selectedDrive.Id);
+        SetEnvForSession(clientId, tenantId, clientSecret, effectiveOneDriveUser, oneDriveSourceFolder, siteId, selectedDrive.Id);
         DoctorCommand.Run(configPath, strictDropbox: false, ct);
         console.WriteLine();
 
@@ -413,7 +422,7 @@ internal static class BootstrapCommand
 
     private static void SetEnvForSession(
         string clientId, string tenantId, string clientSecret,
-        string oneDriveUserId, string siteId, string driveId)
+        string oneDriveUserId, string? sourceFolder, string siteId, string driveId)
     {
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID", clientId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID", tenantId);
@@ -421,11 +430,14 @@ internal static class BootstrapCommand
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVEUSERID", oneDriveUserId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTSITEID", siteId);
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__SHAREPOINTDRIVEID", driveId);
+        if (!string.IsNullOrWhiteSpace(sourceFolder))
+            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", sourceFolder);
     }
 
-    private static string ApplyBootstrapEnvTemplate(
+    internal static string ApplyBootstrapEnvTemplate(
         string template,
         string effectiveOneDriveUser, bool upnFromEnv,
+        string oneDriveSourceFolder, bool sourceFolderFromEnv,
         string siteId, string driveId,
         string clientId, bool clientIdFromEnv,
         string tenantId, bool tenantIdFromEnv,
@@ -451,6 +463,14 @@ internal static class BootstrapCommand
         updated = upnFromEnv
             ? CommentOutEnvKey(updated, "MIGRATOR__GRAPH__ONEDRIVEUSERID")
             : InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__ONEDRIVEUSERID", effectiveOneDriveUser);
+
+        // 転送元フォルダパス（空文字はドライブ全体なのでプレースホルダーのまま）
+        if (!string.IsNullOrWhiteSpace(oneDriveSourceFolder))
+        {
+            updated = sourceFolderFromEnv
+                ? CommentOutEnvKey(updated, "MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER")
+                : InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", oneDriveSourceFolder);
+        }
 
         // Graph解決済みID は常に反映（新規取得値のため）
         updated = InitCommand.UpsertEnvVariable(updated, "MIGRATOR__GRAPH__SHAREPOINTSITEID", siteId);

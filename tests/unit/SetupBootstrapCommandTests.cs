@@ -119,6 +119,64 @@ public sealed class SetupBootstrapCommandTests
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*見つかりませんでした*");
     }
+
+    // ===== ApplyBootstrapEnvTemplate (OneDriveSourceFolder) =====
+
+    [Fact]
+    public void ApplyBootstrapEnvTemplate_ShouldSetSourceFolder_WhenFolderNotFromEnv()
+    {
+        // 検証対象: ApplyBootstrapEnvTemplate  目的: 手動入力のフォルダパスが .env テンプレートに反映されること
+        var template = InitCommand.DefaultEnvTemplate;
+
+        var result = BootstrapCommand.ApplyBootstrapEnvTemplate(
+            template,
+            effectiveOneDriveUser: "user@example.com", upnFromEnv: false,
+            oneDriveSourceFolder: "Documents/Projects", sourceFolderFromEnv: false,
+            siteId: "site-1", driveId: "drive-1",
+            clientId: "cid-1", clientIdFromEnv: false,
+            tenantId: "tid-1", tenantIdFromEnv: false,
+            secretFromEnv: false);
+
+        result.Should().Contain("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=Documents/Projects");
+    }
+
+    [Fact]
+    public void ApplyBootstrapEnvTemplate_ShouldCommentOutSourceFolder_WhenFolderFromEnv()
+    {
+        // 検証対象: ApplyBootstrapEnvTemplate  目的: env変数由来のフォルダはコメントアウトされること
+        var template = InitCommand.DefaultEnvTemplate;
+
+        var result = BootstrapCommand.ApplyBootstrapEnvTemplate(
+            template,
+            effectiveOneDriveUser: "user@example.com", upnFromEnv: false,
+            oneDriveSourceFolder: "Documents/Projects", sourceFolderFromEnv: true,
+            siteId: "site-1", driveId: "drive-1",
+            clientId: "cid-1", clientIdFromEnv: false,
+            tenantId: "tid-1", tenantIdFromEnv: false,
+            secretFromEnv: false);
+
+        result.Should().Contain("# MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=");
+    }
+
+    [Fact]
+    public void ApplyBootstrapEnvTemplate_ShouldNotSetSourceFolder_WhenFolderIsEmpty()
+    {
+        // 検証対象: ApplyBootstrapEnvTemplate  目的: フォルダ未指定（空文字）の場合、プレースホルダーのまま変更されないこと
+        var template = InitCommand.DefaultEnvTemplate;
+
+        var result = BootstrapCommand.ApplyBootstrapEnvTemplate(
+            template,
+            effectiveOneDriveUser: "user@example.com", upnFromEnv: false,
+            oneDriveSourceFolder: "", sourceFolderFromEnv: false,
+            siteId: "site-1", driveId: "drive-1",
+            clientId: "cid-1", clientIdFromEnv: false,
+            tenantId: "tid-1", tenantIdFromEnv: false,
+            secretFromEnv: false);
+
+        // 空フォルダ指定時はキーを書き換えずプレースホルダー（空）のまま維持
+        result.Should().Contain("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=");
+        result.Should().NotContain("# MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=");
+    }
 }
 
 /// <summary>テスト用 IBootstrapConsole 実装。</summary>

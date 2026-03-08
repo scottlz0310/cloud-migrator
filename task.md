@@ -58,7 +58,16 @@
 - [x] `file-crawler` サブコマンド（onedrive/sharepoint/dropbox/skiplist/compare/validate/explore）
 - [x] Dropbox プロバイダー本実装
 
-## Phase 8: E2E・性能検証・切替
+## Issue 18: OneDrive 転送元フォルダ指定（FR-02 完全実装）
+
+- [x] `GraphStorageOptions` / `MigratorOptions.GraphProviderOptions` に `OneDriveSourceFolder` 追加
+- [x] `GraphStorageProvider.ListOneDriveItemsAsync` でフォルダパスを itemId に解決してクロール開始
+- [x] `CliServices.cs` での `storageOptions` マッピング追加
+- [x] `sample.env` / `DefaultEnvTemplate` に `MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER` キー追加
+- [x] `bootstrap` ウィザードにフォルダ入力ステップ追加（省略可・env変数プリフィル対応）
+- [ ] ユニットテスト追加（フォルダ解決ロジック）
+- [ ] ビルド・テスト確認、コミット、PR 作成
+
 
 - [ ] E2E テスト（実 Graph API or ステージング）
 - [ ] 並列数・チャンクサイズ最適化

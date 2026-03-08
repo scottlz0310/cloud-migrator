@@ -81,6 +81,12 @@ public sealed class GraphProviderOptions
     /// <summary>OneDrive ユーザー ID または UPN</summary>
     public string OneDriveUserId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 転送元 OneDrive のルートフォルダパス（例: "Documents/Projects"）。
+    /// 空文字の場合はドライブ全体をクロールする（FR-02）。
+    /// </summary>
+    public string OneDriveSourceFolder { get; set; } = string.Empty;
+
     /// <summary>SharePoint サイト ID</summary>
     public string SharePointSiteId { get; set; } = string.Empty;
 
