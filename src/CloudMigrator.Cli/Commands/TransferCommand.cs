@@ -84,7 +84,8 @@ internal static class TransferCommand
             svc.StorageProvider,
             svc.SkipListManager,
             opts,
-            svc.LoggerFactory.CreateLogger<TransferEngine>());
+            svc.LoggerFactory.CreateLogger<TransferEngine>(),
+            svc.AdaptiveConcurrencyController);
 
         var summary = await engine.RunAsync(sourceItems, opts.DestinationRoot, ct).ConfigureAwait(false);
 

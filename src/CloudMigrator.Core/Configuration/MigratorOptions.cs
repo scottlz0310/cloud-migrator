@@ -32,6 +32,9 @@ public sealed class MigratorOptions
     // --- Watchdog 設定 ---
     public WatchdogOptions Watchdog { get; set; } = new();
 
+    // --- 動的並列度制御設定 ---
+    public AdaptiveConcurrencyOptions AdaptiveConcurrency { get; set; } = new();
+
     // --- プロバイダー設定 ---
     public GraphProviderOptions Graph { get; set; } = new();
     public DropboxProviderOptions Dropbox { get; set; } = new();
@@ -108,4 +111,23 @@ public sealed class DropboxProviderOptions
 
     /// <summary>upload session のチャンクサイズ（MB）。</summary>
     public int UploadChunkSizeMb { get; set; } = 8;
+}
+
+/// <summary>
+/// Graph API レート制限に応じた動的並列度制御の設定（FR-14 拡張）。
+/// </summary>
+public sealed class AdaptiveConcurrencyOptions
+{
+    /// <summary>動的並列度制御を有効にするかどうか。デフォルト false（既存の固定並列度方式を維持）</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// 並列度の下限。レート制限が続いてもこの値より下がらない。デフォルト 1
+    /// </summary>
+    public int MinDegree { get; set; } = 1;
+
+    /// <summary>
+    /// 並列度を 1 回復させるために必要な連続成功回数。デフォルト 10
+    /// </summary>
+    public int SuccessThresholdToIncrease { get; set; } = 10;
 }

@@ -1,5 +1,6 @@
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Storage;
+using CloudMigrator.Core.Transfer;
 using CloudMigrator.Observability;
 using CloudMigrator.Providers.Dropbox;
 using CloudMigrator.Providers.Graph;
@@ -22,13 +23,19 @@ internal sealed class CliServices : IDisposable
     public CrawlCache CrawlCache { get; }
     public SkipListManager SkipListManager { get; }
 
+    /// <summary>
+    /// 動的並列度コントローラー。<see cref="MigratorOptions.AdaptiveConcurrency"/> が無効な場合は null。
+    /// </summary>
+    public AdaptiveConcurrencyController? AdaptiveConcurrencyController { get; }
+
     private CliServices(
         MigratorOptions options,
         ILoggerFactory loggerFactory,
         GraphStorageProvider storageProvider,
         DropboxStorageProvider dropboxProvider,
         CrawlCache crawlCache,
-        SkipListManager skipListManager)
+        SkipListManager skipListManager,
+        AdaptiveConcurrencyController? adaptiveConcurrencyController)
     {
         Options = options;
         LoggerFactory = loggerFactory;
@@ -36,6 +43,7 @@ internal sealed class CliServices : IDisposable
         DropboxProvider = dropboxProvider;
         CrawlCache = crawlCache;
         SkipListManager = skipListManager;
+        AdaptiveConcurrencyController = adaptiveConcurrencyController;
     }
 
     public static CliServices Build(string? configPath = null)
@@ -52,10 +60,25 @@ internal sealed class CliServices : IDisposable
             options.Graph.TenantId,
             clientSecret);
 
+        // 動的並列度制御コントローラーを生成（設定で有効な場合）
+        AdaptiveConcurrencyController? adaptiveController = null;
+        Action<TimeSpan?>? onRateLimit = null;
+        if (options.AdaptiveConcurrency.Enabled)
+        {
+            adaptiveController = new AdaptiveConcurrencyController(
+                initialDegree: options.MaxParallelTransfers,
+                minDegree: options.AdaptiveConcurrency.MinDegree,
+                maxDegree: options.MaxParallelTransfers,
+                successThreshold: options.AdaptiveConcurrency.SuccessThresholdToIncrease,
+                logger: loggerFactory.CreateLogger<AdaptiveConcurrencyController>());
+            onRateLimit = adaptiveController.NotifyRateLimit;
+        }
+
         var graphClient = GraphClientFactory.Create(
             auth,
             timeoutSec: options.TimeoutSec,
-            maxRetry: options.RetryCount);
+            maxRetry: options.RetryCount,
+            onRateLimit: onRateLimit);
 
         var storageOptions = new GraphStorageOptions
         {
@@ -107,11 +130,13 @@ internal sealed class CliServices : IDisposable
             storageProvider,
             dropboxProvider,
             crawlCache,
-            skipListManager);
+            skipListManager,
+            adaptiveController);
     }
 
     public void Dispose()
     {
+        AdaptiveConcurrencyController?.Dispose();
         DropboxProvider.Dispose();
         LoggerFactory.Dispose();
     }

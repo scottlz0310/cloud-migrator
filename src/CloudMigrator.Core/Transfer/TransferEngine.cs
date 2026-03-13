@@ -12,7 +12,8 @@ namespace CloudMigrator.Core.Transfer;
 /// <list type="bullet">
 ///   <item>フォルダを転送先に先行作成（FR-06）</item>
 ///   <item>skip_list 照合でスキップ（FR-07）</item>
-///   <item><see cref="Channel{T}"/> + <see cref="Parallel.ForEachAsync"/> で上限付き並列転送</item>
+///   <item><see cref="AdaptiveConcurrencyController"/> が指定された場合は動的並列度制御（FR-14 拡張）</item>
+///   <item>指定がない場合は <see cref="Channel{T}"/> + <see cref="Parallel.ForEachAsync"/> で固定並列転送</item>
 ///   <item>転送成功後に skip_list へ原子的追加（FR-08）</item>
 /// </list>
 /// </summary>
@@ -22,17 +23,20 @@ public sealed class TransferEngine
     private readonly SkipListManager _skipList;
     private readonly MigratorOptions _options;
     private readonly ILogger<TransferEngine> _logger;
+    private readonly AdaptiveConcurrencyController? _concurrencyController;
 
     public TransferEngine(
         IStorageProvider destProvider,
         SkipListManager skipList,
         MigratorOptions options,
-        ILogger<TransferEngine> logger)
+        ILogger<TransferEngine> logger,
+        AdaptiveConcurrencyController? concurrencyController = null)
     {
         _destProvider = destProvider;
         _skipList = skipList;
         _options = options;
         _logger = logger;
+        _concurrencyController = concurrencyController;
     }
 
     /// <summary>
@@ -123,44 +127,101 @@ public sealed class TransferEngine
             return new TransferSummary { Success = 0, Failed = 0, Skipped = skipped, Elapsed = sw.Elapsed };
         }
 
-        // ─── 3. Channel に全ジョブを投入 ────────────────────────────────
-        var channel = Channel.CreateBounded<TransferJob>(
-            new BoundedChannelOptions(jobs.Count)
-            {
-                SingleWriter = true,
-                SingleReader = false,
-                FullMode = BoundedChannelFullMode.Wait,
-            });
-
-        foreach (var job in jobs)
-            await channel.Writer.WriteAsync(job, cancellationToken).ConfigureAwait(false);
-        channel.Writer.Complete();
-
-        // ─── 4. Parallel.ForEachAsync で並列消費 ────────────────────────
+        // ─── 3 & 4. 並列転送 ─────────────────────────────────────────────
         int success = 0, failed = 0;
 
-        await Parallel.ForEachAsync(
-            channel.Reader.ReadAllAsync(cancellationToken),
-            new ParallelOptions
-            {
-                MaxDegreeOfParallelism = _options.MaxParallelTransfers,
-                CancellationToken = cancellationToken,
-            },
-            async (job, innerCt) =>
-            {
-                try
+        if (_concurrencyController is not null)
+        {
+            // ── 動的並列度制御モード ──────────────────────────────────────
+            // Channel + Parallel.ForEachAsync(MaxDegree ワーカー) + コントローラーセマフォのゲート。
+            // ジョブが大量でもアクティブなタスク数は MaxDegree 以下に抑えられる。
+            _logger.LogInformation(
+                "動的並列度制御モードで転送開始 (初期並列度: {Degree}/{Max})",
+                _concurrencyController.CurrentDegree, _concurrencyController.MaxDegree);
+
+            var adaptiveChannel = Channel.CreateBounded<TransferJob>(
+                new BoundedChannelOptions(jobs.Count)
                 {
-                    await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
-                    await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
-                    Interlocked.Increment(ref success);
-                    _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                    SingleWriter = true,
+                    SingleReader = false,
+                    FullMode = BoundedChannelFullMode.Wait,
+                });
+
+            foreach (var job in jobs)
+                await adaptiveChannel.Writer.WriteAsync(job, cancellationToken).ConfigureAwait(false);
+            adaptiveChannel.Writer.Complete();
+
+            var controller = _concurrencyController; // ローカルにキャプチャ
+
+            await Parallel.ForEachAsync(
+                adaptiveChannel.Reader.ReadAllAsync(cancellationToken),
+                new ParallelOptions
                 {
-                    Interlocked.Increment(ref failed);
-                    _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
-                }
-            }).ConfigureAwait(false);
+                    MaxDegreeOfParallelism = controller.MaxDegree,
+                    CancellationToken = cancellationToken,
+                },
+                async (job, innerCt) =>
+                {
+                    // セマフォで現在の動的並列度に絞る（超過ワーカーはここで待機）
+                    await controller.AcquireAsync(innerCt).ConfigureAwait(false);
+                    try
+                    {
+                        await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
+                        await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
+                        Interlocked.Increment(ref success);
+                        _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
+                        controller.NotifySuccess();
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        Interlocked.Increment(ref failed);
+                        _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
+                    }
+                    finally
+                    {
+                        controller.Release();
+                    }
+                }).ConfigureAwait(false);
+        }
+        else
+        {
+            // ── 固定並列度モード（後方互換） ──────────────────────────────
+            // Channel + Parallel.ForEachAsync による並列実行。
+            var channel = Channel.CreateBounded<TransferJob>(
+                new BoundedChannelOptions(jobs.Count)
+                {
+                    SingleWriter = true,
+                    SingleReader = false,
+                    FullMode = BoundedChannelFullMode.Wait,
+                });
+
+            foreach (var job in jobs)
+                await channel.Writer.WriteAsync(job, cancellationToken).ConfigureAwait(false);
+            channel.Writer.Complete();
+
+            await Parallel.ForEachAsync(
+                channel.Reader.ReadAllAsync(cancellationToken),
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = _options.MaxParallelTransfers,
+                    CancellationToken = cancellationToken,
+                },
+                async (job, innerCt) =>
+                {
+                    try
+                    {
+                        await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
+                        await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
+                        Interlocked.Increment(ref success);
+                        _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        Interlocked.Increment(ref failed);
+                        _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
+                    }
+                }).ConfigureAwait(false);
+        }
 
         sw.Stop();
 
