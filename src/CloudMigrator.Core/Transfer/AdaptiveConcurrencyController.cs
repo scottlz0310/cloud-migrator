@@ -164,10 +164,11 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             await _semaphore.WaitAsync(_disposeCts.Token).ConfigureAwait(false);
             lock (_syncRoot) { _absorbedActual++; }
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
-            // Dispose 時のキャンセル。スロット吸収は中断するが
-            // _current は既にデクリメント済みのため補正しない（dispose 後は使用しない）。
+            // Dispose 時のキャンセル（OperationCanceledException）または
+            // セマフォ破棄後の呼び出し（ObjectDisposedException）のいずれも無視する。
+            // _current は既にデクリメント済みだが、Dispose 後は使用しないため補正不要。
         }
     }
 

@@ -133,37 +133,55 @@ public sealed class TransferEngine
         if (_concurrencyController is not null)
         {
             // ── 動的並列度制御モード ──────────────────────────────────────
-            // セマフォベースの並列実行。AdaptiveConcurrencyController がスロット数を動的に調整する。
+            // Channel + Parallel.ForEachAsync(MaxDegree ワーカー) + コントローラーセマフォのゲート。
+            // ジョブが大量でもアクティブなタスク数は MaxDegree 以下に抑えられる。
             _logger.LogInformation(
                 "動的並列度制御モードで転送開始 (初期並列度: {Degree}/{Max})",
                 _concurrencyController.CurrentDegree, _concurrencyController.MaxDegree);
 
+            var adaptiveChannel = Channel.CreateBounded<TransferJob>(
+                new BoundedChannelOptions(jobs.Count)
+                {
+                    SingleWriter = true,
+                    SingleReader = false,
+                    FullMode = BoundedChannelFullMode.Wait,
+                });
+
+            foreach (var job in jobs)
+                await adaptiveChannel.Writer.WriteAsync(job, cancellationToken).ConfigureAwait(false);
+            adaptiveChannel.Writer.Complete();
+
             var controller = _concurrencyController; // ローカルにキャプチャ
 
-            async Task ExecuteJobAsync(TransferJob job)
-            {
-                await controller.AcquireAsync(cancellationToken).ConfigureAwait(false);
-                try
+            await Parallel.ForEachAsync(
+                adaptiveChannel.Reader.ReadAllAsync(cancellationToken),
+                new ParallelOptions
                 {
-                    await _destProvider.UploadFileAsync(job, cancellationToken).ConfigureAwait(false);
-                    await _skipList.AddAsync(job.Source.SkipKey, cancellationToken).ConfigureAwait(false);
-                    Interlocked.Increment(ref success);
-                    _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
-                    controller.NotifySuccess();
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                    MaxDegreeOfParallelism = controller.MaxDegree,
+                    CancellationToken = cancellationToken,
+                },
+                async (job, innerCt) =>
                 {
-                    Interlocked.Increment(ref failed);
-                    _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
-                }
-                finally
-                {
-                    controller.Release();
-                }
-            }
-
-            var tasks = jobs.Select(job => ExecuteJobAsync(job)).ToArray();
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+                    // セマフォで現在の動的並列度に絞る（超過ワーカーはここで待機）
+                    await controller.AcquireAsync(innerCt).ConfigureAwait(false);
+                    try
+                    {
+                        await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
+                        await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
+                        Interlocked.Increment(ref success);
+                        _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
+                        controller.NotifySuccess();
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        Interlocked.Increment(ref failed);
+                        _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
+                    }
+                    finally
+                    {
+                        controller.Release();
+                    }
+                }).ConfigureAwait(false);
         }
         else
         {

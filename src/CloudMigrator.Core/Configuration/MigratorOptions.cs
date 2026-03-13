@@ -118,8 +118,8 @@ public sealed class DropboxProviderOptions
 /// </summary>
 public sealed class AdaptiveConcurrencyOptions
 {
-    /// <summary>動的並列度制御を有効にするかどうか。デフォルト true</summary>
-    public bool Enabled { get; set; } = true;
+    /// <summary>動的並列度制御を有効にするかどうか。デフォルト false（既存の固定並列度方式を維持）</summary>
+    public bool Enabled { get; set; } = false;
 
     /// <summary>
     /// 並列度の下限。レート制限が続いてもこの値より下がらない。デフォルト 1
