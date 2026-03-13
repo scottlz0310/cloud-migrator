@@ -3,6 +3,7 @@ using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Kiota.Abstractions;
 
 namespace CloudMigrator.Providers.Graph;
@@ -20,6 +21,8 @@ public sealed class GraphStorageProvider : IStorageProvider
     private readonly int _chunkSizeBytes;
     private readonly UploadSessionStore? _sessionStore;
     private string? _cachedOneDriveDriveId;
+    // フォルダ先行作成フェーズのパス→ID キャッシュ（SharePoint への重複 API 呼び出しを防ぐ）
+    private readonly Dictionary<string, string> _folderIdCache = new(StringComparer.OrdinalIgnoreCase);
 
     public string ProviderId => "graph";
 
@@ -164,11 +167,24 @@ public sealed class GraphStorageProvider : IStorageProvider
         HashSet<string> seen,
         CancellationToken ct)
     {
-        DriveItemCollectionResponse? firstPage = itemId is null
-            ? await _client.Drives[driveId].Items["root"].Children
-                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false)
-            : await _client.Drives[driveId].Items[itemId].Children
-                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false);
+        DriveItemCollectionResponse? firstPage;
+        try
+        {
+            firstPage = itemId is null
+                ? await _client.Drives[driveId].Items["root"].Children
+                    .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false)
+                : await _client.Drives[driveId].Items[itemId].Children
+                    .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is ODataError or ApiException)
+        {
+            _logger.LogWarning(
+                "フォルダへのアクセスをスキップします ({ExType} HTTP {Status}): Path={Path} ItemId={ItemId}",
+                ex.GetType().Name,
+                ex is ODataError oe ? oe.ResponseStatusCode : (ex is ApiException ae ? ae.ResponseStatusCode : 0),
+                currentPath, itemId);
+            return;
+        }
 
         if (firstPage is null) return;
 
@@ -421,10 +437,24 @@ public sealed class GraphStorageProvider : IStorageProvider
 
         var driveId = _options.SharePointDriveId;
         var parentId = "root";
+        var currentPath = "";
 
         foreach (var segment in segments)
+        {
+            currentPath = string.IsNullOrEmpty(currentPath) ? segment : $"{currentPath}/{segment}";
+            var cacheKey = $"{driveId}:{currentPath}";
+
+            // キャッシュに存在する場合は API 呼び出しをスキップ
+            if (_folderIdCache.TryGetValue(cacheKey, out var cachedId))
+            {
+                parentId = cachedId;
+                continue;
+            }
+
             parentId = await EnsureFolderSegmentAsync(driveId, parentId, segment, cancellationToken)
                 .ConfigureAwait(false);
+            _folderIdCache[cacheKey] = parentId;
+        }
 
         _logger.LogDebug("フォルダ確認完了: {FolderPath}", folderPath);
     }
@@ -449,8 +479,10 @@ public sealed class GraphStorageProvider : IStorageProvider
                 : await _client.Drives[driveId].Items[parentId].Children
                     .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false);
 
-            return created?.Id
+            var newId = created?.Id
                 ?? throw new InvalidOperationException($"フォルダ作成後に ID が取得できません: {folderName}");
+            _logger.LogInformation("フォルダ作成: {FolderName}", folderName);
+            return newId;
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 409)
         {
@@ -463,16 +495,33 @@ public sealed class GraphStorageProvider : IStorageProvider
     private async Task<string> FindFolderIdAsync(
         string driveId, string parentId, string folderName, CancellationToken ct)
     {
-        var escapedName = folderName.Replace("'", "''", StringComparison.Ordinal);
-        var filter = $"name eq '{escapedName}' and folder ne null";
-        DriveItemCollectionResponse? children = parentId == "root"
+        // SharePoint の Children エンドポイントは $filter 非対応のため
+        // PageIterator でページング取得しクライアント側でフィルタリングする
+        DriveItemCollectionResponse? firstPage = parentId == "root"
             ? await _client.Drives[driveId].Items["root"].Children
-                .GetAsync(r => r.QueryParameters.Filter = filter, ct).ConfigureAwait(false)
+                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false)
             : await _client.Drives[driveId].Items[parentId].Children
-                .GetAsync(r => r.QueryParameters.Filter = filter, ct).ConfigureAwait(false);
+                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false);
 
-        return children?.Value?.FirstOrDefault()?.Id
-            ?? throw new InvalidOperationException(
-                $"既存フォルダの ID が取得できません: {folderName}");
+        if (firstPage is null)
+            throw new InvalidOperationException($"既存フォルダの ID が取得できません: {folderName}");
+
+        string? foundId = null;
+        var pageIterator = PageIterator<DriveItem, DriveItemCollectionResponse>
+            .CreatePageIterator(_client, firstPage, item =>
+            {
+                if (foundId is null &&
+                    string.Equals(item.Name, folderName, StringComparison.OrdinalIgnoreCase) &&
+                    item.Folder is not null)
+                {
+                    foundId = item.Id;
+                    return false; // 見つかったら停止
+                }
+                return true;
+            });
+        await pageIterator.IterateAsync(ct).ConfigureAwait(false);
+
+        return foundId ?? throw new InvalidOperationException(
+            $"既存フォルダの ID が取得できません: {folderName}");
     }
 }

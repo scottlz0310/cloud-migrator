@@ -82,6 +82,25 @@
 - [x] `README.md` / `usage.md` への利用手順追記
 - [x] `init` の Graph 識別子反映/自動解決オプション追加（`--resolve-graph-ids` ほか）
 
+## バグ修正: E2E 手動テスト中に発見・修正（2026-03-13）
+
+- [x] `FindFolderIdAsync`: SharePoint の `$filter` 非サポート問題 → `PageIterator` + クライアント側フィルタリングに修正
+- [x] `EnsureFolderAsync`: フォルダIDキャッシュ追加（`_folderIdCache`）で API 呼び出し O(N×depth²) → O(N) に削減
+- [x] `TransferEngine.RunAsync`: フォルダ先行作成フェーズに進捗ログ追加（件数/100件ごと/完了）
+
+## マニュアルテスト: E2E 実施（2026-03-13 手動ランブック TC-01〜TC-06e）
+
+- [x] TC-01 ビルド PASS
+- [x] TC-02 CLI ヘルプ PASS
+- [x] TC-03 Setup ヘルプ PASS
+- [x] TC-04 doctor PASS（error=0, warning=0）
+- [x] TC-05 verify PASS（全 Graph エンドポイント OK）
+- [x] TC-06a file-crawler onedrive PASS（24,481 件）
+- [x] TC-06b file-crawler sharepoint PASS（0 件、未転送正常）
+- [x] TC-06c rebuild-skiplist + validate PASS
+- [x] TC-06d compare PASS（差分 24,481 件表示）
+- [x] TC-06e transfer PASS（成功 24,481 件 / 失敗 0 件 / 所要 1h13m）
+
 ## Issue 17: Setup Tool UX再設計（Interactive）
 
 - [x] `bootstrap` コマンド追加（対話型セットアップ入口）
