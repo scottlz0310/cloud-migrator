@@ -19,10 +19,15 @@ public static class GraphClientFactory
     /// <param name="authenticator">GraphAuthenticator インスタンス</param>
     /// <param name="timeoutSec">HTTP タイムアウト（秒）。デフォルト 300</param>
     /// <param name="maxRetry">最大リトライ回数。デフォルト 3</param>
+    /// <param name="onRateLimit">
+    /// 429/503 レスポンス検出時に呼び出すコールバック（動的並列度制御用）。
+    /// null の場合は通知なし。引数は Retry-After 値（null の場合は不明）。
+    /// </param>
     public static GraphServiceClient Create(
         GraphAuthenticator authenticator,
         int timeoutSec = 300,
-        int maxRetry = 3)
+        int maxRetry = 3,
+        Action<TimeSpan?>? onRateLimit = null)
     {
         // Kiota 標準ミドルウェアスタック（RetryHandler / RedirectHandler 等）を組み込む
         var handlers = KiotaClientFactory.CreateDefaultHandlers();
@@ -44,6 +49,12 @@ public static class GraphClientFactory
             if (handlers[i] is RetryHandler)
             {
                 handlers[i] = new RetryHandler(retryOption);
+
+                // RetryHandler の内側（後段）に RateLimitAwareHandler を挿入する。
+                // これにより各リトライ試行ごとの 429/503 レスポンスを傍受できる。
+                if (onRateLimit is not null)
+                    handlers.Insert(i + 1, new RateLimitAwareHandler(onRateLimit));
+
                 break;
             }
         }
