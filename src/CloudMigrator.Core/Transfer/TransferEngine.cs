@@ -83,11 +83,18 @@ public sealed class TransferEngine
         }
 
         // 親フォルダから順に EnsureFolderAsync を呼び出す
-        foreach (var destFolderPath in folderPathSet.OrderBy(p => p.Length))
+        var sortedFolders = folderPathSet.OrderBy(p => p.Length).ToList();
+        _logger.LogInformation("フォルダ先行作成: {Count} 件のユニークフォルダを確認・作成中...", sortedFolders.Count);
+        int foldersDone = 0;
+        foreach (var destFolderPath in sortedFolders)
         {
             await _destProvider.EnsureFolderAsync(destFolderPath, cancellationToken)
                 .ConfigureAwait(false);
+            foldersDone++;
+            if (foldersDone % 100 == 0)
+                _logger.LogInformation("フォルダ先行作成進捗: {Done}/{Total}", foldersDone, sortedFolders.Count);
         }
+        _logger.LogInformation("フォルダ先行作成完了: {Count} 件", sortedFolders.Count);
 
         // ─── 2. スキップ照合・ジョブリスト構築 ──────────────────────────
         var jobs = new List<TransferJob>();

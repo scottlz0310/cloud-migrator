@@ -7,7 +7,18 @@
 
 ## [Unreleased]
 
+### Fixed
+- **E2E 手動テスト中に発見・修正（2026-03-13）**
+  - `FindFolderIdAsync`: SharePoint の `Children` エンドポイントは `$filter` を非サポート（"Operation not supported"）。`PageIterator<DriveItem, DriveItemCollectionResponse>` + クライアント側フィルタリングに変更し、SharePoint との互換性を確保
+  - `EnsureFolderAsync`: フォルダIDキャッシュ（`_folderIdCache: Dictionary<string, string>`）を追加。パスを上から解決する際に同一プレフィックスへの Graph API 呼び出しを省略し、フォルダ作成フェーズのAPI呼び出し数を O(N×depth²) から O(N) に削減
+
 ### Added
+- **TransferEngine**: フォルダ先行作成フェーズにログを追加
+  - フェーズ開始時（ユニークフォルダ件数表示）
+  - 100件ごとの進捗（Done/Total）
+  - フェーズ完了ログ
+  - `GraphStorageProvider.EnsureFolderSegmentAsync`: 新規フォルダ作成成功時に Info ログを追加
+
 - **Issue #18: OneDrive 転送元フォルダ指定（FR-02 完全実装）**
   - `GraphStorageOptions` / `MigratorOptions.GraphProviderOptions` に `OneDriveSourceFolder` プロパティを追加
   - `GraphStorageProvider` でフォルダパスを `Root.ItemWithPath()` で itemId に解決し、指定フォルダ配下のみクロール
