@@ -175,43 +175,6 @@ dotnet run --project src/CloudMigrator.Cli -- transfer --full-rebuild
 dotnet run --project src/CloudMigrator.Cli -- watchdog
 ```
 
----
-
-## 5. 実施ログ
-
-### 2026-03-13 初回 E2E 手動テスト
-
-実施環境: Windows 11 / PowerShell 7 / .NET 10 / CloudMigrator v0.x  
-実施者: Copilot
-
-| # | TC | コマンド | 結果 | 備考 |
-|---|----|----|------|------|
-| TC-01 | ビルド | `dotnet build CloudMigrator.slnx` | ✅ PASS | Build succeeded. エラー0/警告0 |
-| TC-02 | CLI ヘルプ | `dotnet run --project src/CloudMigrator.Cli -- --help` | ✅ PASS | サブコマンド一覧表示 |
-| TC-03 | Setup ヘルプ | `dotnet run --project src/CloudMigrator.Setup.Cli -- --help` | ✅ PASS | サブコマンド一覧表示 |
-| TC-04 | doctor | `dotnet run --project src/CloudMigrator.Setup.Cli -- doctor` | ✅ PASS | error=0, warning=0 |
-| TC-05 | verify | `dotnet run --project src/CloudMigrator.Setup.Cli -- verify` | ✅ PASS | 全 Graph エンドポイント OK |
-| TC-06a | file-crawler onedrive | `dotnet run --project src/CloudMigrator.Cli -- file-crawler onedrive` | ✅ PASS | 24,481 件クロール |
-| TC-06b | file-crawler sharepoint | `dotnet run --project src/CloudMigrator.Cli -- file-crawler sharepoint` | ✅ PASS | 0 件（未転送、正常） |
-| TC-06c | rebuild-skiplist | `dotnet run --project src/CloudMigrator.Cli -- rebuild-skiplist` | ✅ PASS | 0 件（空状態） |
-| TC-06c | validate | `dotnet run --project src/CloudMigrator.Cli -- file-crawler validate --source onedrive --top 30` | ✅ PASS | invalid=0, missing=0 |
-| TC-06d | compare | `dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right sharepoint --top 30` | ✅ PASS | 差分24,481件表示。EXIT:0 ※注1 |
-| TC-06e | transfer | `dotnet run --project src/CloudMigrator.Cli -- transfer` | ✅ PASS | 成功24,481件/失敗0件/スキップ0件/所要1時間13分 |
-
-**※注1**: `compare` で差分ありのとき `Environment.ExitCode=1` を設定するが `System.CommandLine` が上書きし EXIT:0 になる。ランブック期待値は EXIT:1 だが既知動作。
-
-#### バグ修正記録 (本セッション)
-
-| バグ | 修正箇所 | 内容 |
-|------|----------|------|
-| `FindFolderIdAsync` $filter 非対応 | `GraphStorageProvider.cs` | SharePoint は Children エンドポイントの `$filter` を非サポート。`PageIterator` + クライアント側フィルタリングに変更 |
-| フォルダ先行作成の過剰 API 呼び出し | `GraphStorageProvider.cs` | `EnsureFolderAsync` でパスごとにルートから再解決していた。`_folderIdCache` (Dictionary) を追加してAPI呼び出しを O(N×depth²) → O(N) に削減 |
-| フォルダ作成フェーズ無音 | `TransferEngine.cs` | フォルダ先行作成フェーズのログが皆無で進捗不明。件数・100件ごとの進捗・完了ログを追加 |
-
-期待結果:
-- 監視開始ログが出る
-- ログ更新停止条件で transfer 再起動動作を確認できる
-
 ## 5. 失敗時の切り分け
 
 - doctor で必須キー未設定:
@@ -260,19 +223,31 @@ dotnet run --project src/CloudMigrator.Cli -- watchdog
 
 ## 7. 本日の実施ログ (2026-03-13)
 
-- TC-01 build: PASS
-  - dotnet build CloudMigrator.slnx
-  - 全プロジェクト成功
-- TC-02 cli help: PASS
-  - CloudMigrator.Cli の主要サブコマンド表示を確認
-- TC-03 setup help: PASS
-  - CloudMigrator.Setup.Cli の主要サブコマンド表示を確認
-- TC-04 doctor: PASS (想定どおり未設定検知)
-  - graph.clientId / graph.tenantId / graph.clientSecret が未設定で [ERR]
-  - config.path は検出済み
-- TC-05 verify: FAIL (preflight エラー)
-  - MIGRATOR__GRAPH__CLIENTID / MIGRATOR__GRAPH__TENANTID / MIGRATOR__GRAPH__CLIENTSECRET が未設定
+### 2026-03-13 初回 E2E 手動テスト
 
-次回の実施ポイント:
-- Graph 資格情報を投入して TC-05 verify から再開
-- file-crawler -> rebuild-skiplist -> transfer の順で E2E 手動検証
+実施環境: Windows 11 / PowerShell 7 / .NET 10 / CloudMigrator v0.x  
+実施者: Copilot
+
+| # | TC | コマンド | 結果 | 備考 |
+|---|----|----|------|------|
+| TC-01 | ビルド | `dotnet build CloudMigrator.slnx` | ✅ PASS | Build succeeded. エラー0/警告0 |
+| TC-02 | CLI ヘルプ | `dotnet run --project src/CloudMigrator.Cli -- --help` | ✅ PASS | サブコマンド一覧表示 |
+| TC-03 | Setup ヘルプ | `dotnet run --project src/CloudMigrator.Setup.Cli -- --help` | ✅ PASS | サブコマンド一覧表示 |
+| TC-04 | doctor | `dotnet run --project src/CloudMigrator.Setup.Cli -- doctor` | ✅ PASS | error=0, warning=0 |
+| TC-05 | verify | `dotnet run --project src/CloudMigrator.Setup.Cli -- verify` | ✅ PASS | 全 Graph エンドポイント OK |
+| TC-06a | file-crawler onedrive | `dotnet run --project src/CloudMigrator.Cli -- file-crawler onedrive` | ✅ PASS | 24,481 件クロール |
+| TC-06b | file-crawler sharepoint | `dotnet run --project src/CloudMigrator.Cli -- file-crawler sharepoint` | ✅ PASS | 0 件（未転送、正常） |
+| TC-06c | rebuild-skiplist | `dotnet run --project src/CloudMigrator.Cli -- rebuild-skiplist` | ✅ PASS | 0 件（空状態） |
+| TC-06c2 | validate | `dotnet run --project src/CloudMigrator.Cli -- file-crawler validate --source onedrive --top 30` | ✅ PASS | invalid=0, missing=0 |
+| TC-06d | compare | `dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right sharepoint --top 30` | ✅ PASS | 差分24,481件表示。EXIT:0 ※注1 |
+| TC-06e | transfer | `dotnet run --project src/CloudMigrator.Cli -- transfer` | ✅ PASS | 成功24,481件/失敗0件/スキップ0件/所要1時間13分 |
+
+**※注1**: `compare` で差分ありのとき `Environment.ExitCode=1` を設定するが `System.CommandLine` が上書きし EXIT:0 になる。ランブック期待値は EXIT:1 だが既知動作。
+
+#### バグ修正記録 (本セッション)
+
+| バグ | 修正箇所 | 内容 |
+|------|----------|------|
+| `FindFolderIdAsync` $filter 非対応 | `GraphStorageProvider.cs` | SharePoint は Children エンドポイントの `$filter` を非サポート。`PageIterator` + クライアント側フィルタリングに変更 |
+| フォルダ先行作成の過剰 API 呼び出し | `GraphStorageProvider.cs` | `EnsureFolderAsync` でパスごとにルートから再解決していた。`_folderIdCache` (Dictionary) を追加してAPI呼び出しを O(N×depth²) → O(N) に削減 |
+| フォルダ作成フェーズ無音 | `TransferEngine.cs` | フォルダ先行作成フェーズのログが皆無で進捗不明。件数・100件ごとの進捗・完了ログを追加 |
