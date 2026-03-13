@@ -86,6 +86,7 @@ internal static class BootstrapCommand
         var cfgTenantId = NullIfWhiteSpace(cfgOptions.Graph.TenantId);
         var cfgOneDriveUpn = NullIfWhiteSpace(cfgOptions.Graph.OneDriveUserId);
         var cfgSourceFolder = NullIfWhiteSpace(cfgOptions.Graph.OneDriveSourceFolder);
+        var cfgDestinationRoot = NullIfWhiteSpace(cfgOptions.DestinationRoot);
         var cfgSiteId = NullIfWhiteSpace(cfgOptions.Graph.SharePointSiteId);
         var cfgDriveId = NullIfWhiteSpace(cfgOptions.Graph.SharePointDriveId);
 
@@ -133,6 +134,7 @@ internal static class BootstrapCommand
             ("MIGRATOR__GRAPH__TENANTID", cfgTenantId != null && envTenantId == null),
             ("MIGRATOR__GRAPH__ONEDRIVEUSERID", cfgOneDriveUpn != null && envOneDriveUpn == null),
             ("MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER", cfgSourceFolder != null && envSourceFolder == null),
+            ("destinationRoot（転送先フォルダ）", cfgDestinationRoot != null),
             ("SharePointSiteId + DriveId", cfgSiteId != null && cfgDriveId != null),
         };
         var cfgPresetCount = cfgPresets.Count(x => x.HasValue);
@@ -159,6 +161,9 @@ internal static class BootstrapCommand
         console.WriteLine("  ヒント: フォルダパスを指定しない場合は Enter でドライブ全体を転送対象とします。前回値が表示されている場合でも \"-\" を入力するとクリアしてドライブ全体を指定できます。");
         var oneDriveSourceFolderInput = console.Prompt("転送元フォルダパス（省略可。例: Documents/Projects）", defaultSourceFolder);
         var oneDriveSourceFolder = oneDriveSourceFolderInput == "-" ? string.Empty : oneDriveSourceFolderInput;
+        console.WriteLine("  ヒント: SharePoint ドライブ上の転送先フォルダを指定します。省略するとドライブルート直下に格納されます。");
+        var destinationRootInput = console.Prompt("転送先フォルダパス（省略可。例: 移行データ/OneDrive）", cfgDestinationRoot);
+        var destinationRoot = destinationRootInput == "-" ? string.Empty : destinationRootInput;
 
         // SharePoint 再利用チェック: SiteId + DriveId が既存の場合は URL 入力を省略できる
         var reuseSharePoint = false;
@@ -292,7 +297,9 @@ internal static class BootstrapCommand
             configTemplate,
             effectiveOneDriveUser,
             siteId,
-            selectedDrive.Id);
+            selectedDrive.Id,
+            oneDriveSourceFolder,
+            destinationRoot);
 
         // 既存ファイルがある場合は対話的に上書き確認する（--force 指定時はスキップ）
         bool EffectiveForce(string path) =>
