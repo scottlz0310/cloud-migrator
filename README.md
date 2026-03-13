@@ -65,6 +65,7 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- verify
 ## ドキュメント
 
 - [利用方法](usage.md) - 実行手順と主要コマンド
+- [マニュアルテスト ランブック](docs/manual-test-runbook.md) - 手動検証の実施手順と記録テンプレート
 - [実装計画書](docs/implementation-plan.md) - 仕様・フェーズ・完了条件
 - [タスク管理](task.md) - フェーズ別進捗
 - [変更履歴](CHANGELOG.md)

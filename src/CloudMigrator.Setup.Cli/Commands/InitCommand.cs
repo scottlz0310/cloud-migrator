@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Net.Http.Headers;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using CloudMigrator.Core.Configuration;
@@ -56,6 +57,14 @@ internal static class InitCommand
             Description = "自動解決時に選択するドキュメントライブラリ名",
             DefaultValueFactory = _ => "Documents",
         };
+        var oneDriveSourceFolderOpt = new Option<string?>("--onedrive-source-folder")
+        {
+            Description = "転送元フォルダパス（省略時はドライブ全体。例: Documents/Projects）",
+        };
+        var destinationRootOpt = new Option<string?>("--destination-root")
+        {
+            Description = "転送先フォルダパス（SharePoint ドライブ上のルート。省略時はドライブルート直下）",
+        };
         cmd.Add(configPathOpt);
         cmd.Add(envPathOpt);
         cmd.Add(forceOpt);
@@ -65,6 +74,8 @@ internal static class InitCommand
         cmd.Add(resolveGraphIdsOpt);
         cmd.Add(sharePointSiteUrlOpt);
         cmd.Add(sharePointDriveNameOpt);
+        cmd.Add(oneDriveSourceFolderOpt);
+        cmd.Add(destinationRootOpt);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
@@ -77,6 +88,8 @@ internal static class InitCommand
             var resolveGraphIds = parseResult.GetValue(resolveGraphIdsOpt);
             var sharePointSiteUrl = parseResult.GetValue(sharePointSiteUrlOpt);
             var sharePointDriveName = parseResult.GetValue(sharePointDriveNameOpt) ?? "Documents";
+            var oneDriveSourceFolder = parseResult.GetValue(oneDriveSourceFolderOpt);
+            var destinationRoot = parseResult.GetValue(destinationRootOpt);
 
             await RunAsync(
                 configPath,
@@ -88,6 +101,8 @@ internal static class InitCommand
                 resolveGraphIds,
                 sharePointSiteUrl,
                 sharePointDriveName,
+                oneDriveSourceFolder,
+                destinationRoot,
                 ct).ConfigureAwait(false);
         });
 
@@ -109,6 +124,8 @@ internal static class InitCommand
             resolveGraphIds: false,
             sharePointSiteUrl: null,
             sharePointDriveName: "Documents",
+            oneDriveSourceFolder: null,
+            destinationRoot: null,
             ct: ct);
 
     internal static async Task RunAsync(
@@ -121,6 +138,8 @@ internal static class InitCommand
         bool resolveGraphIds,
         string? sharePointSiteUrl,
         string sharePointDriveName,
+        string? oneDriveSourceFolder,
+        string? destinationRoot,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -159,7 +178,9 @@ internal static class InitCommand
             configTemplate,
             oneDriveUserId,
             sharePointSiteId,
-            sharePointDriveId);
+            sharePointDriveId,
+            oneDriveSourceFolder,
+            destinationRoot);
 
         envTemplate = ApplyGraphValuesToEnvTemplate(
             envTemplate,
@@ -230,11 +251,16 @@ internal static class InitCommand
         string configTemplate,
         string? oneDriveUserId,
         string? sharePointSiteId,
-        string? sharePointDriveId)
+        string? sharePointDriveId,
+        string? oneDriveSourceFolder = null,
+        string? destinationRoot = null)
     {
+        // null = 変更しない, "" = 明示クリア, "値" = その値に更新
         if (string.IsNullOrWhiteSpace(oneDriveUserId) &&
             string.IsNullOrWhiteSpace(sharePointSiteId) &&
-            string.IsNullOrWhiteSpace(sharePointDriveId))
+            string.IsNullOrWhiteSpace(sharePointDriveId) &&
+            oneDriveSourceFolder is null &&
+            destinationRoot is null)
         {
             return configTemplate;
         }
@@ -250,6 +276,10 @@ internal static class InitCommand
             root.Migrator.Graph.SharePointSiteId = sharePointSiteId;
         if (!string.IsNullOrWhiteSpace(sharePointDriveId))
             root.Migrator.Graph.SharePointDriveId = sharePointDriveId;
+        if (oneDriveSourceFolder is not null)
+            root.Migrator.Graph.OneDriveSourceFolder = oneDriveSourceFolder;
+        if (destinationRoot is not null)
+            root.Migrator.DestinationRoot = destinationRoot;
 
         return JsonSerializer.Serialize(
             root,
@@ -257,6 +287,7 @@ internal static class InitCommand
             {
                 WriteIndented = true,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             });
     }
 
@@ -520,6 +551,7 @@ internal static class InitCommand
             {
                 WriteIndented = true,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             });
     }
 

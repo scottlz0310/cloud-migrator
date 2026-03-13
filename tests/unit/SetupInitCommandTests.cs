@@ -89,6 +89,87 @@ public sealed class SetupInitCommandTests : IDisposable
     }
 
     [Fact]
+    public void ApplyGraphValuesToConfigTemplate_ShouldSetSourceFolderAndDestinationRoot()
+    {
+        // 検証対象: ApplyGraphValuesToConfigTemplate  目的: oneDriveSourceFolder と destinationRoot を config.json に反映できること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var updated = InitCommand.ApplyGraphValuesToConfigTemplate(
+            template,
+            oneDriveUserId: null,
+            sharePointSiteId: null,
+            sharePointDriveId: null,
+            oneDriveSourceFolder: "Documents/Projects",
+            destinationRoot: "移行データ/OneDrive");
+
+        updated.Should().Contain("\"oneDriveSourceFolder\": \"Documents/Projects\"");
+        updated.Should().Contain("\"destinationRoot\": \"移行データ/OneDrive\"");
+    }
+
+    [Fact]
+    public void ApplyGraphValuesToConfigTemplate_ShouldReturnUnchanged_WhenAllParamsNull()
+    {
+        // 検証対象: ApplyGraphValuesToConfigTemplate  目的: 全パラメータ null 時はテンプレートをそのまま返すこと
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var updated = InitCommand.ApplyGraphValuesToConfigTemplate(
+            template,
+            oneDriveUserId: null,
+            sharePointSiteId: null,
+            sharePointDriveId: null,
+            oneDriveSourceFolder: null,
+            destinationRoot: null);
+
+        updated.Should().Be(template);
+    }
+
+    [Fact]
+    public void ApplyGraphValuesToConfigTemplate_ShouldClearSourceFolder_WhenEmptyString()
+    {
+        // 検証対象: ApplyGraphValuesToConfigTemplate  目的: "" を渡すと oneDriveSourceFolder が空文字でクリアされること（bootstrap で "-" 入力した場合）
+        var template = InitCommand.ApplyGraphValuesToConfigTemplate(
+            InitCommand.BuildDefaultConfigTemplate(),
+            oneDriveUserId: null,
+            sharePointSiteId: null,
+            sharePointDriveId: null,
+            oneDriveSourceFolder: "Documents/Projects",
+            destinationRoot: null);
+
+        var cleared = InitCommand.ApplyGraphValuesToConfigTemplate(
+            template,
+            oneDriveUserId: null,
+            sharePointSiteId: null,
+            sharePointDriveId: null,
+            oneDriveSourceFolder: string.Empty,
+            destinationRoot: null);
+
+        cleared.Should().Contain("\"oneDriveSourceFolder\": \"\"");
+    }
+
+    [Fact]
+    public void ApplyGraphValuesToConfigTemplate_ShouldClearDestinationRoot_WhenEmptyString()
+    {
+        // 検証対象: ApplyGraphValuesToConfigTemplate  目的: "" を渡すと destinationRoot が空文字でクリアされること（bootstrap で "-" 入力した場合）
+        var template = InitCommand.ApplyGraphValuesToConfigTemplate(
+            InitCommand.BuildDefaultConfigTemplate(),
+            oneDriveUserId: null,
+            sharePointSiteId: null,
+            sharePointDriveId: null,
+            oneDriveSourceFolder: null,
+            destinationRoot: "移行データ/OneDrive");
+
+        var cleared = InitCommand.ApplyGraphValuesToConfigTemplate(
+            template,
+            oneDriveUserId: null,
+            sharePointSiteId: null,
+            sharePointDriveId: null,
+            oneDriveSourceFolder: null,
+            destinationRoot: string.Empty);
+
+        cleared.Should().Contain("\"destinationRoot\": \"\"");
+    }
+
+    [Fact]
     public void ApplyGraphValuesToEnvTemplate_ShouldUpsertVariables()
     {
         // 検証対象: ApplyGraphValuesToEnvTemplate  目的: Graph関連キーを.envテンプレートに上書き反映できること

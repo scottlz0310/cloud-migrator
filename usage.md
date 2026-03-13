@@ -158,6 +158,8 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- init --resolve-graph-ids --o
 ```
 
 - `--onedrive-user-id`: 生成する `config.json` / `.env` に OneDrive ユーザーIDまたはUPNを反映
+- `--onedrive-source-folder`: 転送元フォルダパスを `config.json` に反映（例: `Documents/Projects`。省略時はドライブ全体）
+- `--destination-root`: 転送先フォルダパスを `config.json` に反映（SharePoint ドライブ上のルート。例: `移行データ/OneDrive`。省略時はドライブルート直下）
 - `--sharepoint-site-id`: 生成する設定に SharePoint サイトIDを反映
 - `--sharepoint-drive-id`: 生成する設定に SharePoint ドライブIDを反映
 - `--resolve-graph-ids`: Graph API から SharePoint サイト/ドライブIDを自動解決（`--sharepoint-site-url` と `--onedrive-user-id` 必須）
