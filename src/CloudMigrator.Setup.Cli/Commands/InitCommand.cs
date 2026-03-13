@@ -255,7 +255,8 @@ internal static class InitCommand
         string? oneDriveSourceFolder = null,
         string? destinationRoot = null)
     {
-        // null = 変更しない, "" = 明示クリア, "値" = その値に更新
+        // oneDriveUserId/sharePointSiteId/sharePointDriveId: null または空文字 = 変更しない
+        // oneDriveSourceFolder / destinationRoot: null = 変更しない, "" = 明示クリア, "値" = その値に更新（Trim 適用）
         if (string.IsNullOrWhiteSpace(oneDriveUserId) &&
             string.IsNullOrWhiteSpace(sharePointSiteId) &&
             string.IsNullOrWhiteSpace(sharePointDriveId) &&
@@ -277,9 +278,9 @@ internal static class InitCommand
         if (!string.IsNullOrWhiteSpace(sharePointDriveId))
             root.Migrator.Graph.SharePointDriveId = sharePointDriveId;
         if (oneDriveSourceFolder is not null)
-            root.Migrator.Graph.OneDriveSourceFolder = oneDriveSourceFolder;
+            root.Migrator.Graph.OneDriveSourceFolder = oneDriveSourceFolder.Trim();
         if (destinationRoot is not null)
-            root.Migrator.DestinationRoot = destinationRoot;
+            root.Migrator.DestinationRoot = destinationRoot.Trim();
 
         return JsonSerializer.Serialize(
             root,

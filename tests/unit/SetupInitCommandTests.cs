@@ -170,6 +170,24 @@ public sealed class SetupInitCommandTests : IDisposable
     }
 
     [Fact]
+    public void ApplyGraphValuesToConfigTemplate_ShouldTrimWhitespace_FromFolderPaths()
+    {
+        // 検証対象: ApplyGraphValuesToConfigTemplate  目的: 前後に空白を含むパスが Trim されて保存されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var updated = InitCommand.ApplyGraphValuesToConfigTemplate(
+            template,
+            oneDriveUserId: null,
+            sharePointSiteId: null,
+            sharePointDriveId: null,
+            oneDriveSourceFolder: "  Documents/Projects  ",
+            destinationRoot: "  移行データ/OneDrive  ");
+
+        updated.Should().Contain("\"oneDriveSourceFolder\": \"Documents/Projects\"");
+        updated.Should().Contain("\"destinationRoot\": \"移行データ/OneDrive\"");
+    }
+
+    [Fact]
     public void ApplyGraphValuesToEnvTemplate_ShouldUpsertVariables()
     {
         // 検証対象: ApplyGraphValuesToEnvTemplate  目的: Graph関連キーを.envテンプレートに上書き反映できること
