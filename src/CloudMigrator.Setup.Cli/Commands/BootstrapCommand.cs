@@ -165,6 +165,17 @@ internal static class BootstrapCommand
         var destinationRootInput = console.Prompt("転送先フォルダパス（省略可。例: 移行データ/OneDrive）", cfgDestinationRoot);
         var destinationRoot = destinationRootInput == "-" ? string.Empty : destinationRootInput;
 
+        // 並列転送設定
+        console.WriteLine("  ヒント: 最大並列転送数を増やすと速度が上がりますが、レート制限にかかりやすくなります（推奨: 4〜8）。");
+        var maxParallelTransfersInput = console.Prompt("最大並列転送数", cfgOptions.MaxParallelTransfers.ToString());
+        var maxParallelTransfers = int.TryParse(maxParallelTransfersInput, out var mpt) && mpt >= 1
+            ? mpt
+            : cfgOptions.MaxParallelTransfers;
+        var adaptiveConcurrencyEnabled = console.PromptBool(
+            "レート制限に応じた動的並列度制御（AdaptiveConcurrency）を有効にしますか？",
+            defaultValue: cfgOptions.AdaptiveConcurrency.Enabled);
+        console.WriteLine();
+
         // SharePoint 再利用チェック: SiteId + DriveId が既存の場合は URL 入力を省略できる
         var reuseSharePoint = false;
         string sharePointSiteUrl = string.Empty;
@@ -300,6 +311,11 @@ internal static class BootstrapCommand
             selectedDrive.Id,
             oneDriveSourceFolder,
             destinationRoot);
+
+        configTemplate = InitCommand.ApplyPerformanceValuesToConfigTemplate(
+            configTemplate,
+            maxParallelTransfers,
+            adaptiveConcurrencyEnabled);
 
         // 既存ファイルがある場合は対話的に上書き確認する（--force 指定時はスキップ）
         bool EffectiveForce(string path) =>

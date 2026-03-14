@@ -94,10 +94,11 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     public void NotifyRateLimit(TimeSpan? retryAfter)
     {
         bool shouldAbsorb;
-        int newDegree;
+        int prevDegree, newDegree;
         lock (_syncRoot)
         {
             _consecutiveSuccesses = 0;
+            prevDegree = _current;
             shouldAbsorb = _current > _min;
             if (shouldAbsorb)
                 _current--;
@@ -108,8 +109,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             return;
 
         _logger.LogWarning(
-            "レート制限を検出。並列度を {Current}/{Max} に削減します (Retry-After: {RetryAfterSec} 秒)",
-            newDegree, _max,
+            "レート制限を検出。並列度を {Prev} → {Current}/{Max} に削減します (Retry-After: {RetryAfterSec} 秒)",
+            prevDegree, newDegree, _max,
             retryAfter.HasValue ? retryAfter.Value.TotalSeconds.ToString("F0") : "なし");
 
         // 次に解放されるスロットを非同期に吸収する（fire-and-forget）
@@ -124,7 +125,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     public void NotifySuccess()
     {
         bool doRelease = false;
-        int newDegree = -1;
+        int prevDegree = -1, newDegree = -1;
         lock (_syncRoot)
         {
             _consecutiveSuccesses++;
@@ -133,6 +134,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
                 && _absorbedActual > 0)
             {
                 _consecutiveSuccesses = 0;
+                prevDegree = _current;
                 _current++;
                 _absorbedActual--;
                 doRelease = true;
@@ -145,8 +147,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
         _semaphore.Release(); // 吸収済みスロットを 1 つ循環に戻す
         _logger.LogInformation(
-            "連続成功 {Threshold} 回達成。並列度を {Current}/{Max} に回復します",
-            SuccessThreshold, newDegree, _max);
+            "連続成功 {Threshold} 回達成。並列度を {Prev} → {Current}/{Max} に回復します",
+            SuccessThreshold, prevDegree, newDegree, _max);
     }
 
     // ─────────────────────────────────────────────────────────────

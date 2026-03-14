@@ -259,4 +259,62 @@ public sealed class SetupInitCommandTests : IDisposable
 
         driveId.Should().Be("drive-1");
     }
+
+    [Fact]
+    public void ApplyPerformanceValuesToConfigTemplate_ShouldReturnUnchanged_WhenBothParamsAreNull()
+    {
+        // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: 両パラメーターが null の場合はテンプレートをそのまま返すこと
+        var original = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(original, null, null);
+
+        result.Should().Be(original);
+    }
+
+    [Fact]
+    public void ApplyPerformanceValuesToConfigTemplate_ShouldSetMaxParallelTransfers()
+    {
+        // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: maxParallelTransfers が config.json に反映されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, maxParallelTransfers: 8, null);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        doc.RootElement
+            .GetProperty("migrator")
+            .GetProperty("maxParallelTransfers")
+            .GetInt32()
+            .Should().Be(8);
+    }
+
+    [Fact]
+    public void ApplyPerformanceValuesToConfigTemplate_ShouldEnableAdaptiveConcurrency()
+    {
+        // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: adaptiveConcurrency.enabled が true に設定されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, null, adaptiveConcurrencyEnabled: true);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        doc.RootElement
+            .GetProperty("migrator")
+            .GetProperty("adaptiveConcurrency")
+            .GetProperty("enabled")
+            .GetBoolean()
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void ApplyPerformanceValuesToConfigTemplate_ShouldApplyBothValuesSimultaneously()
+    {
+        // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: maxParallelTransfers と adaptiveConcurrency.enabled を同時に設定できること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, maxParallelTransfers: 6, adaptiveConcurrencyEnabled: true);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        var migrator = doc.RootElement.GetProperty("migrator");
+        migrator.GetProperty("maxParallelTransfers").GetInt32().Should().Be(6);
+        migrator.GetProperty("adaptiveConcurrency").GetProperty("enabled").GetBoolean().Should().BeTrue();
+    }
 }

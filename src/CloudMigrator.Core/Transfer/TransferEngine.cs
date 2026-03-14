@@ -168,9 +168,14 @@ public sealed class TransferEngine
                     {
                         await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
                         await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
-                        Interlocked.Increment(ref success);
+                        var done = Interlocked.Increment(ref success);
                         _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
                         controller.NotifySuccess();
+                        if (done % 500 == 0)
+                            _logger.LogInformation(
+                                "転送進捗: {Done}/{Total} 完了 (失敗: {Failed}, 現在の並列度: {Degree}/{Max})",
+                                done, jobs.Count, Volatile.Read(ref failed),
+                                controller.CurrentDegree, controller.MaxDegree);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
