@@ -67,7 +67,7 @@ internal static class InitCommand
         };
         var maxParallelTransfersOpt = new Option<int?>("--max-parallel-transfers")
         {
-            Description = "最大並列転送数（デフォルト: 4）",
+            Description = "最大並列転送数（省略時は変更しない。新規テンプレートでは 4）",
         };
         var adaptiveConcurrencyOpt = new Option<bool?>("--adaptive-concurrency")
         {
@@ -329,7 +329,11 @@ internal static class InitCommand
             ?? throw new InvalidOperationException("config テンプレートの解析に失敗しました。");
 
         if (maxParallelTransfers is not null)
+        {
+            if (maxParallelTransfers.Value < 1)
+                throw new ArgumentOutOfRangeException(nameof(maxParallelTransfers), "最大並列転送数は 1 以上でなければなりません。");
             root.Migrator.MaxParallelTransfers = maxParallelTransfers.Value;
+        }
         if (adaptiveConcurrencyEnabled is not null)
             root.Migrator.AdaptiveConcurrency.Enabled = adaptiveConcurrencyEnabled.Value;
 

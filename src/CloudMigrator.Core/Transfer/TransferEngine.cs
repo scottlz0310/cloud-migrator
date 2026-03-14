@@ -131,7 +131,7 @@ public sealed class TransferEngine
         }
 
         // ─── 3 & 4. 並列転送 ─────────────────────────────────────────────
-        int success = 0, failed = 0;
+        int success = 0, failed = 0, done = 0;
 
         if (_concurrencyController is not null)
         {
@@ -171,18 +171,20 @@ public sealed class TransferEngine
                     {
                         await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
                         await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
-                        var done = Interlocked.Increment(ref success);
+                        Interlocked.Increment(ref success);
+                        var doneSnap = Interlocked.Increment(ref done);
                         _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
                         controller.NotifySuccess();
-                        if (done % 500 == 0)
+                        if (doneSnap % 500 == 0)
                             _logger.LogInformation(
                                 "転送進捗: {Done}/{Total} 完了 (失敗: {Failed}, 現在の並列度: {Degree}/{Max})",
-                                done, jobs.Count, Volatile.Read(ref failed),
+                                doneSnap, jobs.Count, Volatile.Read(ref failed),
                                 controller.CurrentDegree, controller.MaxDegree);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         Interlocked.Increment(ref failed);
+                        Interlocked.Increment(ref done);
                         _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
                     }
                     finally
@@ -194,10 +196,10 @@ public sealed class TransferEngine
         else if (_rateLimiter is not null)
         {
             // ── Token Bucket レートリミッターモード ─────────────────────────
-            // Channel のディスパッチに加え、TokenBucketRateLimiter のゲートにより request/sec を制御する。
+            // Channel のディスパッチに加え、TokenBucketRateLimiter のゲートにより file/sec を制御する。
             // 並列数（MaxParallelTransfers）はワーカープールサイズとして活用。
             _logger.LogInformation(
-                "Token Bucket レートリミッターモードで転送開始 (初期レート: {Rate:F1}/{Max:F1} req/sec, バースト: {Burst} トークン, ワーカー: {Workers})",
+                "Token Bucket レートリミッターモードで転送開始 (初期レート: {Rate:F1}/{Max:F1} file/sec, バースト: {Burst} トークン, ワーカー: {Workers})",
                 _rateLimiter.CurrentRate, _rateLimiter.MaxRate, _rateLimiter.BurstCapacity, _options.MaxParallelTransfers);
 
             var rateLimiterChannel = Channel.CreateBounded<TransferJob>(
@@ -223,24 +225,26 @@ public sealed class TransferEngine
                 },
                 async (job, innerCt) =>
                 {
-                    // トークン取得で request/sec をゲート制御
+                    // トークン取得で file/sec をゲート制御
                     await limiter.AcquireAsync(innerCt).ConfigureAwait(false);
                     try
                     {
                         await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
                         await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
-                        var done = Interlocked.Increment(ref success);
+                        Interlocked.Increment(ref success);
+                        var doneSnap = Interlocked.Increment(ref done);
                         _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
                         limiter.NotifySuccess();
-                        if (done % 500 == 0)
+                        if (doneSnap % 500 == 0)
                             _logger.LogInformation(
-                                "転送進捗: {Done}/{Total} 完了 (失敗: {Failed}, 現在のレート: {Rate:F1}/{Max:F1} req/sec)",
-                                done, jobs.Count, Volatile.Read(ref failed),
+                                "転送進捗: {Done}/{Total} 完了 (失敗: {Failed}, 現在のレート: {Rate:F1}/{Max:F1} file/sec)",
+                                doneSnap, jobs.Count, Volatile.Read(ref failed),
                                 limiter.CurrentRate, limiter.MaxRate);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         Interlocked.Increment(ref failed);
+                        Interlocked.Increment(ref done);
                         _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
                     }
                 }).ConfigureAwait(false);

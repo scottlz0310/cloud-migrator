@@ -170,7 +170,7 @@ internal static class BootstrapCommand
         var maxParallelTransfersInput = console.Prompt("最大並列転送数", cfgOptions.MaxParallelTransfers.ToString());
         var maxParallelTransfers = int.TryParse(maxParallelTransfersInput, out var mpt) && mpt >= 1
             ? mpt
-            : cfgOptions.MaxParallelTransfers;
+            : Math.Max(1, cfgOptions.MaxParallelTransfers);
         var adaptiveConcurrencyEnabled = console.PromptBool(
             "レート制限に応じた動的並列度制御（AdaptiveConcurrency）を有効にしますか？",
             defaultValue: cfgOptions.AdaptiveConcurrency.Enabled);

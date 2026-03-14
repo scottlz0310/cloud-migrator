@@ -99,6 +99,14 @@ internal sealed class CliServices : IDisposable
             onRateLimit = retryAfter => { prev?.Invoke(retryAfter); rateLimiter.NotifyRateLimit(retryAfter); };
         }
 
+        // 両方有効の場合は警告（TransferEngine では AdaptiveConcurrency が優先され RateLimiter は無視される）
+        if (adaptiveController is not null && rateLimiter is not null)
+        {
+            loggerFactory.CreateLogger<CliServices>().LogWarning(
+                "AdaptiveConcurrency と RateLimiter が同時に有効です。AdaptiveConcurrency が優先されます（RateLimiter は無視されます）。" +
+                " 一方のみを有効にしてください。");
+        }
+
         var graphClient = GraphClientFactory.Create(
             auth,
             timeoutSec: options.TimeoutSec,

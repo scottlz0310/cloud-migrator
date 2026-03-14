@@ -5,11 +5,11 @@ namespace CloudMigrator.Core.Transfer;
 /// <summary>
 /// Token Bucket + AIMD アルゴリズムによるレートリミッター。
 /// <para>
-/// 並列数ではなく <b>request/sec</b> を制御対象とすることで、
+/// 並列数ではなく <b>file/sec</b>（アップロードファイル数/秒）を制御対象とすることで、
 /// Graph API の sliding-window レート制限を安定的に回避する（FR-14 拡張）。
 /// </para>
 /// <list type="bullet">
-///   <item>バックグラウンドループが <see cref="CurrentRate"/> req/sec でトークンを補充する（20 Hz）</item>
+///   <item>バックグラウンドループが <see cref="CurrentRate"/> file/sec でトークンを補充する（20 Hz）</item>
 ///   <item>ワーカーは <see cref="AcquireAsync"/> でトークンを取得してから API を呼び出す</item>
 ///   <item>成功時: <see cref="NotifySuccess"/> → <b>increaseIntervalSec 秒に 1 回</b> rate += increaseStep（時間ベース加算増加 / Additive Increase）</item>
 ///   <item>429/503 時: <see cref="NotifyRateLimit"/> → rate *= decreaseFactor（乗算減少 / Multiplicative Decrease）+ Retry-After 待機</item>
@@ -46,11 +46,11 @@ public sealed class TokenBucketRateLimiter : IDisposable
     /// <summary>
     /// レートリミッターを初期化する。
     /// </summary>
-    /// <param name="initialRate">初期レート（request/sec）。<paramref name="minRate"/>～<paramref name="maxRate"/> にクランプ</param>
-    /// <param name="minRate">レートの下限（request/sec）。正の値必須</param>
-    /// <param name="maxRate">レートの上限（request/sec）。<paramref name="minRate"/> 以上必須</param>
+    /// <param name="initialRate">初期レート（file/sec）。<paramref name="minRate"/>～<paramref name="maxRate"/> にクランプ</param>
+    /// <param name="minRate">レートの下限（file/sec）。正の値必須</param>
+    /// <param name="maxRate">レートの上限（file/sec）。<paramref name="minRate"/> 以上必須</param>
     /// <param name="burstCapacity">バースト許容量（最大トークン数）。バケットが満タンのとき瞬間的に放出できる上限</param>
-    /// <param name="increaseStep">AIMD 増加量（req/sec）。<paramref name="increaseIntervalSec"/> 秒ごとに加算される</param>
+    /// <param name="increaseStep">AIMD 増加量（file/sec）。<paramref name="increaseIntervalSec"/> 秒ごとに加算される</param>
     /// <param name="decreaseFactor">429 時の乗算減少係数。0 &lt; factor &lt; 1 必須（例: 0.7 でレートを 70% に）</param>
     /// <param name="increaseIntervalSec">AIMD 増加の最小間隔（秒）。この間隔で 429 が発生しなかった場合のみレートを増加する。デフォルト 5.0</param>
     /// <param name="logger">ロガー</param>
@@ -91,13 +91,13 @@ public sealed class TokenBucketRateLimiter : IDisposable
     // パブリックプロパティ
     // ─────────────────────────────────────────────────────────────
 
-    /// <summary>現在の転送レート（request/sec）。429 で減少し、成功で増加する。</summary>
+    /// <summary>現在の転送レート（file/sec）。429 で減少し、成功で増加する。</summary>
     public double CurrentRate { get { lock (_rateLock) return _rate; } }
 
-    /// <summary>レートの上限（request/sec）。</summary>
+    /// <summary>レートの上限（file/sec）。</summary>
     public double MaxRate => _maxRate;
 
-    /// <summary>レートの下限（request/sec）。</summary>
+    /// <summary>レートの下限（file/sec）。</summary>
     public double MinRate => _minRate;
 
     /// <summary>バースト許容量（最大トークン数）。</summary>
@@ -144,7 +144,7 @@ public sealed class TokenBucketRateLimiter : IDisposable
         }
         if (increased)
             _logger.LogDebug(
-                "レート増加: {Prev:F2} → {Current:F2}/{Max:F1} req/sec (次回増加可能: {Interval} 秒後)",
+                "レート増加: {Prev:F2} → {Current:F2}/{Max:F1} file/sec (次回増加可能: {Interval} 秒後)",
                 prev, current, _maxRate, _increaseInterval.TotalSeconds);
     }
 
@@ -156,19 +156,29 @@ public sealed class TokenBucketRateLimiter : IDisposable
     public void NotifyRateLimit(TimeSpan? retryAfter)
     {
         double prev, current;
+        bool shouldDrain;
         lock (_rateLock)
         {
             var now = DateTime.UtcNow;
             prev = _rate;
             _rate = Math.Max(_rate * _decreaseFactor, _minRate);
             current = _rate;
+            shouldDrain = false;
             if (retryAfter.HasValue && retryAfter.Value > TimeSpan.Zero)
+            {
                 _blockedUntil = now + retryAfter.Value;
+                shouldDrain = true;
+            }
             // 429 発生時は増加インターバルをリセット（回復後すぐ増加しない）
             _nextIncreaseAt = now + _increaseInterval;
         }
+        // Retry-After が指定された場合、バケット内の残留トークンをドレインして確実にブロックする
+        if (shouldDrain)
+        {
+            while (_tokens.Wait(0)) { }
+        }
         _logger.LogWarning(
-            "レート削減: {Prev:F1} → {Current:F1}/{Max:F1} req/sec (Retry-After: {RetryAfterSec} 秒)",
+            "レート削減: {Prev:F1} → {Current:F1}/{Max:F1} file/sec (Retry-After: {RetryAfterSec} 秒)",
             prev, current, _maxRate,
             retryAfter.HasValue ? retryAfter.Value.TotalSeconds.ToString("F0") : "なし");
     }
@@ -233,8 +243,8 @@ public sealed class TokenBucketRateLimiter : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
-        // 補充ループが終了するまで最大 200ms 待機
-        try { _refillTask.Wait(TimeSpan.FromMilliseconds(200)); } catch { /* キャンセル例外は無視 */ }
+        // 補充ループが完全に終了するまで待機（Cancel 後は 50ms 以内に完了する）
+        try { _refillTask.Wait(); } catch { /* キャンセル例外は無視 */ }
         _cts.Dispose();
         _tokens.Dispose();
     }

@@ -171,4 +171,70 @@ public sealed class TransferEngineTests : IDisposable
         summary.Skipped.Should().Be(1);
         summary.Total.Should().Be(3);
     }
+
+    // ─── Token Bucket レートリミッターモード ────────────────────────────────
+
+    private static TokenBucketRateLimiter CreateHighSpeedRateLimiter() =>
+        new(initialRate: 1000.0, minRate: 1.0, maxRate: 1000.0, burstCapacity: 100,
+            increaseStep: 1.0, decreaseFactor: 0.5,
+            logger: Mock.Of<ILogger<TokenBucketRateLimiter>>(),
+            increaseIntervalSec: 5.0);
+
+    [Fact]
+    public async Task RunAsync_WithRateLimiter_TransfersFileSuccessfully()
+    {
+        // 検証対象: RunAsync (TokenBucket モード)  目的: RateLimiter 指定時に転送が成功し Success がインクリメントされること
+        var file = MakeFile("docs", "report.pdf");
+        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
+                 .Returns(Task.CompletedTask);
+
+        using var rateLimiter = CreateHighSpeedRateLimiter();
+        var engine = new TransferEngine(_mockDest.Object, _skipList, _options, _mockLogger.Object,
+            rateLimiter: rateLimiter);
+        var summary = await engine.RunAsync([file], "dest/root");
+
+        summary.Success.Should().Be(1);
+        summary.Failed.Should().Be(0);
+        var contains = await _skipList.ContainsAsync(file.SkipKey);
+        contains.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_WithRateLimiter_FailedTransfer_CountedCorrectly()
+    {
+        // 検証対象: RunAsync (TokenBucket モード) done カウンター  目的: 失敗時も Failed がインクリメントされ skip_list に登録されないこと
+        var file = MakeFile("docs", "broken.pdf");
+        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
+                 .ThrowsAsync(new IOException("network error"));
+
+        using var rateLimiter = CreateHighSpeedRateLimiter();
+        var engine = new TransferEngine(_mockDest.Object, _skipList, _options, _mockLogger.Object,
+            rateLimiter: rateLimiter);
+        var summary = await engine.RunAsync([file], "dest/root");
+
+        summary.Failed.Should().Be(1);
+        summary.Success.Should().Be(0);
+        var contains = await _skipList.ContainsAsync(file.SkipKey);
+        contains.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_WithRateLimiter_MixedResults_CountedCorrectly()
+    {
+        // 検証対象: RunAsync (TokenBucket モード) 混在  目的: 成功・失敗が混在する場合、各カウントが正確に集計されること
+        var fileOk = MakeFile("docs", "ok.pdf");
+        var fileFail = MakeFile("docs", "fail.pdf");
+        _mockDest.Setup(d => d.UploadFileAsync(It.Is<TransferJob>(j => j.Source.Name == "ok.pdf"), It.IsAny<CancellationToken>()))
+                 .Returns(Task.CompletedTask);
+        _mockDest.Setup(d => d.UploadFileAsync(It.Is<TransferJob>(j => j.Source.Name == "fail.pdf"), It.IsAny<CancellationToken>()))
+                 .ThrowsAsync(new HttpRequestException("server error"));
+
+        using var rateLimiter = CreateHighSpeedRateLimiter();
+        var engine = new TransferEngine(_mockDest.Object, _skipList, _options, _mockLogger.Object,
+            rateLimiter: rateLimiter);
+        var summary = await engine.RunAsync([fileOk, fileFail], "dest/root");
+
+        summary.Success.Should().Be(1);
+        summary.Failed.Should().Be(1);
+    }
 }

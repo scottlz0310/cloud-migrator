@@ -167,7 +167,7 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- init --resolve-graph-ids --o
 - `--resolve-graph-ids`: Graph API から SharePoint サイト/ドライブIDを自動解決（`--sharepoint-site-url` と `--onedrive-user-id` 必須）
 - `--sharepoint-site-url`: 自動解決に使う SharePoint サイトURL
 - `--sharepoint-drive-name`: 自動解決時に選択するドキュメントライブラリ名（既定: `Documents`）
-- `--max-parallel-transfers`: 最大並列転送数を `config.json` に反映（例: `8`。省略時はデフォルト 4）
+- `--max-parallel-transfers`: 最大並列転送数を `config.json` に反映（例: `8`。省略時は変更しない。新規テンプレートでは `4`）
 - `--adaptive-concurrency`: 動的並列度制御の有効/無効を `config.json` に反映（`true` で有効。省略時はデフォルト `false`）
 
 ### verify

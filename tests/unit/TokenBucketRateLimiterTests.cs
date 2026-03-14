@@ -153,8 +153,8 @@ public sealed class TokenBucketRateLimiterTests
     public void NotifySuccess_IncreasesRateByStep()
     {
         // 検証対象: NotifySuccess  目的: increaseIntervalSec 経過後の成功通知でレートが increaseStep 分加算されること
-        using var limiter = CreateLimiter(initialRate: 4.0, maxRate: 20.0, increaseStep: 0.5, increaseIntervalSec: 0.001);
-        Thread.Sleep(5); // increaseIntervalSec (1ms) を超えるよう待機
+        // _nextIncreaseAt は DateTime.MinValue で初期化されるため、初回呼び出しは待機不要
+        using var limiter = CreateLimiter(initialRate: 4.0, maxRate: 20.0, increaseStep: 0.5, increaseIntervalSec: 60.0);
         limiter.NotifySuccess();
         limiter.CurrentRate.Should().BeApproximately(4.5, 1e-10);
     }
@@ -174,9 +174,9 @@ public sealed class TokenBucketRateLimiterTests
     [Fact]
     public void NotifySuccess_ResetsIntervalAfter429()
     {
-        // 検証対象: NotifyRateLimit 後の NextIncreaseAt  目的: 429 発生後は increaseIntervalSec 圪満するまで増加しないこと
-        using var limiter = CreateLimiter(initialRate: 8.0, increaseIntervalSec: 0.001);
-        Thread.Sleep(5);
+        // 検証対象: NotifyRateLimit 後の NextIncreaseAt  目的: 429 発生後は increaseIntervalSec 経過するまで増加しないこと
+        // _nextIncreaseAt は DateTime.MinValue で初期化されるため、初回呼び出しは待機不要
+        using var limiter = CreateLimiter(initialRate: 8.0, increaseIntervalSec: 60.0);
         limiter.NotifySuccess(); // 初回は増加する
         limiter.NotifyRateLimit(retryAfter: null); // 429 → NextIncreaseAt をリセット
         var rateAfter429 = limiter.CurrentRate;
@@ -197,7 +197,7 @@ public sealed class TokenBucketRateLimiterTests
     [Fact]
     public async Task NotifySuccess_MultipleCallsWithDelayEventuallyReachMaxRate()
     {
-        // 検証対象: NotifySuccess 繰り返し  目的: increaseIntervalSec の間隔を置いまた呼び出せば maxRate に達すること
+        // 検証対象: NotifySuccess 繰り返し  目的: increaseIntervalSec の間隔を置いてまた呼び出せば maxRate に達すること
         using var limiter = CreateLimiter(initialRate: 1.0, minRate: 0.5, maxRate: 3.0, increaseStep: 1.0, increaseIntervalSec: 0.001);
         for (int i = 0; i < 5; i++)
         {
