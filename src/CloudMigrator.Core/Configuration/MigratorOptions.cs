@@ -35,6 +35,9 @@ public sealed class MigratorOptions
     // --- 動的並列度制御設定 ---
     public AdaptiveConcurrencyOptions AdaptiveConcurrency { get; set; } = new();
 
+    // --- Token Bucket レートリミッター設定 ---
+    public RateLimiterOptions RateLimiter { get; set; } = new();
+
     // --- プロバイダー設定 ---
     public GraphProviderOptions Graph { get; set; } = new();
     public DropboxProviderOptions Dropbox { get; set; } = new();
@@ -130,4 +133,49 @@ public sealed class AdaptiveConcurrencyOptions
     /// 並列度を 1 回復させるために必要な連続成功回数。デフォルト 10
     /// </summary>
     public int SuccessThresholdToIncrease { get; set; } = 10;
+}
+
+/// <summary>
+/// Token Bucket + AIMD によるレートリミッターの設定（FR-14 拡張: request/sec 制御）。
+/// <c>AdaptiveConcurrency</c> が並列数制御であるのに対し、こちらはリクエスト発行速度を直接制御する。
+/// </summary>
+public sealed class RateLimiterOptions
+{
+    /// <summary>Token Bucket レートリミッターを有効にするかどうか。デフォルト false</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// 初期レート（request/sec）。起動直後はこのレートで転送を開始する。デフォルト 4.0
+    /// </summary>
+    public double InitialRequestsPerSec { get; set; } = 4.0;
+
+    /// <summary>
+    /// レートの上限（request/sec）。AIMD 増加でこの値を超えない。デフォルト 16.0（Graph API 実測安全値）
+    /// </summary>
+    public double MaxRequestsPerSec { get; set; } = 16.0;
+
+    /// <summary>
+    /// レートの下限（request/sec）。AIMD 減少でこの値を下回らない。デフォルト 1.0
+    /// </summary>
+    public double MinRequestsPerSec { get; set; } = 1.0;
+
+    /// <summary>
+    /// バースト許容量（最大トークン数）。短時間に放出できる最大リクエスト数。デフォルト 6 (= initialRate × 1.5)
+    /// </summary>
+    public int BurstCapacity { get; set; } = 6;
+
+    /// <summary>
+    /// AIMD 増加量（req/sec）。<see cref="IncreaseIntervalSec"/> 秒ごとに加算される。デフォルト 0.2
+    /// </summary>
+    public double IncreaseStep { get; set; } = 0.2;
+
+    /// <summary>
+    /// 429 時の乗算減少係数（0 &lt; factor &lt; 1）。デフォルト 0.7（耺急性を持たせつつ適度に減速）
+    /// </summary>
+    public double DecreaseFactor { get; set; } = 0.7;
+
+    /// <summary>
+    /// AIMD 増加の最小間隔（秒）。この間隔で 429 が発生しなかった場合のみレートを増加する。デフォルト 5.0
+    /// </summary>
+    public double IncreaseIntervalSec { get; set; } = 5.0;
 }

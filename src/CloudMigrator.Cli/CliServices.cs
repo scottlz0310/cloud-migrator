@@ -28,6 +28,11 @@ internal sealed class CliServices : IDisposable
     /// </summary>
     public AdaptiveConcurrencyController? AdaptiveConcurrencyController { get; }
 
+    /// <summary>
+    /// Token Bucket レートリミッター。<see cref="RateLimiterOptions.Enabled"/> が false の場合は null。
+    /// </summary>
+    public TokenBucketRateLimiter? RateLimiter { get; }
+
     private CliServices(
         MigratorOptions options,
         ILoggerFactory loggerFactory,
@@ -35,7 +40,8 @@ internal sealed class CliServices : IDisposable
         DropboxStorageProvider dropboxProvider,
         CrawlCache crawlCache,
         SkipListManager skipListManager,
-        AdaptiveConcurrencyController? adaptiveConcurrencyController)
+        AdaptiveConcurrencyController? adaptiveConcurrencyController,
+        TokenBucketRateLimiter? rateLimiter)
     {
         Options = options;
         LoggerFactory = loggerFactory;
@@ -44,6 +50,7 @@ internal sealed class CliServices : IDisposable
         CrawlCache = crawlCache;
         SkipListManager = skipListManager;
         AdaptiveConcurrencyController = adaptiveConcurrencyController;
+        RateLimiter = rateLimiter;
     }
 
     public static CliServices Build(string? configPath = null)
@@ -72,6 +79,24 @@ internal sealed class CliServices : IDisposable
                 successThreshold: options.AdaptiveConcurrency.SuccessThresholdToIncrease,
                 logger: loggerFactory.CreateLogger<AdaptiveConcurrencyController>());
             onRateLimit = adaptiveController.NotifyRateLimit;
+        }
+
+        // Token Bucket レートリミッターを生成（設定で有効な場合）
+        TokenBucketRateLimiter? rateLimiter = null;
+        if (options.RateLimiter.Enabled)
+        {
+            rateLimiter = new TokenBucketRateLimiter(
+                initialRate: options.RateLimiter.InitialRequestsPerSec,
+                minRate: options.RateLimiter.MinRequestsPerSec,
+                maxRate: options.RateLimiter.MaxRequestsPerSec,
+                burstCapacity: options.RateLimiter.BurstCapacity,
+                increaseStep: options.RateLimiter.IncreaseStep,
+                decreaseFactor: options.RateLimiter.DecreaseFactor,
+                logger: loggerFactory.CreateLogger<TokenBucketRateLimiter>(),
+                increaseIntervalSec: options.RateLimiter.IncreaseIntervalSec);
+            // onRateLimit チェーン: 既存ハンドラーに加えて TokenBucketRateLimiter も通知
+            var prev = onRateLimit;
+            onRateLimit = retryAfter => { prev?.Invoke(retryAfter); rateLimiter.NotifyRateLimit(retryAfter); };
         }
 
         var graphClient = GraphClientFactory.Create(
@@ -131,11 +156,13 @@ internal sealed class CliServices : IDisposable
             dropboxProvider,
             crawlCache,
             skipListManager,
-            adaptiveController);
+            adaptiveController,
+            rateLimiter);
     }
 
     public void Dispose()
     {
+        RateLimiter?.Dispose();
         AdaptiveConcurrencyController?.Dispose();
         DropboxProvider.Dispose();
         LoggerFactory.Dispose();
