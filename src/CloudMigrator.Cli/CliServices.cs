@@ -93,14 +93,14 @@ internal sealed class CliServices : IDisposable
             var logsDir = Path.GetDirectoryName(options.Paths.SkipList) ?? "logs";
             rateStatePath = Path.Combine(logsDir, "rate_state.json");
 
-            // 前回の終了時レートを要先後の初期値として復元ﾈコールドスタート排除）
+            // 前回保存時のレートを初期値として復元（コールドスタート排除）
             double initialRate = options.RateLimiter.InitialRequestsPerSec;
             if (File.Exists(rateStatePath))
             {
                 try
                 {
-                    var json = File.ReadAllText(rateStatePath);
-                    var doc = JsonDocument.Parse(json);
+                    var jsonText = File.ReadAllText(rateStatePath);
+                    using var doc = JsonDocument.Parse(jsonText);
                     if (doc.RootElement.TryGetProperty("rate", out var rateProp)
                         && rateProp.TryGetDouble(out var savedRate)
                         && savedRate >= options.RateLimiter.MinRequestsPerSec
@@ -108,7 +108,7 @@ internal sealed class CliServices : IDisposable
                     {
                         initialRate = savedRate;
                         loggerFactory.CreateLogger<CliServices>().LogInformation(
-                            "前回履行のレートを復元します: {Rate:F1} file/sec", initialRate);
+                            "前回保存時のレートを復元します: {Rate:F1} file/sec", initialRate);
                     }
                 }
                 catch (Exception ex)
@@ -207,6 +207,7 @@ internal sealed class CliServices : IDisposable
         // レートリミッター終了前に現在レートを保存（次回起動のコールドスタート排除）
         if (RateLimiter is not null && _rateStatePath is not null)
         {
+            // 原子的書き込み（一時ファイル→Move/Replace）でパーシャルライトを防止
             try
             {
                 var logsDir = Path.GetDirectoryName(_rateStatePath);
@@ -217,9 +218,16 @@ internal sealed class CliServices : IDisposable
                     rate = RateLimiter.CurrentRate,
                     savedAt = DateTime.UtcNow.ToString("o"),
                 });
-                File.WriteAllText(_rateStatePath, json);
+                var tmpPath = _rateStatePath + ".tmp";
+                File.WriteAllText(tmpPath, json);
+                File.Move(tmpPath, _rateStatePath, overwrite: true);
             }
-            catch { /* ファイル保存失敗は無視（終了処理を妨げない） */ }
+            catch (Exception ex)
+            {
+                // 保存失敗は終了処理を妨げないが原因追跡のためログを残す
+                try { LoggerFactory.CreateLogger<CliServices>().LogWarning(ex, "rate_state.json の保存に失敗しました。"); }
+                catch { /* LoggerFactory も破棄済みの場合は握りつぶす */ }
+            }
         }
         RateLimiter?.Dispose();
         AdaptiveConcurrencyController?.Dispose();
