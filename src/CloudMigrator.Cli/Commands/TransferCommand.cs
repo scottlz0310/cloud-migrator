@@ -37,6 +37,22 @@ internal static class TransferCommand
         using var svc = CliServices.Build();
         var logger = svc.LoggerFactory.CreateLogger("transfer");
         var opts = svc.Options;
+        try
+        {
+            await RunCoreAsync(fullRebuild, ct, svc, logger, opts).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogCritical(ex, "転送で予期しないエラーが発生しました");
+            throw;
+        }
+    }
+
+    private static async Task RunCoreAsync(
+        bool fullRebuild, CancellationToken ct,
+        CliServices svc, Microsoft.Extensions.Logging.ILogger logger,
+        CloudMigrator.Core.Configuration.MigratorOptions opts)
+    {
 
         // 1. 設定ハッシュ確認（FR-10）
         var hash = ConfigHashChecker.ComputeHash(opts);

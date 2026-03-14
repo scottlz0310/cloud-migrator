@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using CloudMigrator.Providers.Abstractions;
 using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Logging;
@@ -21,8 +22,8 @@ public sealed class GraphStorageProvider : IStorageProvider
     private readonly int _chunkSizeBytes;
     private readonly UploadSessionStore? _sessionStore;
     private string? _cachedOneDriveDriveId;
-    // フォルダ先行作成フェーズのパス→ID キャッシュ（SharePoint への重複 API 呼び出しを防ぐ）
-    private readonly Dictionary<string, string> _folderIdCache = new(StringComparer.OrdinalIgnoreCase);
+    // フォルダ先行作成フェーズのパス→ID キャッシュ（SharePoint への重複 API 呼び出しを防ぐ・並行安全）
+    private readonly ConcurrentDictionary<string, string> _folderIdCache = new(StringComparer.OrdinalIgnoreCase);
 
     public string ProviderId => "graph";
 
@@ -469,9 +470,34 @@ public sealed class GraphStorageProvider : IStorageProvider
     }
 
     /// <summary>フォルダが存在しなければ作成し、そのアイテム ID を返す（FR-06）。</summary>
+    /// <remarks>
+    /// GET first（読み込み 1 回）→ 存在すれば即返却、404 なら POST で作成。
+    /// 旧来の "POST → 409 catch → Children ページング" より API 呼び出しが少なく
+    /// レートリミットを抑制できる。
+    /// </remarks>
     private async Task<string> EnsureFolderSegmentAsync(
         string driveId, string parentId, string folderName, CancellationToken ct)
     {
+        // 1) GET で存在確認: /drives/{id}/items/{parentId}:/{folderName}:
+        //    既存フォルダならここで ID が取れる（POST 不要）
+        var pathItemId = $"{parentId}:/{folderName}:";
+        try
+        {
+            var existing = await _client.Drives[driveId].Items[pathItemId]
+                .GetAsync(cancellationToken: ct).ConfigureAwait(false);
+
+            if (existing?.Id is not null)
+            {
+                _logger.LogDebug("フォルダ確認: 既存 {FolderName}", folderName);
+                return existing.Id;
+            }
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
+        {
+            // フォルダが存在しない → 2) へ
+        }
+
+        // 2) POST で作成
         var newFolder = new DriveItem
         {
             Name = folderName,
@@ -480,57 +506,15 @@ public sealed class GraphStorageProvider : IStorageProvider
                 { { "@microsoft.graph.conflictBehavior", "fail" } },
         };
 
-        try
-        {
-            DriveItem? created = parentId == "root"
-                ? await _client.Drives[driveId].Items["root"].Children
-                    .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false)
-                : await _client.Drives[driveId].Items[parentId].Children
-                    .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false);
-
-            var newId = created?.Id
-                ?? throw new InvalidOperationException($"フォルダ作成後に ID が取得できません: {folderName}");
-            _logger.LogInformation("フォルダ作成: {FolderName}", folderName);
-            return newId;
-        }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 409)
-        {
-            // フォルダが既に存在する場合は検索して既存 ID を返す
-            _logger.LogDebug("フォルダが既に存在します。ID を検索します: {FolderName}", folderName);
-            return await FindFolderIdAsync(driveId, parentId, folderName, ct).ConfigureAwait(false);
-        }
-    }
-
-    private async Task<string> FindFolderIdAsync(
-        string driveId, string parentId, string folderName, CancellationToken ct)
-    {
-        // SharePoint の Children エンドポイントは $filter 非対応のため
-        // PageIterator でページング取得しクライアント側でフィルタリングする
-        DriveItemCollectionResponse? firstPage = parentId == "root"
+        DriveItem? created = parentId == "root"
             ? await _client.Drives[driveId].Items["root"].Children
-                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false)
+                .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false)
             : await _client.Drives[driveId].Items[parentId].Children
-                .GetAsync(r => r.QueryParameters.Top = 200, ct).ConfigureAwait(false);
+                .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false);
 
-        if (firstPage is null)
-            throw new InvalidOperationException($"既存フォルダの ID が取得できません: {folderName}");
-
-        string? foundId = null;
-        var pageIterator = PageIterator<DriveItem, DriveItemCollectionResponse>
-            .CreatePageIterator(_client, firstPage, item =>
-            {
-                if (foundId is null &&
-                    string.Equals(item.Name, folderName, StringComparison.OrdinalIgnoreCase) &&
-                    item.Folder is not null)
-                {
-                    foundId = item.Id;
-                    return false; // 見つかったら停止
-                }
-                return true;
-            });
-        await pageIterator.IterateAsync(ct).ConfigureAwait(false);
-
-        return foundId ?? throw new InvalidOperationException(
-            $"既存フォルダの ID が取得できません: {folderName}");
+        var newId = created?.Id
+            ?? throw new InvalidOperationException($"フォルダ作成後に ID が取得できません: {folderName}");
+        _logger.LogInformation("フォルダ作成: {FolderName}", folderName);
+        return newId;
     }
 }
