@@ -119,3 +119,19 @@
 - [x] `AppContext.BaseDirectory` 遡り上限を4→6段に拡張
 - [x] `DoctorCommand.Run()` で `resolvedConfigPath` を先に決定して `Build`/`BuildChecks` で共有
 - [x] `SetupDoctorCommandTests` にテスト3件追加（121件全通過確認）→ PR #25 マージ済み
+
+## パフォーマンス改善＆バグ修正: 転送チューニング（feature/phase-perf-tuning-and-bugfix）
+
+- [x] `RateLimiterOptions` のデフォルト値を実稼働ログ（16,831 件移行）に基づき最適化
+  - `InitialRequestsPerSec` 4.0 → 7.0（コールドスタート時のウォームアップ排除）
+  - `BurstCapacity` 6 → 4（ThrottledRequest 誘発の抑制）
+  - `IncreaseStep` 0.2 → 0.5（AIMD 収束速度改善）
+- [x] `GraphStorageProvider.LargeUploadAsync`: セッション URL 復元時の `NullReferenceException` 修正
+  - `UploadUrl` のみで `UploadSession` を構築すると `NextExpectedRanges` が `null` になり、
+    `LargeFileUploadTask` コンストラクター内の `GetRangesRemaining()` が NPE を投げる問題を修正
+  - 復元時に `NextExpectedRanges = ["0-"]` を初期値として設定することで解消
+- [x] `TransferEngine.RunAsync`: 転送完了サマリーログにレート情報を追加
+  - レートリミッター有効時: 「最終レート: {Rate:F1}/{Max:F1} file/sec」を付記
+- [x] `CliServices`: レート状態の永続化（`logs/rate_state.json`）を実装
+  - 起動時: `rate_state.json` が存在すれば前回終了レートを `initialRate` として復元（コールドスタート排除）
+  - 終了時: `Dispose()` 内で現在レートを JSON 保存（UTC 日時付き）

@@ -8,6 +8,26 @@
 ## [Unreleased]
 
 ### Fixed
+- **`GraphStorageProvider.LargeUploadAsync`: セッション URL 復元時の `NullReferenceException` 修正**
+  - `UploadUrl` のみで `UploadSession` を構築すると `NextExpectedRanges` が `null` になり、
+    `LargeFileUploadTask<DriveItem>` コンストラクター内の `GetRangesRemaining()` が NPE を投げる問題を修正（cv2.pyd 等の大容量ファイルで実測発生）
+  - 復元時に `NextExpectedRanges = new List<string> { "0-" }` を初期値として設定し、セッション再開時の NPE を解消
+- **`RateLimiterOptions` デフォルト値を実稼働ログに基づき最適化**（16,831 件移行 / 3 回起動分のログ解析）
+  - `InitialRequestsPerSec` 4.0 → **7.0**（観測ウォームアップ下限値: 7.0 で安定稼働）
+  - `BurstCapacity` 6 → **4**（BurstCapacity=6 で ThrottledRequest 3 件発生、4 まで削減で回避）
+  - `IncreaseStep` 0.2 → **0.5**（AIMD 鋸歯状サイクルの収束速度を改善）
+
+### Added
+- **`TransferEngine.RunAsync`: 転送完了サマリーログにレート情報を追加**
+  - レートリミッター有効時: 既存「成功 / 失敗 / スキップ」に「最終レート: {Rate:F1}/{Max:F1} file/sec」を付記
+- **`CliServices`: レート状態の永続化（`logs/rate_state.json`）を実装**
+  - 起動時: `rate_state.json` が存在すれば前回終了レートを `initialRate` として復元（コールドスタートによる低速ウォームアップを排除）
+  - 終了時: `Dispose()` 内で現在レートを JSON 保存（UTC 日時付き）
+  - 保存値が `MinRequestsPerSec`〜`MaxRequestsPerSec` 範囲外の場合はデフォルトにフォールバック
+
+---
+
+### Fixed
 - **E2E 手動テスト中に発見・修正（2026-03-13）**
   - `FindFolderIdAsync`: SharePoint の `Children` エンドポイントは `$filter` を非サポート（"Operation not supported"）。`PageIterator<DriveItem, DriveItemCollectionResponse>` + クライアント側フィルタリングに変更し、SharePoint との互換性を確保
   - `EnsureFolderAsync`: フォルダIDキャッシュ（`_folderIdCache: Dictionary<string, string>`）を追加。パスを上から解決する際に同一プレフィックスへの Graph API 呼び出しを省略し、フォルダ作成フェーズのAPI呼び出し数を O(N×depth²) から O(N) に削減

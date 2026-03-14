@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Storage;
 using CloudMigrator.Core.Transfer;
@@ -22,6 +23,7 @@ internal sealed class CliServices : IDisposable
     public DropboxStorageProvider DropboxProvider { get; }
     public CrawlCache CrawlCache { get; }
     public SkipListManager SkipListManager { get; }
+    private readonly string? _rateStatePath;
 
     /// <summary>
     /// 動的並列度コントローラー。<see cref="MigratorOptions.AdaptiveConcurrency"/> が無効な場合は null。
@@ -41,7 +43,8 @@ internal sealed class CliServices : IDisposable
         CrawlCache crawlCache,
         SkipListManager skipListManager,
         AdaptiveConcurrencyController? adaptiveConcurrencyController,
-        TokenBucketRateLimiter? rateLimiter)
+        TokenBucketRateLimiter? rateLimiter,
+        string? rateStatePath)
     {
         Options = options;
         LoggerFactory = loggerFactory;
@@ -51,6 +54,7 @@ internal sealed class CliServices : IDisposable
         SkipListManager = skipListManager;
         AdaptiveConcurrencyController = adaptiveConcurrencyController;
         RateLimiter = rateLimiter;
+        _rateStatePath = rateStatePath;
     }
 
     public static CliServices Build(string? configPath = null)
@@ -83,10 +87,39 @@ internal sealed class CliServices : IDisposable
 
         // Token Bucket レートリミッターを生成（設定で有効な場合）
         TokenBucketRateLimiter? rateLimiter = null;
+        string? rateStatePath = null;
         if (options.RateLimiter.Enabled)
         {
+            var logsDir = Path.GetDirectoryName(options.Paths.SkipList) ?? "logs";
+            rateStatePath = Path.Combine(logsDir, "rate_state.json");
+
+            // 前回の終了時レートを要先後の初期値として復元ﾈコールドスタート排除）
+            double initialRate = options.RateLimiter.InitialRequestsPerSec;
+            if (File.Exists(rateStatePath))
+            {
+                try
+                {
+                    var json = File.ReadAllText(rateStatePath);
+                    var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("rate", out var rateProp)
+                        && rateProp.TryGetDouble(out var savedRate)
+                        && savedRate >= options.RateLimiter.MinRequestsPerSec
+                        && savedRate <= options.RateLimiter.MaxRequestsPerSec)
+                    {
+                        initialRate = savedRate;
+                        loggerFactory.CreateLogger<CliServices>().LogInformation(
+                            "前回履行のレートを復元します: {Rate:F1} file/sec", initialRate);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    loggerFactory.CreateLogger<CliServices>().LogWarning(
+                        ex, "rate_state.json の読み込みに失敗しました。初期値を使用します: {Rate:F1} file/sec", initialRate);
+                }
+            }
+
             rateLimiter = new TokenBucketRateLimiter(
-                initialRate: options.RateLimiter.InitialRequestsPerSec,
+                initialRate: initialRate,
                 minRate: options.RateLimiter.MinRequestsPerSec,
                 maxRate: options.RateLimiter.MaxRequestsPerSec,
                 burstCapacity: options.RateLimiter.BurstCapacity,
@@ -165,11 +198,29 @@ internal sealed class CliServices : IDisposable
             crawlCache,
             skipListManager,
             adaptiveController,
-            rateLimiter);
+            rateLimiter,
+            rateStatePath);
     }
 
     public void Dispose()
     {
+        // レートリミッター終了前に現在レートを保存（次回起動のコールドスタート排除）
+        if (RateLimiter is not null && _rateStatePath is not null)
+        {
+            try
+            {
+                var logsDir = Path.GetDirectoryName(_rateStatePath);
+                if (logsDir is not null)
+                    Directory.CreateDirectory(logsDir);
+                var json = JsonSerializer.Serialize(new
+                {
+                    rate = RateLimiter.CurrentRate,
+                    savedAt = DateTime.UtcNow.ToString("o"),
+                });
+                File.WriteAllText(_rateStatePath, json);
+            }
+            catch { /* ファイル保存失敗は無視（終了処理を妨げない） */ }
+        }
         RateLimiter?.Dispose();
         AdaptiveConcurrencyController?.Dispose();
         DropboxProvider.Dispose();
