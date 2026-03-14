@@ -24,19 +24,22 @@ public sealed class TransferEngine
     private readonly MigratorOptions _options;
     private readonly ILogger<TransferEngine> _logger;
     private readonly AdaptiveConcurrencyController? _concurrencyController;
+    private readonly TokenBucketRateLimiter? _rateLimiter;
 
     public TransferEngine(
         IStorageProvider destProvider,
         SkipListManager skipList,
         MigratorOptions options,
         ILogger<TransferEngine> logger,
-        AdaptiveConcurrencyController? concurrencyController = null)
+        AdaptiveConcurrencyController? concurrencyController = null,
+        TokenBucketRateLimiter? rateLimiter = null)
     {
         _destProvider = destProvider;
         _skipList = skipList;
         _options = options;
         _logger = logger;
         _concurrencyController = concurrencyController;
+        _rateLimiter = rateLimiter;
     }
 
     /// <summary>
@@ -128,7 +131,7 @@ public sealed class TransferEngine
         }
 
         // ─── 3 & 4. 並列転送 ─────────────────────────────────────────────
-        int success = 0, failed = 0;
+        int success = 0, failed = 0, done = 0;
 
         if (_concurrencyController is not null)
         {
@@ -169,17 +172,80 @@ public sealed class TransferEngine
                         await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
                         await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
                         Interlocked.Increment(ref success);
+                        var doneSnap = Interlocked.Increment(ref done);
                         _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
                         controller.NotifySuccess();
+                        if (doneSnap % 500 == 0)
+                            _logger.LogInformation(
+                                "転送進捗: {Done}/{Total} 完了 (失敗: {Failed}, 現在の並列度: {Degree}/{Max})",
+                                doneSnap, jobs.Count, Volatile.Read(ref failed),
+                                controller.CurrentDegree, controller.MaxDegree);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         Interlocked.Increment(ref failed);
+                        Interlocked.Increment(ref done);
                         _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
                     }
                     finally
                     {
                         controller.Release();
+                    }
+                }).ConfigureAwait(false);
+        }
+        else if (_rateLimiter is not null)
+        {
+            // ── Token Bucket レートリミッターモード ─────────────────────────
+            // Channel のディスパッチに加え、TokenBucketRateLimiter のゲートにより file/sec を制御する。
+            // 並列数（MaxParallelTransfers）はワーカープールサイズとして活用。
+            _logger.LogInformation(
+                "Token Bucket レートリミッターモードで転送開始 (初期レート: {Rate:F1}/{Max:F1} file/sec, バースト: {Burst} トークン, ワーカー: {Workers})",
+                _rateLimiter.CurrentRate, _rateLimiter.MaxRate, _rateLimiter.BurstCapacity, _options.MaxParallelTransfers);
+
+            var rateLimiterChannel = Channel.CreateBounded<TransferJob>(
+                new BoundedChannelOptions(jobs.Count)
+                {
+                    SingleWriter = true,
+                    SingleReader = false,
+                    FullMode = BoundedChannelFullMode.Wait,
+                });
+
+            foreach (var job in jobs)
+                await rateLimiterChannel.Writer.WriteAsync(job, cancellationToken).ConfigureAwait(false);
+            rateLimiterChannel.Writer.Complete();
+
+            var limiter = _rateLimiter; // ローカルにキャプチャ
+
+            await Parallel.ForEachAsync(
+                rateLimiterChannel.Reader.ReadAllAsync(cancellationToken),
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = _options.MaxParallelTransfers,
+                    CancellationToken = cancellationToken,
+                },
+                async (job, innerCt) =>
+                {
+                    // トークン取得で file/sec をゲート制御
+                    await limiter.AcquireAsync(innerCt).ConfigureAwait(false);
+                    try
+                    {
+                        await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
+                        await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
+                        Interlocked.Increment(ref success);
+                        var doneSnap = Interlocked.Increment(ref done);
+                        _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
+                        limiter.NotifySuccess();
+                        if (doneSnap % 500 == 0)
+                            _logger.LogInformation(
+                                "転送進捗: {Done}/{Total} 完了 (失敗: {Failed}, 現在のレート: {Rate:F1}/{Max:F1} file/sec)",
+                                doneSnap, jobs.Count, Volatile.Read(ref failed),
+                                limiter.CurrentRate, limiter.MaxRate);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        Interlocked.Increment(ref failed);
+                        Interlocked.Increment(ref done);
+                        _logger.LogError(ex, "転送失敗: {SkipKey}", job.Source.SkipKey);
                     }
                 }).ConfigureAwait(false);
         }

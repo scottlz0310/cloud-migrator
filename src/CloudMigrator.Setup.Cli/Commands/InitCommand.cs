@@ -65,6 +65,14 @@ internal static class InitCommand
         {
             Description = "転送先フォルダパス（SharePoint ドライブ上のルート。省略時はドライブルート直下）",
         };
+        var maxParallelTransfersOpt = new Option<int?>("--max-parallel-transfers")
+        {
+            Description = "最大並列転送数（省略時は変更しない。新規テンプレートでは 4）",
+        };
+        var adaptiveConcurrencyOpt = new Option<bool?>("--adaptive-concurrency")
+        {
+            Description = "レート制限に応じた動的並列度制御を有効にするかどうか（デフォルト: false）",
+        };
         cmd.Add(configPathOpt);
         cmd.Add(envPathOpt);
         cmd.Add(forceOpt);
@@ -76,6 +84,8 @@ internal static class InitCommand
         cmd.Add(sharePointDriveNameOpt);
         cmd.Add(oneDriveSourceFolderOpt);
         cmd.Add(destinationRootOpt);
+        cmd.Add(maxParallelTransfersOpt);
+        cmd.Add(adaptiveConcurrencyOpt);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
@@ -90,6 +100,8 @@ internal static class InitCommand
             var sharePointDriveName = parseResult.GetValue(sharePointDriveNameOpt) ?? "Documents";
             var oneDriveSourceFolder = parseResult.GetValue(oneDriveSourceFolderOpt);
             var destinationRoot = parseResult.GetValue(destinationRootOpt);
+            var maxParallelTransfers = parseResult.GetValue(maxParallelTransfersOpt);
+            var adaptiveConcurrency = parseResult.GetValue(adaptiveConcurrencyOpt);
 
             await RunAsync(
                 configPath,
@@ -103,6 +115,8 @@ internal static class InitCommand
                 sharePointDriveName,
                 oneDriveSourceFolder,
                 destinationRoot,
+                maxParallelTransfers,
+                adaptiveConcurrency,
                 ct).ConfigureAwait(false);
         });
 
@@ -126,6 +140,8 @@ internal static class InitCommand
             sharePointDriveName: "Documents",
             oneDriveSourceFolder: null,
             destinationRoot: null,
+            maxParallelTransfers: null,
+            adaptiveConcurrencyEnabled: null,
             ct: ct);
 
     internal static async Task RunAsync(
@@ -140,6 +156,8 @@ internal static class InitCommand
         string sharePointDriveName,
         string? oneDriveSourceFolder,
         string? destinationRoot,
+        int? maxParallelTransfers,
+        bool? adaptiveConcurrencyEnabled,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -181,6 +199,11 @@ internal static class InitCommand
             sharePointDriveId,
             oneDriveSourceFolder,
             destinationRoot);
+
+        configTemplate = ApplyPerformanceValuesToConfigTemplate(
+            configTemplate,
+            maxParallelTransfers,
+            adaptiveConcurrencyEnabled);
 
         envTemplate = ApplyGraphValuesToEnvTemplate(
             envTemplate,
@@ -281,6 +304,38 @@ internal static class InitCommand
             root.Migrator.Graph.OneDriveSourceFolder = oneDriveSourceFolder.Trim();
         if (destinationRoot is not null)
             root.Migrator.DestinationRoot = destinationRoot.Trim();
+
+        return JsonSerializer.Serialize(
+            root,
+            new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            });
+    }
+
+    internal static string ApplyPerformanceValuesToConfigTemplate(
+        string configTemplate,
+        int? maxParallelTransfers,
+        bool? adaptiveConcurrencyEnabled)
+    {
+        if (maxParallelTransfers is null && adaptiveConcurrencyEnabled is null)
+            return configTemplate;
+
+        var root = JsonSerializer.Deserialize<MigratorConfigRoot>(
+            configTemplate,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException("config テンプレートの解析に失敗しました。");
+
+        if (maxParallelTransfers is not null)
+        {
+            if (maxParallelTransfers.Value < 1)
+                throw new ArgumentOutOfRangeException(nameof(maxParallelTransfers), "最大並列転送数は 1 以上でなければなりません。");
+            root.Migrator.MaxParallelTransfers = maxParallelTransfers.Value;
+        }
+        if (adaptiveConcurrencyEnabled is not null)
+            root.Migrator.AdaptiveConcurrency.Enabled = adaptiveConcurrencyEnabled.Value;
 
         return JsonSerializer.Serialize(
             root,

@@ -125,11 +125,13 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --config-path conf
 ウィザードの流れ：
 1. **Azure AD 認証情報** — Client ID / Tenant ID / Client Secret を入力（環境変数設定済みなら Enter でスキップ）
 2. **OneDrive ユーザー** — ユーザーのUPN（例: `user@contoso.com`）を入力（環境変数設定済みなら Enter でスキップ）
-3. **SharePoint サイトURL** — 移行先サイトのURLを入力
-4. **ドキュメントライブラリ選択** — Graph から候補を取得し、番号で選択
-5. **設定ファイル生成** — `config.json` を生成し、`.env` は認証情報の取得元に応じて条件付きで生成  
+3. **転送設定** — 転送元フォルダ・転送先フォルダ
+4. **並列転送設定** — 最大並列転送数（デフォルト: 4）と動的並列度制御（AdaptiveConcurrency）の有効/無効
+5. **SharePoint サイトURL** — 移行先サイトのURLを入力
+6. **ドキュメントライブラリ選択** — Graph から候補を取得し、番号で選択
+7. **設定ファイル生成** — `config.json` を生成し、`.env` は認証情報の取得元に応じて条件付きで生成  
    （全認証情報が環境変数由来の場合は `.env` を生成せず、SharePoint ID / Drive ID をコンソールに表示）
-6. **完了後の案内** — `verify` コマンドの実行を促す
+8. **完了後の案内** — `verify` コマンドの実行を促す
 
 > **注意**: Client Secret はセキュリティ上の理由から `.env` / `config.json` には保存されません。  
 > ウィザード終了後、表示される環境変数設定コマンドでシェルに手動設定してください。
@@ -165,6 +167,8 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- init --resolve-graph-ids --o
 - `--resolve-graph-ids`: Graph API から SharePoint サイト/ドライブIDを自動解決（`--sharepoint-site-url` と `--onedrive-user-id` 必須）
 - `--sharepoint-site-url`: 自動解決に使う SharePoint サイトURL
 - `--sharepoint-drive-name`: 自動解決時に選択するドキュメントライブラリ名（既定: `Documents`）
+- `--max-parallel-transfers`: 最大並列転送数を `config.json` に反映（例: `8`。省略時は変更しない。新規テンプレートでは `4`）
+- `--adaptive-concurrency`: 動的並列度制御の有効/無効を `config.json` に反映（`true` で有効。省略時はデフォルト `false`）
 
 ### verify
 
