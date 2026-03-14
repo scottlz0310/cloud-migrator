@@ -145,9 +145,9 @@ public sealed class RateLimiterOptions
     public bool Enabled { get; set; } = false;
 
     /// <summary>
-    /// 初期レート（file/sec）。起動直後はこのレートで転送を開始する。デフォルト 4.0
+    /// 初期レート（file/sec）。起動直後はこのレートで転送を開始する。デフォルト 7.0（実測ログから最適値）
     /// </summary>
-    public double InitialRequestsPerSec { get; set; } = 4.0;
+    public double InitialRequestsPerSec { get; set; } = 7.0;
 
     /// <summary>
     /// レートの上限（file/sec）。AIMD 増加でこの値を超えない。デフォルト 16.0（Graph API 実測安全値）
@@ -160,14 +160,14 @@ public sealed class RateLimiterOptions
     public double MinRequestsPerSec { get; set; } = 1.0;
 
     /// <summary>
-    /// バースト許容量（最大トークン数）。短時間に放出できる最大リクエスト数。デフォルト 6 (= initialRate × 1.5)
+    /// バースト許容量（最大トークン数）。短時間に放出できる最大リクエスト数。デフォルト 4（BurstCapacity=6 は 429 ThrottledRequest を誘発するため削減）
     /// </summary>
-    public int BurstCapacity { get; set; } = 6;
+    public int BurstCapacity { get; set; } = 4;
 
     /// <summary>
-    /// AIMD 増加量（file/sec）。<see cref="IncreaseIntervalSec"/> 秒ごとに加算される。デフォルト 0.2
+    /// AIMD 増加量（file/sec）。<see cref="IncreaseIntervalSec"/> 秒ごとに加算される。デフォルト 0.5（収束速度改善）
     /// </summary>
-    public double IncreaseStep { get; set; } = 0.2;
+    public double IncreaseStep { get; set; } = 0.5;
 
     /// <summary>
     /// 429 時の乗算減少係数（0 &lt; factor &lt; 1）。デフォルト 0.7（俊敏性を持たせつつ適度に減速）

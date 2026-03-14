@@ -291,9 +291,20 @@ public sealed class TransferEngine
 
         sw.Stop();
 
-        _logger.LogInformation(
-            "転送完了: 成功 {Success} / 失敗 {Failed} / スキップ {Skipped} (所要時間: {Elapsed:c})",
-            success, failed, skipped, sw.Elapsed);
+        if (_rateLimiter is not null)
+        {
+            _logger.LogInformation(
+                "転送完了: 成功 {Success} / 失敗 {Failed} / スキップ {Skipped} " +
+                "(最終レート: {Rate:F1}/{Max:F1} file/sec, 所要時間: {Elapsed:c})",
+                success, failed, skipped,
+                _rateLimiter.CurrentRate, _rateLimiter.MaxRate, sw.Elapsed);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "転送完了: 成功 {Success} / 失敗 {Failed} / スキップ {Skipped} (所要時間: {Elapsed:c})",
+                success, failed, skipped, sw.Elapsed);
+        }
 
         return new TransferSummary
         {

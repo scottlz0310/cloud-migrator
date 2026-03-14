@@ -345,7 +345,16 @@ public sealed class GraphStorageProvider : IStorageProvider
             if (savedUrl is not null)
             {
                 _logger.LogDebug("既存セッションで再開を試みます: {SkipKey}", job.Source.SkipKey);
-                uploadSession = new UploadSession { UploadUrl = savedUrl };
+                // NextExpectedRanges を初期値で埋める。
+                // UploadUrl のみで UploadSession を構築すると NextExpectedRanges が null になり、
+                // LargeFileUploadTask コンストラクター内の GetRangesRemaining() が NullReferenceException を
+                // 投げる（cv2.pyd 等の大容量ファイルで実測済み）。"0-" は「先頭から送信可能」を意味し、
+                // SDK が最初のチャンクを送信するとサーバーから実際の再開位置が返される。
+                uploadSession = new UploadSession
+                {
+                    UploadUrl = savedUrl,
+                    NextExpectedRanges = new List<string> { "0-" },
+                };
             }
             else
             {
