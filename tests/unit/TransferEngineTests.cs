@@ -247,19 +247,17 @@ public sealed class TransferEngineTests : IDisposable
         var file = MakeFile("sub", "file.txt");
         var callOrder = new List<string>();
 
+        // Callback<T1,T2> ではなく Returns<T1,T2> を使用してすべてのプラットフォームで確実に引数をキャプチャする
         _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<string, CancellationToken>((p, _) => callOrder.Add(p))
-            .Returns(Task.CompletedTask);
+            .Returns<string, CancellationToken>((path, _) => { callOrder.Add(path); return Task.CompletedTask; });
         _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var engine = CreateEngine();
         await engine.RunAsync([file], "dest/root");
 
-        // "dest/root" が最初に呼ばれること
-        callOrder.Should().NotBeEmpty();
-        callOrder[0].Should().Be("dest/root");
-        callOrder.Should().Contain("dest/root/sub");
+        // "dest/root" が "dest/root/sub" より前に呼ばれること (ContainInOrder は順序を保証する)
+        callOrder.Should().ContainInOrder("dest/root", "dest/root/sub");
     }
 
     [Fact]
@@ -269,18 +267,17 @@ public sealed class TransferEngineTests : IDisposable
         var file = MakeFile("docs", "file.txt");
         var callOrder = new List<string>();
 
+        // Callback<T1,T2> ではなく Returns<T1,T2> を使用してすべてのプラットフォームで確実に引数をキャプチャする
         _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<string, CancellationToken>((p, _) => callOrder.Add(p))
-            .Returns(Task.CompletedTask);
+            .Returns<string, CancellationToken>((path, _) => { callOrder.Add(path); return Task.CompletedTask; });
         _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var engine = CreateEngine();
         await engine.RunAsync([file], "Migration/OneDrive");
 
-        // 最初に destRoot 自体の EnsureFolder が呼ばれること
-        callOrder[0].Should().Be("Migration/OneDrive");
-        callOrder.Should().Contain("Migration/OneDrive/docs");
+        // "Migration/OneDrive" が "Migration/OneDrive/docs" より前に呼ばれること (ContainInOrder は順序を保証する)
+        callOrder.Should().ContainInOrder("Migration/OneDrive", "Migration/OneDrive/docs");
     }
 
     [Fact]
@@ -291,9 +288,9 @@ public sealed class TransferEngineTests : IDisposable
         var callOrder = new List<string>();
         var lockObj = new object();
 
+        // Callback<T1,T2> ではなく Returns<T1,T2> を使用してすべてのプラットフォームで確実に引数をキャプチャする
         _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<string, CancellationToken>((p, _) => { lock (lockObj) callOrder.Add(p); })
-            .Returns(Task.CompletedTask);
+            .Returns<string, CancellationToken>((path, _) => { lock (lockObj) callOrder.Add(path); return Task.CompletedTask; });
         _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 

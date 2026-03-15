@@ -430,22 +430,32 @@ public class GraphStorageProviderTests
         // 目的: POST が 409 を返した場合 (並行作成競合) に再 GET して正常完了すること
         var (mockAdapter, client) = CreateEnsureFolderMockAdapter();
 
-        // GET: 1回目は 404、2回目 (fallback) は既存フォルダを返す
-        mockAdapter.SetupSequence(a => a.SendAsync(
-                It.Is<RequestInformation>(r => r.HttpMethod == Method.GET),
-                It.IsAny<ParsableFactory<DriveItem>>(),
-                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ApiException("Not Found") { ResponseStatusCode = 404 })
-            .ReturnsAsync(new DriveItem { Id = "conflictedFolderId" });
-
-        // POST → 409 競合
+        // GET(1回目)→404、POST→409 Conflict、GET(2回目 fallback)→成功 の順に呼ばれる。
+        // SetupSequence + Setup の組み合わせによるプラットフォーム差異を避けるため、
+        // 単一 Setup でコール順を数値で制御する（スレッドセーフ）。
+        var sendCallIndex = 0;
         mockAdapter.Setup(a => a.SendAsync(
-                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<RequestInformation>(),
                 It.IsAny<ParsableFactory<DriveItem>>(),
                 It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
                 It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ApiException("Conflict") { ResponseStatusCode = 409 });
+            .Returns<RequestInformation, ParsableFactory<DriveItem>,
+                     Dictionary<string, ParsableFactory<IParsable>>?, CancellationToken>(
+                (_, __, ___, ____) =>
+                {
+                    var idx = System.Threading.Interlocked.Increment(ref sendCallIndex);
+                    return idx switch
+                    {
+                        // 呼び出し 1: GET (存在確認) → 404
+                        1 => Task.FromException<DriveItem?>(
+                                new ApiException("Not Found") { ResponseStatusCode = 404 }),
+                        // 呼び出し 2: POST (作成) → 409 Conflict
+                        2 => Task.FromException<DriveItem?>(
+                                new ApiException("Conflict") { ResponseStatusCode = 409 }),
+                        // 呼び出し 3: GET (fallback) → 既存フォルダ返却
+                        _ => Task.FromResult<DriveItem?>(new DriveItem { Id = "conflictedFolderId" }),
+                    };
+                });
 
         var options = new GraphStorageOptions { SharePointDriveId = "drive1" };
         var provider = new GraphStorageProvider(client, Mock.Of<ILogger<GraphStorageProvider>>(), options);
