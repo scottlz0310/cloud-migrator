@@ -8,6 +8,19 @@
 ## [Unreleased]
 
 ### Added
+- **OneDrive → Dropbox 転送先対応（PR #40）**
+  - `IStorageProvider` に `DownloadToTempAsync` / `UploadFromLocalAsync` を追加しクロスプロバイダー転送を実現
+  - `GraphStorageProvider`: `DownloadToTempAsync`（Graph API 経由でローカル一時ファイルへ）/ `UploadFromLocalAsync` 実装
+  - `DropboxStorageProvider`: `UploadFromLocalAsync`（ローカルファイルから Dropbox へアップロード）実装
+  - `TransferEngine`: `_sourceProvider` フィールドを追加。`UploadItemAsync` でソース DL → デスト UL → 一時ファイル削除フローを実装
+  - `MigratorOptions`: `DestinationProvider` フィールド追加（デフォルト: `"sharepoint"`）
+  - `CliServices` / `TransferCommand`: Dropbox 転送先ルーティング + `RebuildSkipListFromDropboxAsync` 追加
+  - `DoctorCommand`: `DestinationProvider=dropbox` 時に SP フィールドを `[WRN]` に格下げ（`SpCheck` ローカル関数）
+  - `BootstrapCommand`: `--destination dropbox` オプション追加。Dropbox AccessToken / RootPath プロンプト、SP 解決スキップ、`.env` への Dropbox token 書き込み対応
+  - `InitCommand`: `ApplyDropboxValuesToConfigTemplate` メソッド追加
+  - `docs/manual-test-runbook.md`: セクション 10「OneDrive→Dropbox 転送テストシナリオ」を追記（TC-Dropbox-01〜07 + 実施記録テンプレート）
+  - テスト: 193 件全パス（+5 件追加: DoctorCommand 2件 / InitCommand 3件）
+
 - **`MigratorOptions`: `MaxParallelFolderCreations` プロパティ追加（デフォルト 4）（PR #38）**
   - フォルダ先行作成フェーズとファイル転送フェーズの並列度を独立して制御可能に
   - `configs/config.json` の `maxParallelFolderCreations` に任意の値を設定可能

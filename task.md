@@ -158,3 +158,19 @@
   - 修正前: `MaxParallelTransfers`（config: 32）を流用 → 3000+ フォルダで即クォータ枯渇・クラッシュ
   - 修正後: `MaxParallelFolderCreations`（config: 8）で制御 → 24,471 ファイル完走（57:07）
 - [x] ユニットテスト 188 件全通過確認、PR #38 マージ済み
+
+## Phase 10: OneDrive → Dropbox 転送先対応（PR #40）
+
+- [x] `IStorageProvider` に `DownloadToTempAsync` / `UploadFromLocalAsync` 追加
+- [x] `GraphStorageProvider`: `DownloadToTempAsync`（Graph API → 一時ファイル）/ `UploadFromLocalAsync` 実装
+- [x] `DropboxStorageProvider`: `UploadFromLocalAsync`（Dropbox SDK 経由）実装
+- [x] `TransferEngine`: `_sourceProvider` 追加、クロスプロバイダー転送フロー（DL→一時→UL→削除）
+- [x] `MigratorOptions`: `DestinationProvider` フィールド追加（デフォルト: `"sharepoint"`）
+- [x] `CliServices` / `TransferCommand`: Dropbox 転送先ルーティング + `RebuildSkipListFromDropboxAsync`
+- [x] `DoctorCommand`: `isDropboxDest` 時に SP フィールドを `[WRN]` に格下げ（`SpCheck` ローカル関数）
+- [x] `BootstrapCommand`: `--destination dropbox` オプション、Dropbox プロンプトフロー、SP スキップ
+- [x] `InitCommand`: `ApplyDropboxValuesToConfigTemplate` メソッド追加
+- [x] `configs/config.json`: `"destinationProvider": "sharepoint"` 追加
+- [x] テスト: `SetupDoctorCommandTests` 2件・`SetupInitCommandTests` 3件追加（193件全パス）
+- [x] `docs/manual-test-runbook.md`: セクション10「OneDrive→Dropbox テストシナリオ」追記（TC-Dropbox-01〜07）
+- [x] PR #40 マージ済み
