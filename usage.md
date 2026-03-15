@@ -99,7 +99,7 @@ dotnet run --project src/CloudMigrator.Cli -- security-scan --project CloudMigra
 `CloudMigrator.Setup.Cli` は実行前セットアップの診断とテンプレート生成を行います。
 
 ```bash
-dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap                           # 初回利用者向け対話型セットアップ（SharePoint 転送先）
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap                           # 初回利用者向け対話型セットアップ（転送先を対話選択、既定: SharePoint）
 dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --destination dropbox     # Dropbox を転送先にする場合
 dotnet run --project src/CloudMigrator.Setup.Cli -- doctor
 dotnet run --project src/CloudMigrator.Setup.Cli -- init
