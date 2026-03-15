@@ -128,6 +128,30 @@ public class DropboxStorageProviderTests
     }
 
     [Fact]
+    public async Task ListItemsAsync_ShouldReturnEmpty_WhenPathNotFound()
+    {
+        // 検証対象: ListItemsAsync  目的: 転送先フォルダーが未作成の場合は空リストを返し例外を投げないこと
+        var handler = new StubHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Conflict)
+        {
+            Content = new StringContent("""
+                {"error_summary": "path/not_found/...", "error": {".tag": "path", "path": {".tag": "not_found"}}}
+                """)
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            "token",
+            new DropboxStorageOptions { RootPath = "DEV" },
+            httpClient);
+
+        var result = await provider.ListItemsAsync("dropbox/DEV");
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task EnsureFolderAsync_ShouldThrow_WhenConflictIsNotFolder()
     {
         // 検証対象: EnsureFolderAsync  目的: フォルダ以外の conflict は例外として扱うこと

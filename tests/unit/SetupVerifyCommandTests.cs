@@ -18,6 +18,7 @@ public class SetupVerifyCommandTests
         var errors = VerifyCommand.BuildPreflightErrors(
             options,
             clientSecret: string.Empty,
+            dropboxToken: string.Empty,
             skipOnedrive: false,
             skipSharepoint: false);
 
@@ -38,6 +39,7 @@ public class SetupVerifyCommandTests
         var errors = VerifyCommand.BuildPreflightErrors(
             options,
             clientSecret: string.Empty,
+            dropboxToken: string.Empty,
             skipOnedrive: true,
             skipSharepoint: false);
 
@@ -53,11 +55,83 @@ public class SetupVerifyCommandTests
         var errors = VerifyCommand.BuildPreflightErrors(
             options,
             clientSecret: string.Empty,
+            dropboxToken: string.Empty,
             skipOnedrive: false,
             skipSharepoint: true);
 
         errors.Should().NotContain(x => x.Contains("MIGRATOR__GRAPH__SHAREPOINTSITEID"));
         errors.Should().NotContain(x => x.Contains("MIGRATOR__GRAPH__SHAREPOINTDRIVEID"));
+    }
+
+    [Fact]
+    public void BuildPreflightErrors_ShouldReportDropboxToken_WhenDropboxDestAndTokenMissing()
+    {
+        // 検証対象: BuildPreflightErrors  目的: destinationProvider=dropbox かつトークン未設定の場合にエラーを返すこと
+        var options = new MigratorOptions { DestinationProvider = "dropbox" };
+
+        var errors = VerifyCommand.BuildPreflightErrors(
+            options,
+            clientSecret: "secret",
+            dropboxToken: string.Empty,
+            skipOnedrive: true,
+            skipSharepoint: true);
+
+        errors.Should().Contain(x => x.Contains("MIGRATOR__DROPBOX__ACCESSTOKEN"));
+    }
+
+    [Fact]
+    public void BuildPreflightErrors_ShouldNotReportDropboxToken_WhenSharePointDest()
+    {
+        // 検証対象: BuildPreflightErrors  目的: destinationProvider=sharepoint の場合は Dropbox トークン不足を報告しないこと
+        var options = new MigratorOptions { DestinationProvider = "sharepoint" };
+
+        var errors = VerifyCommand.BuildPreflightErrors(
+            options,
+            clientSecret: "secret",
+            dropboxToken: string.Empty,
+            skipOnedrive: true,
+            skipSharepoint: true);
+
+        errors.Should().NotContain(x => x.Contains("MIGRATOR__DROPBOX__ACCESSTOKEN"));
+    }
+
+    [Fact]
+    public void BuildPreflightErrors_ShouldNotReportDropboxToken_WhenSkipDropboxIsTrue()
+    {
+        // 検証対象: BuildPreflightErrors  目的: skipDropbox=true の場合は Dropbox トークン不足を報告しないこと
+        var options = new MigratorOptions { DestinationProvider = "dropbox" };
+
+        var errors = VerifyCommand.BuildPreflightErrors(
+            options,
+            clientSecret: "secret",
+            dropboxToken: string.Empty,
+            skipOnedrive: true,
+            skipSharepoint: true,
+            skipDropbox: true);
+
+        errors.Should().NotContain(x => x.Contains("MIGRATOR__DROPBOX__ACCESSTOKEN"));
+    }
+
+    [Fact]
+    public void TryReadDropboxEmail_ShouldReturnEmail_WhenPresent()
+    {
+        // 検証対象: TryReadDropboxEmail  目的: Dropbox get_current_account レスポンスから email を抽出できること
+        var json = """{"account_id":"dbid:abc","email":"user@example.com","name":{"display_name":"Test User"}}""";
+
+        var email = VerifyCommand.TryReadDropboxEmail(json);
+
+        email.Should().Be("user@example.com");
+    }
+
+    [Fact]
+    public void TryReadDropboxEmail_ShouldReturnNull_WhenEmailAbsent()
+    {
+        // 検証対象: TryReadDropboxEmail  目的: email フィールドがない場合は null を返すこと
+        var json = """{"account_id":"dbid:abc"}""";
+
+        var email = VerifyCommand.TryReadDropboxEmail(json);
+
+        email.Should().BeNull();
     }
 
     [Fact]

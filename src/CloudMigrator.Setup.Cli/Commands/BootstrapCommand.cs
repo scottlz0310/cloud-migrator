@@ -37,10 +37,9 @@ internal static class BootstrapCommand
         {
             Description = "完了後の verify（Graph疎通確認）をスキップします",
         };
-        var destinationOpt = new Option<string>("--destination")
+        var destinationOpt = new Option<string?>("--destination")
         {
-            Description = "転送先プロバイダー (sharepoint または dropbox)",
-            DefaultValueFactory = _ => "sharepoint",
+            Description = "転送先プロバイダー (sharepoint または dropbox)。省略時は対話選択。",
         };
 
         cmd.Add(configPathOpt);
@@ -55,8 +54,22 @@ internal static class BootstrapCommand
             var envPath = parseResult.GetValue(envPathOpt) ?? ".env";
             var force = parseResult.GetValue(forceOpt);
             var noVerify = parseResult.GetValue(noVerifyOpt);
-            var destination = parseResult.GetValue(destinationOpt) ?? "sharepoint";
-            await RunAsync(configPath, envPath, force, noVerify, destination, new DefaultBootstrapConsole(), ct).ConfigureAwait(false);
+            var destinationArg = parseResult.GetValue(destinationOpt);
+
+            // --destination に無効値が渡された場合は早期エラー
+            if (destinationArg is not null)
+            {
+                var normalized = destinationArg.Trim().ToLowerInvariant();
+                if (normalized != "sharepoint" && normalized != "dropbox")
+                {
+                    Console.Error.WriteLine(
+                        $"[ERR] --destination の値が無効です: '{destinationArg}'。'sharepoint' または 'dropbox' を指定してください。");
+                    return;
+                }
+            }
+
+            // destinationArg が null の場合は RunAsync 内で対話選択（IBootstrapConsole 経由）
+            await RunAsync(configPath, envPath, force, noVerify, destinationArg, new DefaultBootstrapConsole(), ct).ConfigureAwait(false);
         });
 
         return cmd;
@@ -75,12 +88,17 @@ internal static class BootstrapCommand
         string envPath,
         bool force,
         bool noVerify,
-        string destination,
+        string? destination,
         IBootstrapConsole console,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var isDropboxDest = destination.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+
+        // 転送先を決定: null = 対話選択、非 null = 正規化・検証
+        var resolvedDestination = destination is null
+            ? PromptDestination(console)
+            : NormalizeDestination(destination);
+        var isDropboxDest = resolvedDestination.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
 
         console.WriteLine("=================================================================");
         console.WriteLine("  CloudMigrator セットアップウィザード");
@@ -490,7 +508,7 @@ internal static class BootstrapCommand
         {
             console.WriteLine("Graph API の疎通確認（verify）を実行します...");
             // Dropbox 転送先の場合は SharePoint 疎通確認をスキップ
-            await VerifyCommand.RunAsync(configPath, timeoutSec: 30, skipOnedrive: false, skipSharepoint: isDropboxDest, ct).ConfigureAwait(false);
+            await VerifyCommand.RunAsync(configPath, timeoutSec: 30, skipOnedrive: false, skipSharepoint: isDropboxDest, skipDropbox: !isDropboxDest, ct: ct).ConfigureAwait(false);
             console.WriteLine();
         }
 
@@ -502,6 +520,43 @@ internal static class BootstrapCommand
             console.WriteLine($"  .env        : {Path.GetFullPath(envPath)}");
         console.WriteLine();
         console.WriteLine("  次のステップ: transfer コマンドを実行してください。");
+    }
+
+    /// <summary>
+    /// 転送先プロバイダーを対話選択する（IBootstrapConsole 経由）。
+    /// 無効な入力は再プロンプトする。
+    /// </summary>
+    internal static string PromptDestination(IBootstrapConsole console)
+    {
+        while (true)
+        {
+            console.WriteLine("転送先プロバイダーを選択してください:");
+            console.WriteLine("  1) SharePoint Online（デフォルト）");
+            console.WriteLine("  2) Dropbox");
+            var choice = console.Prompt("番号を入力", defaultValue: "1").Trim();
+            switch (choice)
+            {
+                case "" or "1":
+                    return "sharepoint";
+                case "2":
+                    return "dropbox";
+                default:
+                    console.WriteLine($"[ERR] 無効な入力です: '{choice}'。1 または 2 を入力してください。");
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// --destination 引数の値を正規化し、許容値（sharepoint / dropbox）であることを検証する。
+    /// </summary>
+    private static string NormalizeDestination(string destination)
+    {
+        var normalized = destination.Trim().ToLowerInvariant();
+        if (normalized != "sharepoint" && normalized != "dropbox")
+            throw new InvalidOperationException(
+                $"転送先プロバイダーが無効です: '{destination}'。'sharepoint' または 'dropbox' を指定してください。");
+        return normalized;
     }
 
     /// <summary>

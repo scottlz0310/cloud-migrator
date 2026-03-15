@@ -180,6 +180,58 @@ public sealed class SetupBootstrapCommandTests
         result.Should().NotContain("# MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER=");
     }
 
+    // ===== PromptDestination =====
+
+    [Fact]
+    public void PromptDestination_ShouldReturnSharePoint_WhenDefaultInput()
+    {
+        // 検証対象: PromptDestination  目的: デフォルト入力（Enter）で SharePoint が選択されること
+        var console = new TestBootstrapConsole(); // Prompt が defaultValue="1" を返す
+
+        var result = BootstrapCommand.PromptDestination(console);
+
+        result.Should().Be("sharepoint");
+    }
+
+    [Fact]
+    public void PromptDestination_ShouldReturnSharePoint_WhenInput1()
+    {
+        // 検証対象: PromptDestination  目的: "1" 入力で SharePoint が選択されること
+        var console = new TestBootstrapConsole();
+        console.EnqueuePromptResponse("1");
+
+        var result = BootstrapCommand.PromptDestination(console);
+
+        result.Should().Be("sharepoint");
+    }
+
+    [Fact]
+    public void PromptDestination_ShouldReturnDropbox_WhenInput2()
+    {
+        // 検証対象: PromptDestination  目的: "2" 入力で Dropbox が選択されること
+        var console = new TestBootstrapConsole();
+        console.EnqueuePromptResponse("2");
+
+        var result = BootstrapCommand.PromptDestination(console);
+
+        result.Should().Be("dropbox");
+    }
+
+    [Fact]
+    public void PromptDestination_ShouldRetryAndReturnDropbox_WhenInvalidInputGiven()
+    {
+        // 検証対象: PromptDestination  目的: 無効入力時にエラーを表示し再入力を促すこと
+        var console = new TestBootstrapConsole();
+        console.EnqueuePromptResponse("3");        // 無効
+        console.EnqueuePromptResponse("dropbox");  // 無効
+        console.EnqueuePromptResponse("2");        // 有効: Dropbox
+
+        var result = BootstrapCommand.PromptDestination(console);
+
+        result.Should().Be("dropbox");
+        console.Output.Should().Contain(x => x.Contains("[ERR]"));
+    }
+
     // ===== LoadConfigJsonOptions =====
 
     [Fact]
@@ -261,14 +313,25 @@ public sealed class SetupBootstrapCommandTests
 internal sealed class TestBootstrapConsole : IBootstrapConsole
 {
     private readonly int _promptIntResponse;
+    private readonly Queue<string> _promptQueue = new();
 
     public List<string> Output { get; } = [];
     public int? LastPromptIntDefault { get; private set; }
 
     public TestBootstrapConsole(int promptIntResponse = 1) => _promptIntResponse = promptIntResponse;
 
+    /// <summary>Prompt() が返す値を順番にキューイングする。</summary>
+    public void EnqueuePromptResponse(string response) => _promptQueue.Enqueue(response);
+
     public void WriteLine(string message = "") => Output.Add(message);
-    public string Prompt(string label, string? defaultValue = null) => defaultValue ?? "";
+
+    public string Prompt(string label, string? defaultValue = null)
+    {
+        if (_promptQueue.Count > 0)
+            return _promptQueue.Dequeue();
+        return defaultValue ?? "";
+    }
+
     public string PromptMasked(string label, bool hasExistingValue = false) => "test-secret";
     public bool PromptBool(string label, bool defaultValue = false) => defaultValue;
 
