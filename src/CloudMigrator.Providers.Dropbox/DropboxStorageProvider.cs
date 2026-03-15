@@ -58,6 +58,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
     public void Dispose()
     {
+        _tokenRefreshLock.Dispose();
         if (_ownsHttpClient)
             _httpClient.Dispose();
     }
@@ -448,8 +449,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         CancellationToken ct,
         HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
     {
-        // アクセストークンが空かつリフレッシュ可能な場合は事前に取得する
-        if (string.IsNullOrEmpty(_accessToken) && HasRefreshCapability())
+        // アクセストークンが空（空白含む）かつリフレッシュ可能な場合は事前に取得する
+        if (string.IsNullOrWhiteSpace(_accessToken) && HasRefreshCapability())
         {
             _logger.LogInformation("Dropbox アクセストークンが未設定のため事前リフレッシュします: {Operation}", operation);
             await RefreshAccessTokenAsync(ct).ConfigureAwait(false);
@@ -658,9 +659,9 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     }
 
     private bool HasRefreshCapability()
-        => !string.IsNullOrEmpty(_refreshToken)
-            && !string.IsNullOrEmpty(_clientId)
-            && !string.IsNullOrEmpty(_clientSecret);
+        => !string.IsNullOrWhiteSpace(_refreshToken)
+            && !string.IsNullOrWhiteSpace(_clientId)
+            && !string.IsNullOrWhiteSpace(_clientSecret);
 
     private void EnsureAccessTokenConfigured()
     {
