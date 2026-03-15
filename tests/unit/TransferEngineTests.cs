@@ -244,24 +244,16 @@ public sealed class TransferEngineTests : IDisposable
     public async Task RunAsync_EnsuresDestRootBeforeSubfolders()
     {
         // 検証対象: DestinationRoot 先行作成  目的: 子フォルダより前に destRoot 自体が EnsureFolderAsync されること
+        // Moq の Callback/Returns/Invocations が Ubuntu CI で最初の呼び出しを捕捉しない問題を避けるため
+        // 具象テストダブル FakeStorageProvider で呼び出し順序を直接記録する。
         var file = MakeFile("sub", "file.txt");
+        var fake = new FakeStorageProvider();
+        var engine = new TransferEngine(fake, _skipList, _options, _mockLogger.Object);
 
-        _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var engine = CreateEngine();
         await engine.RunAsync([file], "dest/root");
 
-        // Mock.Invocations でプラットフォーム不問の呼び出し順序を取得する
-        var ensureCalls = _mockDest.Invocations
-            .Where(i => i.Method.Name == nameof(IStorageProvider.EnsureFolderAsync))
-            .Select(i => (string)i.Arguments[0])
-            .ToList();
-
         // "dest/root" が "dest/root/sub" より前に呼ばれること
-        ensureCalls.Should().ContainInOrder("dest/root", "dest/root/sub");
+        fake.EnsureCalls.Should().ContainInOrder("dest/root", "dest/root/sub");
     }
 
     [Fact]
@@ -269,23 +261,13 @@ public sealed class TransferEngineTests : IDisposable
     {
         // 検証対象: 複数セグメント DestinationRoot  目的: "Migration/OneDrive" のような多段パスも子フォルダより先に作成されること
         var file = MakeFile("docs", "file.txt");
+        var fake = new FakeStorageProvider();
+        var engine = new TransferEngine(fake, _skipList, _options, _mockLogger.Object);
 
-        _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var engine = CreateEngine();
         await engine.RunAsync([file], "Migration/OneDrive");
 
-        // Mock.Invocations でプラットフォーム不問の呼び出し順序を取得する
-        var ensureCalls = _mockDest.Invocations
-            .Where(i => i.Method.Name == nameof(IStorageProvider.EnsureFolderAsync))
-            .Select(i => (string)i.Arguments[0])
-            .ToList();
-
         // "Migration/OneDrive" が "Migration/OneDrive/docs" より前に呼ばれること
-        ensureCalls.Should().ContainInOrder("Migration/OneDrive", "Migration/OneDrive/docs");
+        fake.EnsureCalls.Should().ContainInOrder("Migration/OneDrive", "Migration/OneDrive/docs");
     }
 
     [Fact]
@@ -293,23 +275,13 @@ public sealed class TransferEngineTests : IDisposable
     {
         // 検証対象: 深さ別グループ順序  目的: 深いフォルダより浅いフォルダが必ず先に EnsureFolderAsync されること
         var file = MakeFile("a/b/c", "file.txt");
+        var fake = new FakeStorageProvider();
+        var engine = new TransferEngine(fake, _skipList, _options, _mockLogger.Object);
 
-        _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var engine = CreateEngine();
         await engine.RunAsync([file], "dest/root");
 
-        // Mock.Invocations でプラットフォーム不問の呼び出し順序を取得する
-        var subfolderCalls = _mockDest.Invocations
-            .Where(i => i.Method.Name == nameof(IStorageProvider.EnsureFolderAsync))
-            .Select(i => (string)i.Arguments[0])
-            .Where(p => p != "dest/root")
-            .ToList();
-
         // destRoot 除いたフォルダ呼び出しの順序: a → a/b → a/b/c
+        var subfolderCalls = fake.EnsureCalls.Where(p => p != "dest/root").ToList();
         subfolderCalls.Should().ContainInOrder(
             "dest/root/a",
             "dest/root/a/b",
@@ -330,5 +302,32 @@ public sealed class TransferEngineTests : IDisposable
         var engine = CreateEngine();
         var act = async () => await engine.RunAsync([file], @"dest\root");
         await act.Should().NotThrowAsync();
+    }
+
+    /// <summary>
+    /// Moq の Callback/Returns/Invocations が Ubuntu 24.04 CI で特定の呼び出しを捕捉しない問題を避けるため、
+    /// 具象テストダブルで EnsureFolderAsync の呼び出し順序を直接記録する。
+    /// </summary>
+    private sealed class FakeStorageProvider : IStorageProvider
+    {
+        public string ProviderId => "fake";
+
+        /// <summary>EnsureFolderAsync が呼ばれた順に folderPath を記録する。</summary>
+        public List<string> EnsureCalls { get; } = [];
+
+        public Task<IReadOnlyList<StorageItem>> ListItemsAsync(
+            string rootPath, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StorageItem>>([]);
+
+        public Task UploadFileAsync(
+            TransferJob job, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task EnsureFolderAsync(
+            string folderPath, CancellationToken cancellationToken = default)
+        {
+            EnsureCalls.Add(folderPath);
+            return Task.CompletedTask;
+        }
     }
 }

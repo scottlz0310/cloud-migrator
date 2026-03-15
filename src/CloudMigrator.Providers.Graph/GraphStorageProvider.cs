@@ -472,18 +472,17 @@ public sealed class GraphStorageProvider : IStorageProvider
     /// <summary>フォルダが存在しなければ作成し、そのアイテム ID を返す（FR-06）。</summary>
     /// <remarks>
     /// GET first（読み込み 1 回）→ 存在すれば即返却、404 なら POST で作成。
-    /// 旧来の "POST → 409 catch → Children ページング" より API 呼び出しが少なく
-    /// レートリミットを抑制できる。
+    /// POST が 409 (競合) の場合は GET を再実行して既存 ID を返す（並行処理耐性）。
     /// </remarks>
     private async Task<string> EnsureFolderSegmentAsync(
         string driveId, string parentId, string folderName, CancellationToken ct)
     {
-        // 1) GET で存在確認: /drives/{id}/items/{parentId}:/{folderName}:
+        // 1) GET で存在確認: ItemWithPath() で正確なパス指定（URL エンコードも正しく処理される）
         //    既存フォルダならここで ID が取れる（POST 不要）
-        var pathItemId = $"{parentId}:/{folderName}:";
         try
         {
-            var existing = await _client.Drives[driveId].Items[pathItemId]
+            var existing = await _client.Drives[driveId].Items[parentId]
+                .ItemWithPath(folderName)
                 .GetAsync(cancellationToken: ct).ConfigureAwait(false);
 
             if (existing?.Id is not null)
@@ -506,15 +505,28 @@ public sealed class GraphStorageProvider : IStorageProvider
                 { { "@microsoft.graph.conflictBehavior", "fail" } },
         };
 
-        DriveItem? created = parentId == "root"
-            ? await _client.Drives[driveId].Items["root"].Children
-                .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false)
-            : await _client.Drives[driveId].Items[parentId].Children
+        try
+        {
+            var created = await _client.Drives[driveId].Items[parentId].Children
                 .PostAsync(newFolder, cancellationToken: ct).ConfigureAwait(false);
 
-        var newId = created?.Id
-            ?? throw new InvalidOperationException($"フォルダ作成後に ID が取得できません: {folderName}");
-        _logger.LogInformation("フォルダ作成: {FolderName}", folderName);
-        return newId;
+            var newId = created?.Id
+                ?? throw new InvalidOperationException($"フォルダ作成後に ID が取得できません: {folderName}");
+            _logger.LogInformation("フォルダ作成: {FolderName}", folderName);
+            return newId;
+        }
+        catch (ApiException ex)
+        {
+            if (ex.ResponseStatusCode != 409)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+
+            // 3) 競合: 別スレッドが同名フォルダを同時作成 → GET で再取得
+            _logger.LogDebug("フォルダ作成競合 (409): 再 GET {FolderName}", folderName);
+            var conflicted = await _client.Drives[driveId].Items[parentId]
+                .ItemWithPath(folderName)
+                .GetAsync(cancellationToken: ct).ConfigureAwait(false);
+            return conflicted?.Id
+                ?? throw new InvalidOperationException($"フォルダ競合後の再 GET で ID が取得できません: {folderName}");
+        }
     }
 }
