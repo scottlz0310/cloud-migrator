@@ -99,7 +99,8 @@ dotnet run --project src/CloudMigrator.Cli -- security-scan --project CloudMigra
 `CloudMigrator.Setup.Cli` は実行前セットアップの診断とテンプレート生成を行います。
 
 ```bash
-dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap   # 初回利用者向け対話型セットアップ
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap                           # 初回利用者向け対話型セットアップ（SharePoint 転送先）
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --destination dropbox     # Dropbox を転送先にする場合
 dotnet run --project src/CloudMigrator.Setup.Cli -- doctor
 dotnet run --project src/CloudMigrator.Setup.Cli -- init
 dotnet run --project src/CloudMigrator.Setup.Cli -- verify
@@ -118,11 +119,18 @@ ClientId / TenantId / ClientSecret / UPN / サイトURL を順に入力するだ
 **`.env` 生成の条件**: 認証情報（ClientId / TenantId / ClientSecret / UPN）がすべて環境変数から取得された場合、`.env` は生成されません。代わりに取得済みの SharePoint ID / Drive ID のみコンソールに表示されます。一部だけ環境変数から取得された場合は、該当行をコメントアウトした `.env` を生成します（`.env` ローダーによる空値上書きを防ぎます）。
 
 ```bash
+# OneDrive → SharePoint（デフォルト）
 dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap
+
+# OneDrive → Dropbox
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --destination dropbox
+
+# オプション指定例
 dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --config-path configs/config.json --env-path .env
 ```
 
-ウィザードの流れ：
+#### 転送先: SharePoint（デフォルト）のウィザードの流れ
+
 1. **Azure AD 認証情報** — Client ID / Tenant ID / Client Secret を入力（環境変数設定済みなら Enter でスキップ）
 2. **OneDrive ユーザー** — ユーザーのUPN（例: `user@contoso.com`）を入力（環境変数設定済みなら Enter でスキップ）
 3. **転送設定** — 転送元フォルダ・転送先フォルダ
@@ -135,6 +143,23 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --config-path conf
 
 > **注意**: Client Secret はセキュリティ上の理由から `.env` / `config.json` には保存されません。  
 > ウィザード終了後、表示される環境変数設定コマンドでシェルに手動設定してください。
+
+#### 転送先: Dropbox のウィザードの流れ（`--destination dropbox`）
+
+1. **Azure AD 認証情報** — Client ID / Tenant ID / Client Secret を入力（SharePoint 転送と同じ）
+2. **OneDrive ユーザー** — ユーザーのUPN を入力
+3. **転送設定** — 転送元フォルダ
+4. **並列転送設定** — 最大並列転送数・AdaptiveConcurrency の有効/無効
+5. **Dropbox 設定** — Dropbox Access Token（マスク入力）と転送先フォルダパス（例: `/OneDriveMigration`、空欄でルート）  
+   → Access Token は [Dropbox App Console](https://www.dropbox.com/developers/apps) の「Generated access token」から取得
+6. **OneDrive 認証確認** — OneDrive トークン取得のみ実行（SharePoint 解決はスキップ）
+7. **設定ファイル生成** — `config.json` に `"destinationProvider": "dropbox"` と `dropbox.rootPath` を書き込み  
+   `.env` の SharePoint 関連行はコメントアウト、`MIGRATOR__DROPBOX__ACCESSTOKEN=...` を追記
+8. **doctor / verify** — doctor は SP フィールドを Warning 扱い（error=0 が期待値）、verify は SharePoint チェックをスキップ
+
+**Dropbox セットアップに必要なもの**:
+- Dropbox アカウントと App Console でのアプリ作成（権限: `files.content.write`）
+- Generated access token（有効期限あり。長期運用には OAuth フローで refresh token を取得推奨）
 
 ### doctor
 

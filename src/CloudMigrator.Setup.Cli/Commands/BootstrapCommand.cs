@@ -37,10 +37,9 @@ internal static class BootstrapCommand
         {
             Description = "完了後の verify（Graph疎通確認）をスキップします",
         };
-        var destinationOpt = new Option<string>("--destination")
+        var destinationOpt = new Option<string?>("--destination")
         {
-            Description = "転送先プロバイダー (sharepoint または dropbox)",
-            DefaultValueFactory = _ => "sharepoint",
+            Description = "転送先プロバイダー (sharepoint または dropbox)。省略時は対話選択。",
         };
 
         cmd.Add(configPathOpt);
@@ -55,7 +54,24 @@ internal static class BootstrapCommand
             var envPath = parseResult.GetValue(envPathOpt) ?? ".env";
             var force = parseResult.GetValue(forceOpt);
             var noVerify = parseResult.GetValue(noVerifyOpt);
-            var destination = parseResult.GetValue(destinationOpt) ?? "sharepoint";
+
+            // --destination が省略された場合は対話選択
+            string destination;
+            var destinationArg = parseResult.GetValue(destinationOpt);
+            if (destinationArg is null)
+            {
+                Console.WriteLine("転送先プロバイダーを選択してください:");
+                Console.WriteLine("  1) SharePoint Online（デフォルト）");
+                Console.WriteLine("  2) Dropbox");
+                Console.Write("番号を入力 [1]: ");
+                var choice = Console.ReadLine()?.Trim();
+                destination = choice == "2" ? "dropbox" : "sharepoint";
+            }
+            else
+            {
+                destination = destinationArg;
+            }
+
             await RunAsync(configPath, envPath, force, noVerify, destination, new DefaultBootstrapConsole(), ct).ConfigureAwait(false);
         });
 
