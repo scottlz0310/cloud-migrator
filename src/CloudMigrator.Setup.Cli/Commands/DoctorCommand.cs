@@ -86,13 +86,25 @@ internal static class DoctorCommand
         string? resolvedConfigPath,
         bool strictDropbox)
     {
+        var isDropboxDest = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+
+        // SharePoint 必須フィールドのチェック: Dropbox 転送先の場合は警告扱いに緩和
+        static DoctorCheckResult SpCheck(bool isDropbox, string name, string? value, string sourceKey) =>
+            isDropbox
+                ? (string.IsNullOrWhiteSpace(value)
+                    ? new DoctorCheckResult(DoctorCheckStatus.Warning, name, $"{sourceKey} が未設定です（転送先 Dropbox の場合は OneDrive ソースのみ必要）。")
+                    : new DoctorCheckResult(DoctorCheckStatus.Ok, name, "設定済み"))
+                : (string.IsNullOrWhiteSpace(value)
+                    ? new DoctorCheckResult(DoctorCheckStatus.Error, name, $"{sourceKey} が未設定です。")
+                    : new DoctorCheckResult(DoctorCheckStatus.Ok, name, "設定済み"));
+
         var checks = new List<DoctorCheckResult>
         {
             Required("graph.clientId", options.Graph.ClientId, "MIGRATOR__GRAPH__CLIENTID"),
             Required("graph.tenantId", options.Graph.TenantId, "MIGRATOR__GRAPH__TENANTID"),
             Required("graph.oneDriveUserId", options.Graph.OneDriveUserId, "MIGRATOR__GRAPH__ONEDRIVEUSERID"),
-            Required("graph.sharePointSiteId", options.Graph.SharePointSiteId, "MIGRATOR__GRAPH__SHAREPOINTSITEID"),
-            Required("graph.sharePointDriveId", options.Graph.SharePointDriveId, "MIGRATOR__GRAPH__SHAREPOINTDRIVEID"),
+            SpCheck(isDropboxDest, "graph.sharePointSiteId", options.Graph.SharePointSiteId, "MIGRATOR__GRAPH__SHAREPOINTSITEID"),
+            SpCheck(isDropboxDest, "graph.sharePointDriveId", options.Graph.SharePointDriveId, "MIGRATOR__GRAPH__SHAREPOINTDRIVEID"),
             Required("graph.clientSecret", graphClientSecret, "MIGRATOR__GRAPH__CLIENTSECRET"),
             Required("paths.skipList", options.Paths.SkipList, "migrator.paths.skipList"),
             Required("paths.oneDriveCache", options.Paths.OneDriveCache, "migrator.paths.oneDriveCache"),
@@ -104,7 +116,8 @@ internal static class DoctorCommand
 
         if (string.IsNullOrWhiteSpace(dropboxAccessToken))
         {
-            checks.Add(strictDropbox
+            // 転送先が Dropbox か --strict-dropbox 指定の場合は必須エラー
+            checks.Add(isDropboxDest || strictDropbox
                 ? new DoctorCheckResult(
                     DoctorCheckStatus.Error,
                     "dropbox.accessToken",

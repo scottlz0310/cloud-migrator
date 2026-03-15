@@ -347,6 +347,33 @@ internal static class InitCommand
             });
     }
 
+    /// <summary>
+    /// Dropbox 転送先用の設定値を config テンプレートに反映する。
+    /// destinationProvider を "dropbox" に設定し、rootPath を更新する。
+    /// </summary>
+    internal static string ApplyDropboxValuesToConfigTemplate(
+        string configTemplate,
+        string? dropboxRootPath)
+    {
+        var root = JsonSerializer.Deserialize<MigratorConfigRoot>(
+            configTemplate,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException("config テンプレートの解析に失敗しました。");
+
+        root.Migrator.DestinationProvider = "dropbox";
+        if (dropboxRootPath is not null)
+            root.Migrator.Dropbox.RootPath = dropboxRootPath.Trim();
+
+        return JsonSerializer.Serialize(
+            root,
+            new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            });
+    }
+
     internal static string ApplyGraphValuesToEnvTemplate(
         string envTemplate,
         string? oneDriveUserId,

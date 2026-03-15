@@ -137,6 +137,41 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     }
 
     /// <inheritdoc/>
+    public async Task<string> DownloadToTempAsync(StorageItem item, CancellationToken cancellationToken = default)
+    {
+        EnsureAccessTokenConfigured();
+
+        var sourcePath = BuildSourceFilePath(item);
+        var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        try
+        {
+            await DownloadToTempFileAsync(sourcePath, tempPath, cancellationToken).ConfigureAwait(false);
+            return tempPath;
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch { /* ベストエフォート */ }
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task UploadFromLocalAsync(string localFilePath, long fileSizeBytes, string destinationFullPath, CancellationToken cancellationToken = default)
+    {
+        EnsureAccessTokenConfigured();
+
+        var destinationPath = NormalizeFilePath(destinationFullPath);
+        _logger.LogDebug("Dropbox アップロード開始: {DestPath} ({Bytes} bytes)", destinationPath, fileSizeBytes);
+
+        if (fileSizeBytes <= _simpleUploadLimitBytes)
+            await UploadSimpleAsync(destinationPath, localFilePath, cancellationToken).ConfigureAwait(false);
+        else
+            await UploadChunkedAsync(destinationPath, localFilePath, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation("Dropbox アップロード完了: {DestPath}", destinationPath);
+    }
+
+    /// <inheritdoc/>
     public async Task EnsureFolderAsync(string folderPath, CancellationToken cancellationToken = default)
     {
         EnsureAccessTokenConfigured();

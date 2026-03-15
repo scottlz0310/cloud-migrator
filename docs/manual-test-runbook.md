@@ -406,3 +406,196 @@ dotnet run --project src/CloudMigrator.Cli -- watchdog
 - **SkipList キャッシュの効果が絶大**: 10分35秒 → 0.03秒（≈ 2万倍高速化）。24,481件の `HashSet.Contains` 呼び出しはメモリ上では瞬時に完了する。
 - **GET first の効果**: 既存フォルダへの書き込みリクエストを排除。Run 4 で発生した 429 連発（Retry-After 50〜64秒）が Run 5/6 で完全に消滅。
 - **フォルダ先行作成**: Run 5/6 ともに約1分22〜24秒で安定。深さ別並行化が有効に機能している。
+
+---
+
+## 10. OneDrive → Dropbox 転送テストシナリオ (Phase 10)
+
+このセクションは **転送先を Dropbox** にした場合のマニュアル検証手順書です。
+
+### 10.1 前提条件
+
+- Dropbox App Console (`https://www.dropbox.com/developers/apps`) で App を作成し、  
+  **Generated access token** を取得済みであること
+- OneDrive の Graph 認証情報（ClientId / TenantId / ClientSecret / OneDriveUserId）が設定済みであること
+- SharePoint の設定（SiteId / DriveId）は **不要**（未設定可）
+- `.env` に以下が設定されること（`bootstrap --destination dropbox` で自動生成）
+  ```
+  MIGRATOR__DROPBOX__ACCESSTOKEN=<your token>
+  ```
+- `.env` の SP 関連行はコメントアウト状態で問題ない
+
+### 10.2 テストケース
+
+#### TC-Dropbox-01: `bootstrap --destination dropbox` によるセットアップ
+
+```powershell
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --destination dropbox
+```
+
+**入力シーケンス**:
+
+| プロンプト | 入力値 |
+|-----------|--------|
+| Client ID | （Entra App の ClientId） |
+| Client Secret | （Entra App の ClientSecret） |
+| Tenant ID | （テナント ID） |
+| OneDrive ユーザー ID | （UPN or オブジェクト ID） |
+| 最大並列転送数 | 10（任意） |
+| adaptiveConcurrency を有効にするか | y |
+| Dropbox Access Token | （Dropbox 生成 token） |
+| Dropbox 転送先フォルダパス | `/OneDriveMigration`（空欄でルート） |
+
+**期待値**:
+
+- ステップ 1/3 で ClientId / Secret / TenantId の入力を求める
+- ステップ 2/3 で並列数・AdaptiveConcurrency・**Dropbox AccessToken・転送先フォルダパス** を求める  
+  （SharePoint サイト URL の入力が **発生しないこと**）
+- ステップ 3/3 で OneDrive 認証確認のみ実行される（SharePoint 解決スキップ）
+- `configs/config.json` に `"destinationProvider": "dropbox"` が書き込まれること
+- `configs/config.json` に `"dropbox": { "rootPath": "/OneDriveMigration" }` が書き込まれること
+- `.env` に `MIGRATOR__DROPBOX__ACCESSTOKEN=...` が書き込まれること
+- `.env` の SharePoint 関連行（SHAREPOINTSITEID / SHAREPOINTDRIVEID）はコメントアウトされること
+- `doctor` チェックで SP フィールドが `[WRN]`（`[ERR]` でなく）になること
+- `doctor` チェックで error=0 で完了すること
+
+---
+
+#### TC-Dropbox-02: `doctor --strict-dropbox` による設定診断
+
+```powershell
+dotnet run --project src/CloudMigrator.Setup.Cli -- doctor --strict-dropbox
+```
+
+**期待値**:
+
+- SharePoint フィールド (sharePointSiteId / sharePointDriveId) が `[WRN]` で表示される
+- Dropbox AccessToken が設定済みなら `[OK]` になる
+- 最終行: `doctor 結果: error=0, warning=2`（SP 2件 Warning）
+- 終了コードが **0**（Warning のみなのでエラーなし）
+
+---
+
+#### TC-Dropbox-03: OneDrive ファイルクロール（ソース側）
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- file-crawler onedrive
+```
+
+**期待値**:
+
+- OneDrive ファイル一覧が `logs/onedrive_files.json` に保存される
+- 完了ログに `クロール完了: N 件` が表示される
+- 終了コード 0
+
+---
+
+#### TC-Dropbox-04: OneDrive → Dropbox 転送
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- transfer
+```
+
+**動作フロー（確認ポイント）**:
+
+1. `configs/config.json` の `destinationProvider` が `dropbox` と読み取られる
+2. Dropbox の既存ファイル一覧をクロールし skip_list を構築
+3. OneDrive ファイルを一時ファイルにダウンロード（`DownloadToTempAsync`）
+4. 一時ファイルを Dropbox にアップロード（`UploadFromLocalAsync`）
+5. 一時ファイルを削除
+
+**期待値**:
+
+- 転送完了サマリ: `成功: N 件 / 失敗: 0 件 / スキップ: 0 件`
+- Dropbox アプリの転送先フォルダ（例: `/OneDriveMigration`）に対象ファイルが存在すること
+- `logs/transfer.log` に各ファイルの転送ログが記録されること
+- 終了コード 0
+
+---
+
+#### TC-Dropbox-05: Dropbox ファイルクロール（転送後確認）
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- file-crawler dropbox
+```
+
+**期待値**:
+
+- `logs/dropbox_current_files.json`（または相当ファイル）に転送済みファイル一覧が保存される
+- ファイル件数が OneDrive クロール件数と一致すること
+
+---
+
+#### TC-Dropbox-06: OneDrive ↔ Dropbox 差分比較
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right dropbox
+```
+
+**期待値**:
+
+- 差分 0 件のとき `差分なし` が表示される
+- 終了コード 0（差分なし）
+
+---
+
+#### TC-Dropbox-07: 再転送時のスキップ動作
+
+全件転送後に再度 `transfer` を実行する。
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- transfer
+```
+
+**期待値**:
+
+- `成功: 0 件 / 失敗: 0 件 / スキップ: N 件`
+- Dropbox クロールで取得した全ファイルが skip_list にヒットし、二重転送が発生しないこと
+
+---
+
+### 10.3 実施記録テンプレート（Dropbox 転送）
+
+```text
+実施日:
+実施者:
+対象ブランチ:
+Dropbox App名:
+転送先フォルダパス:
+
+[TC-Dropbox-01] bootstrap --destination dropbox: PASS/FAIL
+  実行コマンド: dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --destination dropbox
+  destinationProvider=dropbox 書き込み確認:
+  .env MIGRATOR__DROPBOX__ACCESSTOKEN 書き込み確認:
+  SP フィールド WRN 表示確認:
+  doctor error=0 確認:
+  結果要約:
+
+[TC-Dropbox-02] doctor --strict-dropbox: PASS/FAIL
+  error=0, warning=2 確認:
+  結果要約:
+
+[TC-Dropbox-03] file-crawler onedrive: PASS/FAIL
+  クロール件数:
+  結果要約:
+
+[TC-Dropbox-04] transfer (OneDrive→Dropbox): PASS/FAIL
+  成功件数:  　失敗件数:  　スキップ件数:
+  所要時間:
+  Dropbox 上でのファイル存在確認:
+  結果要約:
+
+[TC-Dropbox-05] file-crawler dropbox: PASS/FAIL
+  クロール件数:
+  結果要約:
+
+[TC-Dropbox-06] compare --left onedrive --right dropbox: PASS/FAIL
+  差分件数:
+  結果要約:
+
+[TC-Dropbox-07] 再転送スキップ確認: PASS/FAIL
+  スキップ件数:
+  結果要約:
+
+課題・メモ:
+```

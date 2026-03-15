@@ -37,11 +37,17 @@ internal static class BootstrapCommand
         {
             Description = "完了後の verify（Graph疎通確認）をスキップします",
         };
+        var destinationOpt = new Option<string>("--destination")
+        {
+            Description = "転送先プロバイダー (sharepoint または dropbox)",
+            DefaultValueFactory = _ => "sharepoint",
+        };
 
         cmd.Add(configPathOpt);
         cmd.Add(envPathOpt);
         cmd.Add(forceOpt);
         cmd.Add(noVerifyOpt);
+        cmd.Add(destinationOpt);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
@@ -49,7 +55,8 @@ internal static class BootstrapCommand
             var envPath = parseResult.GetValue(envPathOpt) ?? ".env";
             var force = parseResult.GetValue(forceOpt);
             var noVerify = parseResult.GetValue(noVerifyOpt);
-            await RunAsync(configPath, envPath, force, noVerify, new DefaultBootstrapConsole(), ct).ConfigureAwait(false);
+            var destination = parseResult.GetValue(destinationOpt) ?? "sharepoint";
+            await RunAsync(configPath, envPath, force, noVerify, destination, new DefaultBootstrapConsole(), ct).ConfigureAwait(false);
         });
 
         return cmd;
@@ -61,17 +68,19 @@ internal static class BootstrapCommand
         bool force,
         bool noVerify,
         CancellationToken ct)
-        => RunAsync(configPath, envPath, force, noVerify, new DefaultBootstrapConsole(), ct);
+        => RunAsync(configPath, envPath, force, noVerify, "sharepoint", new DefaultBootstrapConsole(), ct);
 
     internal static async Task RunAsync(
         string configPath,
         string envPath,
         bool force,
         bool noVerify,
+        string destination,
         IBootstrapConsole console,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        var isDropboxDest = destination.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
 
         console.WriteLine("=================================================================");
         console.WriteLine("  CloudMigrator セットアップウィザード");
@@ -176,22 +185,47 @@ internal static class BootstrapCommand
             defaultValue: cfgOptions.AdaptiveConcurrency.Enabled);
         console.WriteLine();
 
+        // Dropbox 転送先設定（--destination dropbox の場合のみ）
+        string dropboxAccessToken = string.Empty;
+        string dropboxRootPath = string.Empty;
+        bool dropboxTokenFromEnv = false;
+        if (isDropboxDest)
+        {
+            console.WriteLine("--- Dropbox 転送先設定 ---");
+            var envDropboxToken = NullIfWhiteSpace(Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN"));
+            dropboxTokenFromEnv = envDropboxToken != null;
+            var inputDropboxToken = console.PromptMasked(
+                "Dropbox AccessToken（入力は画面に表示されません）",
+                hasExistingValue: dropboxTokenFromEnv);
+            dropboxAccessToken = string.IsNullOrEmpty(inputDropboxToken) && dropboxTokenFromEnv
+                ? envDropboxToken!
+                : inputDropboxToken;
+            console.WriteLine("  ヒント: Dropbox 内の転送先フォルダを指定します。省略するとルート直下に格納されます。");
+            var cfgDropboxRootPath = NullIfWhiteSpace(cfgOptions.Dropbox.RootPath);
+            dropboxRootPath = console.Prompt("Dropbox 転送先フォルダパス（省略可。例: /移行データ）", cfgDropboxRootPath) ?? string.Empty;
+            console.WriteLine();
+        }
+
         // SharePoint 再利用チェック: SiteId + DriveId が既存の場合は URL 入力を省略できる
+        // Dropbox 転送先の場合は SharePoint の設定を求めないためスキップ
         var reuseSharePoint = false;
         string sharePointSiteUrl = string.Empty;
-        if (!string.IsNullOrWhiteSpace(existingSiteId) && !string.IsNullOrWhiteSpace(existingDriveId))
+        if (!isDropboxDest)
         {
+            if (!string.IsNullOrWhiteSpace(existingSiteId) && !string.IsNullOrWhiteSpace(existingDriveId))
+            {
+                console.WriteLine();
+                console.WriteLine("  前回の SharePoint 設定を検出しました:");
+                console.WriteLine($"    SiteId : {existingSiteId}");
+                console.WriteLine($"    DriveId: {existingDriveId}");
+                reuseSharePoint = !console.PromptBool(
+                    "  SharePoint サイトURL を入力して再解決しますか？ (N = 前回設定を使用)",
+                    defaultValue: false);
+            }
+            if (!reuseSharePoint)
+                sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
             console.WriteLine();
-            console.WriteLine("  前回の SharePoint 設定を検出しました:");
-            console.WriteLine($"    SiteId : {existingSiteId}");
-            console.WriteLine($"    DriveId: {existingDriveId}");
-            reuseSharePoint = !console.PromptBool(
-                "  SharePoint サイトURL を入力して再解決しますか？ (N = 前回設定を使用)",
-                defaultValue: false);
         }
-        if (!reuseSharePoint)
-            sharePointSiteUrl = console.Prompt("SharePoint サイトURL（例: https://contoso.sharepoint.com/sites/migration）");
-        console.WriteLine();
 
         // env変数由来フラグ（全て env変数から取得した場合は .env 生成をスキップ）
         var secretFromEnv = hasEnvSecret && string.IsNullOrEmpty(inputSecret);
@@ -199,14 +233,56 @@ internal static class BootstrapCommand
         var tenantIdFromEnv = envTenantId != null && tenantId == envTenantId;
         var upnFromEnv = envOneDriveUpn != null && oneDriveUserUpn == envOneDriveUpn;
         var sourceFolderFromEnv = envSourceFolder != null && oneDriveSourceFolder == envSourceFolder;
-        var allAuthFromEnv = clientIdFromEnv && tenantIdFromEnv && secretFromEnv && upnFromEnv;
+        bool allAuthFromEnv = clientIdFromEnv && tenantIdFromEnv && secretFromEnv && upnFromEnv;
+        // Dropbox 転送先の場合: Dropbox トークンも env から取得済みであることが必要
+        if (isDropboxDest)
+            allAuthFromEnv = allAuthFromEnv && dropboxTokenFromEnv;
 
         // ステップ 3: Graph API でID解決
         string effectiveOneDriveUser;
         string siteId;
         DriveEntry selectedDrive;
 
-        if (reuseSharePoint)
+        if (isDropboxDest)
+        {
+            // Dropbox 転送先: OneDrive 認証のみ確認（SharePoint ID 解決は不要）
+            console.WriteLine("--- ステップ 3/3: OneDrive 認証確認 ---");
+            console.WriteLine("OneDrive への接続を確認しています...");
+
+            try
+            {
+                effectiveOneDriveUser = await ResolveOneDriveUserAsync(
+                    clientId, tenantId, clientSecret, oneDriveUserUpn, ct).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                console.WriteLine($"[ERR]  {ex.Message}");
+                console.WriteLine("セットアップを中断しました。設定値を確認してもう一度お試しください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+            catch (HttpRequestException ex)
+            {
+                console.WriteLine($"[ERR]  ネットワーク接続に失敗しました: {ex.Message}");
+                console.WriteLine("インターネット接続やプロキシ設定を確認してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+            catch (MsalException ex)
+            {
+                console.WriteLine($"[ERR]  トークン取得に失敗しました: {ex.Message}");
+                console.WriteLine("ClientId / TenantId / ClientSecret を確認してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            siteId = string.Empty;
+            selectedDrive = new DriveEntry(string.Empty, "（Dropbox 転送先）");
+            console.WriteLine($"[OK]   OneDrive ユーザー: {effectiveOneDriveUser}");
+            console.WriteLine($"[OK]   Dropbox 転送先: {(string.IsNullOrWhiteSpace(dropboxRootPath) ? "ルート" : dropboxRootPath)}");
+            console.WriteLine();
+        }
+        else if (reuseSharePoint)
         {
             // SharePoint は既存 ID を再利用し、OneDrive 認証のみ確認する
             console.WriteLine("--- ステップ 3/3: OneDrive 認証確認 ---");
@@ -317,6 +393,10 @@ internal static class BootstrapCommand
             maxParallelTransfers,
             adaptiveConcurrencyEnabled);
 
+        // Dropbox 転送先の場合: destinationProvider と dropbox.rootPath を config.json に反映
+        if (isDropboxDest)
+            configTemplate = InitCommand.ApplyDropboxValuesToConfigTemplate(configTemplate, dropboxRootPath);
+
         // 既存ファイルがある場合は対話的に上書き確認する（--force 指定時はスキップ）
         bool EffectiveForce(string path) =>
             force || (File.Exists(path) && console.PromptBool($"  {path} は既に存在します。上書きしますか？"));
@@ -342,6 +422,15 @@ internal static class BootstrapCommand
                 tenantId, tenantIdFromEnv,
                 secretFromEnv);
 
+            // Dropbox 転送先の場合: SP フィールドをコメントアウトし Dropbox トークンを追記
+            if (isDropboxDest)
+            {
+                envTemplate = CommentOutEnvKey(envTemplate, "MIGRATOR__GRAPH__SHAREPOINTSITEID");
+                envTemplate = CommentOutEnvKey(envTemplate, "MIGRATOR__GRAPH__SHAREPOINTDRIVEID");
+                if (!dropboxTokenFromEnv && !string.IsNullOrWhiteSpace(dropboxAccessToken))
+                    envTemplate = InitCommand.UpsertEnvVariable(envTemplate, "MIGRATOR__DROPBOX__ACCESSTOKEN", dropboxAccessToken);
+            }
+
             var envForce = EffectiveForce(envPath);
             await InitCommand.WriteTemplateAsync(envPath, envTemplate, envForce, results, ct).ConfigureAwait(false);
         }
@@ -361,8 +450,11 @@ internal static class BootstrapCommand
         {
             console.WriteLine($"ℹ️  すべての認証情報が環境変数から取得済みのため .env の生成をスキップしました。");
             console.WriteLine($"   以下の識別子を環境変数マネージャーに追加してください：");
-            console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTSITEID={siteId}");
-            console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTDRIVEID={selectedDrive.Id}");
+            if (!isDropboxDest)
+            {
+                console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTSITEID={siteId}");
+                console.WriteLine($"   MIGRATOR__GRAPH__SHAREPOINTDRIVEID={selectedDrive.Id}");
+            }
             if (!string.IsNullOrWhiteSpace(oneDriveSourceFolder))
                 console.WriteLine($"   MIGRATOR__GRAPH__ONEDRIVESOURCEFOLDER={oneDriveSourceFolder}");
         }
@@ -387,14 +479,18 @@ internal static class BootstrapCommand
         // doctor で設定診断
         console.WriteLine("設定を診断しています（doctor）...");
         SetEnvForSession(clientId, tenantId, clientSecret, effectiveOneDriveUser, oneDriveSourceFolder, siteId, selectedDrive.Id);
-        DoctorCommand.Run(configPath, strictDropbox: false, ct);
+        // Dropbox 転送先の場合: AccessToken を現セッションの環境変数に設定（doctor チェック用）
+        if (isDropboxDest && !string.IsNullOrWhiteSpace(dropboxAccessToken))
+            Environment.SetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN", dropboxAccessToken);
+        DoctorCommand.Run(configPath, strictDropbox: isDropboxDest, ct);
         console.WriteLine();
 
         // verify（任意）
         if (!noVerify)
         {
             console.WriteLine("Graph API の疎通確認（verify）を実行します...");
-            await VerifyCommand.RunAsync(configPath, timeoutSec: 30, skipOnedrive: false, skipSharepoint: false, ct).ConfigureAwait(false);
+            // Dropbox 転送先の場合は SharePoint 疎通確認をスキップ
+            await VerifyCommand.RunAsync(configPath, timeoutSec: 30, skipOnedrive: false, skipSharepoint: isDropboxDest, ct).ConfigureAwait(false);
             console.WriteLine();
         }
 

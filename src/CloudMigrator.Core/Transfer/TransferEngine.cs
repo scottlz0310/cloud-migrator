@@ -20,21 +20,34 @@ namespace CloudMigrator.Core.Transfer;
 public sealed class TransferEngine
 {
     private readonly IStorageProvider _destProvider;
+    private readonly IStorageProvider? _sourceProvider;
     private readonly SkipListManager _skipList;
     private readonly MigratorOptions _options;
     private readonly ILogger<TransferEngine> _logger;
     private readonly AdaptiveConcurrencyController? _concurrencyController;
     private readonly TokenBucketRateLimiter? _rateLimiter;
 
+    /// <param name="destProvider">転送先プロバイダー</param>
+    /// <param name="skipList">スキップリスト管理</param>
+    /// <param name="options">設定</param>
+    /// <param name="logger">ロガー</param>
+    /// <param name="concurrencyController">動的並列度コントローラー（null = 無効）</param>
+    /// <param name="rateLimiter">Token Bucket レートリミッター（null = 無効）</param>
+    /// <param name="sourceProvider">
+    /// 転送元プロバイダー（クロスプロバイダー転送用）。null の場合は destProvider が
+    /// ダウンロード・アップロードを一括処理する（後方互換）。
+    /// </param>
     public TransferEngine(
         IStorageProvider destProvider,
         SkipListManager skipList,
         MigratorOptions options,
         ILogger<TransferEngine> logger,
         AdaptiveConcurrencyController? concurrencyController = null,
-        TokenBucketRateLimiter? rateLimiter = null)
+        TokenBucketRateLimiter? rateLimiter = null,
+        IStorageProvider? sourceProvider = null)
     {
         _destProvider = destProvider;
+        _sourceProvider = sourceProvider;
         _skipList = skipList;
         _options = options;
         _logger = logger;
@@ -191,7 +204,7 @@ public sealed class TransferEngine
                     await controller.AcquireAsync(innerCt).ConfigureAwait(false);
                     try
                     {
-                        await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
+                        await UploadItemAsync(job, innerCt).ConfigureAwait(false);
                         await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
                         Interlocked.Increment(ref success);
                         var doneSnap = Interlocked.Increment(ref done);
@@ -251,7 +264,7 @@ public sealed class TransferEngine
                     await limiter.AcquireAsync(innerCt).ConfigureAwait(false);
                     try
                     {
-                        await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
+                        await UploadItemAsync(job, innerCt).ConfigureAwait(false);
                         await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
                         Interlocked.Increment(ref success);
                         var doneSnap = Interlocked.Increment(ref done);
@@ -298,7 +311,7 @@ public sealed class TransferEngine
                 {
                     try
                     {
-                        await _destProvider.UploadFileAsync(job, innerCt).ConfigureAwait(false);
+                        await UploadItemAsync(job, innerCt).ConfigureAwait(false);
                         await _skipList.AddAsync(job.Source.SkipKey, innerCt).ConfigureAwait(false);
                         Interlocked.Increment(ref success);
                         _logger.LogInformation("転送完了: {SkipKey}", job.Source.SkipKey);
@@ -335,5 +348,39 @@ public sealed class TransferEngine
             Skipped = skipped,
             Elapsed = sw.Elapsed,
         };
+    }
+
+    /// <summary>
+    /// 1 ファイルを転送する。
+    /// <list type="bullet">
+    ///   <item>sourceProvider が null: destProvider.UploadFileAsync（単一プロバイダー後方互換）</item>
+    ///   <item>sourceProvider 指定時: ソースからダウンロード → デスト へアップロード（クロスプロバイダー）</item>
+    /// </list>
+    /// </summary>
+    private async Task UploadItemAsync(TransferJob job, CancellationToken ct)
+    {
+        if (_sourceProvider is null)
+        {
+            await _destProvider.UploadFileAsync(job, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (job.Source.SizeBytes is null)
+            throw new InvalidOperationException($"SizeBytes が未設定のため転送できません: {job.Source.SkipKey}");
+
+        var tempPath = await _sourceProvider.DownloadToTempAsync(job.Source, ct).ConfigureAwait(false);
+        try
+        {
+            await _destProvider.UploadFromLocalAsync(
+                tempPath,
+                job.Source.SizeBytes.Value,
+                job.DestinationFullPath,
+                ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            try { File.Delete(tempPath); }
+            catch (Exception ex) { _logger.LogWarning(ex, "テンポラリファイルの削除に失敗: {Path}", tempPath); }
+        }
     }
 }

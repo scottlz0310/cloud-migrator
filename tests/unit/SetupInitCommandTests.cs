@@ -317,4 +317,47 @@ public sealed class SetupInitCommandTests : IDisposable
         migrator.GetProperty("maxParallelTransfers").GetInt32().Should().Be(6);
         migrator.GetProperty("adaptiveConcurrency").GetProperty("enabled").GetBoolean().Should().BeTrue();
     }
+
+    // ===== ApplyDropboxValuesToConfigTemplate =====
+
+    [Fact]
+    public void ApplyDropboxValuesToConfigTemplate_ShouldSetDestinationProviderAndRootPath()
+    {
+        // 検証対象: ApplyDropboxValuesToConfigTemplate  目的: destinationProvider="dropbox" と rootPath が config.json に反映されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyDropboxValuesToConfigTemplate(template, "/移行データ");
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        var migrator = doc.RootElement.GetProperty("migrator");
+        migrator.GetProperty("destinationProvider").GetString().Should().Be("dropbox");
+        migrator.GetProperty("dropbox").GetProperty("rootPath").GetString().Should().Be("/移行データ");
+    }
+
+    [Fact]
+    public void ApplyDropboxValuesToConfigTemplate_ShouldSetDestinationProvider_WhenRootPathIsEmpty()
+    {
+        // 検証対象: ApplyDropboxValuesToConfigTemplate  目的: rootPath が空文字の場合も destinationProvider が反映されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyDropboxValuesToConfigTemplate(template, string.Empty);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        var migrator = doc.RootElement.GetProperty("migrator");
+        migrator.GetProperty("destinationProvider").GetString().Should().Be("dropbox");
+        migrator.GetProperty("dropbox").GetProperty("rootPath").GetString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ApplyDropboxValuesToConfigTemplate_ShouldTrimRootPath()
+    {
+        // 検証対象: ApplyDropboxValuesToConfigTemplate  目的: rootPath の前後空白が Trim されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyDropboxValuesToConfigTemplate(template, "  /移行データ  ");
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        var migrator = doc.RootElement.GetProperty("migrator");
+        migrator.GetProperty("dropbox").GetProperty("rootPath").GetString().Should().Be("/移行データ");
+    }
 }

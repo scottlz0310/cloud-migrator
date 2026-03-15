@@ -132,4 +132,67 @@ public class SetupDoctorCommandTests
 
         results.Should().NotContain(x => x.Name == "config.path");
     }
+
+    [Fact]
+    public void BuildChecks_WhenDropboxDest_ShouldWarnNotErrorForSharePointFields()
+    {
+        // 検証対象: BuildChecks  目的: destinationProvider=dropbox の場合、SP 必須フィールドが Warning になること
+        var options = new MigratorOptions
+        {
+            DestinationProvider = "dropbox",
+            Graph = new GraphProviderOptions
+            {
+                ClientId = "client-id",
+                TenantId = "tenant-id",
+                OneDriveUserId = "user@example.com",
+                // SharePointSiteId / SharePointDriveId は未設定
+            },
+        };
+
+        var results = DoctorCommand.BuildChecks(
+            options,
+            graphClientSecret: "secret",
+            dropboxAccessToken: "dbx-token",
+            resolvedConfigPath: null,
+            strictDropbox: false);
+
+        // SP フィールドは Warning にとどまり、Error にならない
+        results.Should().NotContain(x =>
+            (x.Name == "graph.sharePointSiteId" || x.Name == "graph.sharePointDriveId") &&
+            x.Status == DoctorCheckStatus.Error);
+
+        results.Should().Contain(x =>
+            x.Name == "graph.sharePointSiteId" &&
+            x.Status == DoctorCheckStatus.Warning);
+        results.Should().Contain(x =>
+            x.Name == "graph.sharePointDriveId" &&
+            x.Status == DoctorCheckStatus.Warning);
+    }
+
+    [Fact]
+    public void BuildChecks_WhenDropboxDest_ShouldErrorForDropboxToken_WhenMissing()
+    {
+        // 検証対象: BuildChecks  目的: destinationProvider=dropbox でトークン未設定は Error になること
+        var options = new MigratorOptions
+        {
+            DestinationProvider = "dropbox",
+            Graph = new GraphProviderOptions
+            {
+                ClientId = "client-id",
+                TenantId = "tenant-id",
+                OneDriveUserId = "user@example.com",
+            },
+        };
+
+        var results = DoctorCommand.BuildChecks(
+            options,
+            graphClientSecret: "secret",
+            dropboxAccessToken: string.Empty,   // トークン未設定
+            resolvedConfigPath: null,
+            strictDropbox: false);   // --strict-dropbox なしでも Error
+
+        results.Should().ContainSingle(x =>
+            x.Name == "dropbox.accessToken" &&
+            x.Status == DoctorCheckStatus.Error);
+    }
 }

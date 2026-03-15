@@ -3,6 +3,7 @@ using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Storage;
 using CloudMigrator.Core.Transfer;
 using CloudMigrator.Observability;
+using CloudMigrator.Providers.Abstractions;
 using CloudMigrator.Providers.Dropbox;
 using CloudMigrator.Providers.Graph;
 using CloudMigrator.Providers.Graph.Auth;
@@ -34,6 +35,25 @@ internal sealed class CliServices : IDisposable
     /// Token Bucket レートリミッター。<see cref="RateLimiterOptions.Enabled"/> が false の場合は null。
     /// </summary>
     public TokenBucketRateLimiter? RateLimiter { get; }
+
+    /// <summary>
+    /// 設定 <see cref="MigratorOptions.DestinationProvider"/> に従って転送先プロバイダーを返す。
+    /// "dropbox" の場合は <see cref="DropboxProvider"/>、それ以外は <see cref="StorageProvider"/>（SharePoint）。
+    /// </summary>
+    public IStorageProvider DestinationProvider =>
+        Options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase)
+            ? DropboxProvider
+            : StorageProvider;
+
+    /// <summary>
+    /// クロスプロバイダー転送（OneDrive→Dropbox）時のソースプロバイダー。
+    /// 転送先が Dropbox の場合は <see cref="StorageProvider"/>（GraphStorageProvider）を返す。
+    /// 単一プロバイダーモード（OneDrive→SharePoint）の場合は null。
+    /// </summary>
+    public IStorageProvider? CrossProviderSource =>
+        Options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase)
+            ? StorageProvider
+            : null;
 
     private CliServices(
         MigratorOptions options,

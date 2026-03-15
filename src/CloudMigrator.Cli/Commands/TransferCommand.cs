@@ -86,23 +86,34 @@ internal static class TransferCommand
             logger.LogInformation("OneDrive キャッシュを使用します: {Count} 件", sourceItems.Count);
         }
 
-        // 4. skip_list がなければ SharePoint からリビルド（FR-13）
+        // 4. skip_list がなければ転送先からリビルド（FR-13）
         bool skipListMissing = !File.Exists(opts.Paths.SkipList);
         if (skipListMissing || fullRebuild)
         {
-            logger.LogInformation("SharePoint をクロールして skip_list を再構築します…");
-            await RebuildSkipListFromSharePointAsync(svc, logger, ct).ConfigureAwait(false);
+            var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+            if (isDropbox)
+            {
+                logger.LogInformation("Dropbox をクロールして skip_list を再構築します…");
+                await RebuildSkipListFromDropboxAsync(svc, logger, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                logger.LogInformation("SharePoint をクロールして skip_list を再構築します…");
+                await RebuildSkipListFromSharePointAsync(svc, logger, ct).ConfigureAwait(false);
+            }
         }
 
         // 5. 転送実行
-        logger.LogInformation("転送を開始します: {Count} 件のソースアイテム", sourceItems.Count);
+        logger.LogInformation("転送を開始します: {Count} 件のソースアイテム（転送先: {DestProvider}）",
+            sourceItems.Count, opts.DestinationProvider);
         var engine = new TransferEngine(
-            svc.StorageProvider,
+            svc.DestinationProvider,
             svc.SkipListManager,
             opts,
             svc.LoggerFactory.CreateLogger<TransferEngine>(),
             svc.AdaptiveConcurrencyController,
-            svc.RateLimiter);
+            svc.RateLimiter,
+            sourceProvider: svc.CrossProviderSource);
 
         var summary = await engine.RunAsync(sourceItems, opts.DestinationRoot, ct).ConfigureAwait(false);
 
@@ -161,5 +172,60 @@ internal static class TransferCommand
             await svc.SkipListManager.SaveAsync(skipKeys, ct).ConfigureAwait(false);
 
         logger.LogInformation("skip_list を再構築しました: {Count} 件追加", skipKeys.Count);
+    }
+
+    /// <summary>
+    /// Dropbox をクロールして skip_list を再構築する（転送先 Dropbox 用、FR-13 Dropbox 版）。
+    /// DestinationRoot プレフィックスを除去してソース側と同じキー体系に正規化する。
+    /// </summary>
+    internal static async Task RebuildSkipListFromDropboxAsync(
+        CliServices svc, ILogger logger, CancellationToken ct)
+    {
+        var crawlRoot = string.IsNullOrWhiteSpace(svc.Options.DestinationRoot)
+            ? "dropbox"
+            : $"dropbox/{svc.Options.DestinationRoot.Trim('/')}";
+
+        var dropboxItems = await svc.DropboxProvider.ListItemsAsync(crawlRoot, ct).ConfigureAwait(false);
+        await svc.CrawlCache.SaveAsync(svc.Options.Paths.DropboxCache, dropboxItems, ct).ConfigureAwait(false);
+
+        var destinationRoot = svc.Options.DestinationRoot;
+        var hasDestinationRoot = !string.IsNullOrWhiteSpace(destinationRoot);
+        if (hasDestinationRoot)
+            destinationRoot = destinationRoot.Trim().Replace('\\', '/').Trim('/');
+
+        var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in dropboxItems.Where(i => !i.IsFolder))
+        {
+            var skipKey = item.SkipKey;
+
+            if (hasDestinationRoot)
+            {
+                if (!skipKey.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (skipKey.Length == destinationRoot.Length)
+                    continue;
+
+                if (skipKey.Length > destinationRoot.Length &&
+                    (skipKey[destinationRoot.Length] == '/' || skipKey[destinationRoot.Length] == '\\'))
+                {
+                    skipKey = skipKey.Substring(destinationRoot.Length + 1);
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(skipKey))
+                continue;
+
+            skipKeys.Add(skipKey);
+        }
+
+        if (skipKeys.Count > 0)
+            await svc.SkipListManager.SaveAsync(skipKeys, ct).ConfigureAwait(false);
+
+        logger.LogInformation("Dropbox skip_list を再構築しました: {Count} 件追加", skipKeys.Count);
     }
 }
