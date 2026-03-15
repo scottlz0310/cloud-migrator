@@ -95,8 +95,15 @@ public sealed class TransferEngine
         _logger.LogInformation("フォルダ先行作成: {Count} 件のユニークフォルダを確認・作成中...", totalFolders);
         int foldersDone = 0;
 
+        // DestinationRoot 自体をフォルダセットに含め、深さ順ループで先に処理されるようにする。
+        // （destRoot は subfolder より必ずセグメント数が少ないため、GroupBy 深さ順で最初に処理される）
+        if (!string.IsNullOrEmpty(destRootNormalized))
+            folderPathSet.Add(destRootNormalized);
+
+        // 深さの計算は / と \ の両方を区切りとするセグメント数ベースで行う（DestinationRoot に \ が
+        // 混在した場合でも親→子の順序が保証される）。
         var byDepth = folderPathSet
-            .GroupBy(p => p.Count(c => c == '/'))
+            .GroupBy(p => p.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Length)
             .OrderBy(g => g.Key);
 
         foreach (var depthGroup in byDepth)
