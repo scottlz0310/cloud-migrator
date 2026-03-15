@@ -30,15 +30,20 @@ public sealed class SkipListManager
     }
 
     /// <summary>スキップリストをすべて読み込む。ファイル未存在の場合は空セットを返す。</summary>
+    /// <remarks>
+    /// 返り値は防御的コピーのため、呼び出し側が変更しても内部キャッシュは影響を受けない。
+    /// ファイル転送ごとの存在確認には <see cref="ContainsAsync"/> を使用すること（コピー不要で高速）。
+    /// </remarks>
     public async Task<HashSet<string>> LoadAsync(CancellationToken cancellationToken = default)
     {
-        // キャッシュヒット: ファイル読み込みをスキップ
-        if (_readCache is { } cached) return cached;
+        // キャッシュヒット: 防御的コピーを返す（呼び出し側の変更から内部キャッシュを保護）
+        if (_readCache is { } cached)
+            return new HashSet<string>(cached, StringComparer.OrdinalIgnoreCase);
 
         if (!File.Exists(_filePath))
         {
             _readCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            return _readCache;
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         for (int i = 0; i < WriteRetryCount; i++)
@@ -50,7 +55,7 @@ public sealed class SkipListManager
                 _readCache = deserialized is null
                     ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                     : new HashSet<string>(deserialized, StringComparer.OrdinalIgnoreCase);
-                return _readCache;
+                return new HashSet<string>(_readCache, StringComparer.OrdinalIgnoreCase);
             }
             catch (IOException) when (i < WriteRetryCount - 1)
             {
@@ -73,10 +78,17 @@ public sealed class SkipListManager
     }
 
     /// <summary>指定キーがスキップリストに存在するか確認する。</summary>
+    /// <remarks>内部キャッシュを直接参照するため、LoadAsync のコピーコストを回避する。</remarks>
     public async Task<bool> ContainsAsync(string skipKey, CancellationToken cancellationToken = default)
     {
-        var keys = await LoadAsync(cancellationToken).ConfigureAwait(false);
-        return keys.Contains(skipKey);
+        // キャッシュ作成済み: 直接参照（コピー不要で高速）
+        if (_readCache is { } cache)
+            return cache.Contains(skipKey);
+
+        // キャッシュ未作成: LoadAsync でキャッシュを温め、返り値（防御的コピー）でチェック
+        // JSON 例外パス等で _readCache がセットされない場合も返り値で安全に動作する
+        var loaded = await LoadAsync(cancellationToken).ConfigureAwait(false);
+        return loaded.Contains(skipKey);
     }
 
     /// <summary>
