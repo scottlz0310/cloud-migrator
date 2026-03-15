@@ -66,18 +66,30 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         EnsureAccessTokenConfigured();
 
         var crawlPath = ResolveCrawlPath(rootPath);
-        var firstPage = await PostDropboxApiAsync<ListFolderRequest, ListFolderResponse>(
-            "files/list_folder",
-            new ListFolderRequest
-            {
-                Path = crawlPath,
-                Recursive = true,
-                IncludeDeleted = false,
-                IncludeHasExplicitSharedMembers = false,
-                IncludeMountedFolders = true,
-                IncludeNonDownloadableFiles = false,
-            },
-            cancellationToken).ConfigureAwait(false);
+        ListFolderResponse firstPage;
+        try
+        {
+            firstPage = await PostDropboxApiAsync<ListFolderRequest, ListFolderResponse>(
+                "files/list_folder",
+                new ListFolderRequest
+                {
+                    Path = crawlPath,
+                    Recursive = true,
+                    IncludeDeleted = false,
+                    IncludeHasExplicitSharedMembers = false,
+                    IncludeMountedFolders = true,
+                    IncludeNonDownloadableFiles = false,
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+            when (ex.Message.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
+        {
+            // 転送先フォルダーがまだ存在しない場合は転送済み0件として扱う
+            _logger.LogInformation(
+                "Dropbox パスが存在しません。転送済みファイルなし (0 件) として処理します: {Path}", crawlPath);
+            return [];
+        }
 
         var result = new List<StorageItem>();
         AddFileEntries(firstPage.Entries, result);
