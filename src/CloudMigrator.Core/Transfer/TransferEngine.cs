@@ -112,7 +112,7 @@ public sealed class TransferEngine
                 depthGroup,
                 new ParallelOptions
                 {
-                    MaxDegreeOfParallelism = _options.MaxParallelTransfers,
+                    MaxDegreeOfParallelism = _options.MaxParallelFolderCreations,
                     CancellationToken = cancellationToken,
                 },
                 async (destFolderPath, ct) =>
