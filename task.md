@@ -148,3 +148,13 @@
 - [x] `TransferEngine`: `AdaptiveConcurrencyController` の `GetFirst` 最適化（`GetAsync` 優先呼び出し）
 - [x] テスト: `FakeStorageProvider` を使ったプラットフォーム非依存順序テスト（TransferEngine 3件）
 - [x] CI 全ジョブ（ubuntu / macOS / windows）PASS、PR #36 マージ済み
+
+## パフォーマンス改善: フォルダ作成並列度を MaxParallelFolderCreations に分離（PR #38）
+
+- [x] `MigratorOptions`: `MaxParallelFolderCreations` プロパティ追加（デフォルト 4）
+  - フォルダ先行作成フェーズとファイル転送フェーズの並列度を独立して制御可能に
+  - `configs/config.json` の `maxParallelFolderCreations` に任意の値を設定可能
+- [x] `TransferEngine.RunAsync`: フォルダ作成ループを `MaxParallelFolderCreations` に切り替え
+  - 修正前: `MaxParallelTransfers`（config: 32）を流用 → 3000+ フォルダで即クォータ枯渇・クラッシュ
+  - 修正後: `MaxParallelFolderCreations`（config: 8）で制御 → 24,471 ファイル完走（57:07）
+- [x] ユニットテスト 188 件全通過確認、PR #38 マージ済み
