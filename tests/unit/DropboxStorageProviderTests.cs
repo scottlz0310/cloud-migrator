@@ -174,6 +174,100 @@ public class DropboxStorageProviderTests
             .WithMessage("*files/create_folder_v2*");
     }
 
+    [Fact]
+    public async Task EnsureFolderAsync_ShouldRefreshTokenBeforeFirstRequest_WhenAccessTokenEmpty()
+    {
+        // 検証対象: SendWithRetryAsync 事前リフレッシュ  目的: アクセストークンが空かつリフレッシュ資格情報がある場合、最初の API 呼び出し前にトークンを取得すること
+        var handler = new StubHandler();
+        // 1 回目: トークンエンドポイント
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"access_token":"refreshed-token","token_type":"bearer"}""")
+        });
+        // 2 回目: フォルダ作成成功
+        handler.Enqueue(_ => JsonResponse("""{}"""));
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            accessToken: string.Empty,
+            options: new DropboxStorageOptions(),
+            httpClient: httpClient,
+            refreshToken: "refresh-tok",
+            clientId: "app-key",
+            clientSecret: "app-secret");
+
+        await provider.EnsureFolderAsync("/sub");
+
+        handler.CapturedRequests.Should().HaveCount(2);
+        handler.CapturedRequests[0].Path.Should().Be("/oauth2/token");
+        handler.CapturedRequests[1].Path.Should().Be("/2/files/create_folder_v2");
+    }
+
+    [Fact]
+    public async Task EnsureFolderAsync_ShouldRefreshTokenAndRetry_OnUnauthorized()
+    {
+        // 検証対象: SendWithRetryAsync 401 自動リフレッシュ  目的: 401 を受け取ったときトークンを更新して同じリクエストを再試行すること
+        var handler = new StubHandler();
+        // 1 回目: 期限切れトークンで呼び出し → 401
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent("""{"error_summary":"expired_access_token/..."}""")
+        });
+        // 2 回目: トークンリフレッシュ
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"access_token":"new-token","token_type":"bearer"}""")
+        });
+        // 3 回目: 更新済みトークンで再試行 → 成功
+        handler.Enqueue(_ => JsonResponse("""{}"""));
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            accessToken: "expired-token",
+            options: new DropboxStorageOptions(),
+            httpClient: httpClient,
+            refreshToken: "refresh-tok",
+            clientId: "app-key",
+            clientSecret: "app-secret");
+
+        await provider.EnsureFolderAsync("/sub");
+
+        handler.CapturedRequests.Should().HaveCount(3);
+        handler.CapturedRequests[0].Path.Should().Be("/2/files/create_folder_v2");
+        handler.CapturedRequests[1].Path.Should().Be("/oauth2/token");
+        handler.CapturedRequests[2].Path.Should().Be("/2/files/create_folder_v2");
+    }
+
+    [Fact]
+    public async Task EnsureFolderAsync_ShouldWait30Seconds_WhenTooManyWriteOperations()
+    {
+        // 検証対象: GetRetryDelayAsync  目的: too_many_write_operations (429) 時は 30 秒待機することを確認（CancellationToken で短絡）
+        var handler = new StubHandler();
+        // 1 回目: 429 + too_many_write_operations（30 秒待機を誘発）
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("""{"error_summary":"too_many_write_operations/...","error":{".tag":"too_many_write_operations"}}""")
+        });
+        // 2 回目: 成功（30 秒後リトライ想定）
+        handler.Enqueue(_ => JsonResponse("""{}"""));
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            "valid-token",
+            new DropboxStorageOptions(),
+            httpClient,
+            maxRetry: 1);
+
+        // 30 秒待機中に 2 秒でキャンセル → 30s 待機が発動していなければ 449ms 以内に完了するはず
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var act = async () => await provider.EnsureFolderAsync("/sub", cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private static HttpResponseMessage JsonResponse(string json)
     {
         return new HttpResponseMessage(HttpStatusCode.OK)

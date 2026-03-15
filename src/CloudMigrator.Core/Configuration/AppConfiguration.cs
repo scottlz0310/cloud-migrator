@@ -51,6 +51,18 @@ public static class AppConfiguration
     public static string GetDropboxAccessToken()
         => Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN") ?? string.Empty;
 
+    /// <summary>Dropbox リフレッシュトークン。設定時はアクセストークン期限切れ時に自動更新を行う。</summary>
+    public static string GetDropboxRefreshToken()
+        => Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__REFRESHTOKEN") ?? string.Empty;
+
+    /// <summary>Dropbox リフレッシュ用クライアント ID。</summary>
+    public static string GetDropboxClientId()
+        => Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__CLIENTID") ?? string.Empty;
+
+    /// <summary>Dropbox リフレッシュ用クライアントシークレット。</summary>
+    public static string GetDropboxClientSecret()
+        => Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__CLIENTSECRET") ?? string.Empty;
+
     /// <summary>
     /// configs/config.json を探す。
     /// 優先順位:

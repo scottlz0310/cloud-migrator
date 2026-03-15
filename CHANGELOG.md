@@ -8,6 +8,22 @@
 ## [Unreleased]
 
 ### Added
+- **Dropbox OAuth2 アクセストークン自動リフレッシュ（feat/dropbox-oauth2-auto-refresh）**
+  - `DropboxStorageProvider`: リフレッシュトークン資格情報（`refreshToken` / `clientId` / `clientSecret`）をオプション引数として受け取る実装を追加
+  - `SemaphoreSlim(1,1)` で保護された `RefreshAccessTokenAsync()` を実装。複数並列ワーカーが同時 401 を受けても 1 回だけトークン更新を行う
+  - `SendWithRetryAsync()`: アクセストークンが空の場合の事前リフレッシュ、401 検出時の自動リフレッシュ + 再試行フローを追加
+  - `EnsureAccessTokenConfigured()`: リフレッシュ資格情報が揃っていればアクセストークン未設定でも起動可能に変更
+  - `AppConfiguration`: `GetDropboxRefreshToken()` / `GetDropboxClientId()` / `GetDropboxClientSecret()` getter 追加
+  - `CliServices`: `DropboxStorageProvider` コンストラクタにリフレッシュ資格情報を渡すよう更新
+  - `sample.env`: `MIGRATOR__DROPBOX__REFRESHTOKEN` / `MIGRATOR__DROPBOX__CLIENTID` / `MIGRATOR__DROPBOX__CLIENTSECRET` を追加
+
+### Fixed
+- **Dropbox `too_many_write_operations` (429) クラッシュ修正**
+  - `configs/config.json`: `maxParallelFolderCreations` を `8 → 1` に変更（フォルダ作成を完全直列化）
+  - `configs/config.json`: `retryCount` を `6 → 8` に増加
+  - `DropboxStorageProvider.GetRetryDelayAsync()`: `too_many_write_operations` エラーボディ検出時に 30 秒待機を追加
+
+### Added
 - **OneDrive → Dropbox 転送先対応（PR #40）**
   - `IStorageProvider` に `DownloadToTempAsync` / `UploadFromLocalAsync` を追加しクロスプロバイダー転送を実現
   - `GraphStorageProvider`: `DownloadToTempAsync`（Graph API 経由でローカル一時ファイルへ）/ `UploadFromLocalAsync` 実装
