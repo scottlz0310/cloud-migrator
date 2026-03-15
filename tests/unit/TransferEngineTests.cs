@@ -237,4 +237,90 @@ public sealed class TransferEngineTests : IDisposable
         summary.Success.Should().Be(1);
         summary.Failed.Should().Be(1);
     }
+
+    // ─── DestinationRoot 先行作成・深さ順序・区切り文字混在 ──────────────────────
+
+    [Fact]
+    public async Task RunAsync_EnsuresDestRootBeforeSubfolders()
+    {
+        // 検証対象: DestinationRoot 先行作成  目的: 子フォルダより前に destRoot 自体が EnsureFolderAsync されること
+        var file = MakeFile("sub", "file.txt");
+        var callOrder = new List<string>();
+
+        _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((p, _) => callOrder.Add(p))
+            .Returns(Task.CompletedTask);
+        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var engine = CreateEngine();
+        await engine.RunAsync([file], "dest/root");
+
+        // "dest/root" が最初に呼ばれること
+        callOrder.Should().NotBeEmpty();
+        callOrder[0].Should().Be("dest/root");
+        callOrder.Should().Contain("dest/root/sub");
+    }
+
+    [Fact]
+    public async Task RunAsync_MultiSegmentDestRoot_EnsuredBeforeSubfolders()
+    {
+        // 検証対象: 複数セグメント DestinationRoot  目的: "Migration/OneDrive" のような多段パスも子フォルダより先に作成されること
+        var file = MakeFile("docs", "file.txt");
+        var callOrder = new List<string>();
+
+        _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((p, _) => callOrder.Add(p))
+            .Returns(Task.CompletedTask);
+        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var engine = CreateEngine();
+        await engine.RunAsync([file], "Migration/OneDrive");
+
+        // 最初に destRoot 自体の EnsureFolder が呼ばれること
+        callOrder[0].Should().Be("Migration/OneDrive");
+        callOrder.Should().Contain("Migration/OneDrive/docs");
+    }
+
+    [Fact]
+    public async Task RunAsync_FolderDepth_ParentAlwaysBeforeChild()
+    {
+        // 検証対象: 深さ別グループ順序  目的: 深いフォルダより浅いフォルダが必ず先に EnsureFolderAsync されること
+        var file = MakeFile("a/b/c", "file.txt");
+        var callOrder = new List<string>();
+        var lockObj = new object();
+
+        _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((p, _) => { lock (lockObj) callOrder.Add(p); })
+            .Returns(Task.CompletedTask);
+        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var engine = CreateEngine();
+        await engine.RunAsync([file], "dest/root");
+
+        // destRoot 除いたフォルダ呼び出しの順序: a → a/b → a/b/c
+        var subfolderCalls = callOrder.Where(p => p != "dest/root").ToList();
+        subfolderCalls.Should().ContainInOrder(
+            "dest/root/a",
+            "dest/root/a/b",
+            "dest/root/a/b/c");
+    }
+
+    [Fact]
+    public async Task RunAsync_DestRootWithBackslash_CompletesWithoutException()
+    {
+        // 検証対象: 深さ計算 (バックスラッシュ混在)  目的: DestinationRoot に \ が含まれても例外なく処理完了すること
+        var file = MakeFile("sub", "file.txt");
+
+        _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _mockDest.Setup(d => d.UploadFileAsync(It.IsAny<TransferJob>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var engine = CreateEngine();
+        var act = async () => await engine.RunAsync([file], @"dest\root");
+        await act.Should().NotThrowAsync();
+    }
 }
