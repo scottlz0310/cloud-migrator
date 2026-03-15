@@ -17,6 +17,9 @@ public sealed class MigratorOptions
     /// <summary>最大並列転送数。デフォルト 4（FR-14）</summary>
     public int MaxParallelTransfers { get; set; } = 4;
 
+    /// <summary>フォルダ先行作成フェーズの最大並列度。デフォルト 4（Graph API クォータ対策）</summary>
+    public int MaxParallelFolderCreations { get; set; } = 4;
+
     /// <summary>リトライ回数。デフォルト 3（FR-15）</summary>
     public int RetryCount { get; set; } = 3;
 
