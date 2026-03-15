@@ -20,7 +20,11 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
     private readonly ILogger<DropboxStorageProvider> _logger;
-    private readonly string _accessToken;
+    private string _accessToken;             // リフレッシュ時に更新するため非 readonly
+    private readonly string? _refreshToken;
+    private readonly string? _clientId;
+    private readonly string? _clientSecret;
+    private readonly SemaphoreSlim _tokenRefreshLock = new(1, 1);
     private readonly DropboxStorageOptions _options;
     private readonly int _maxRetry;
     private readonly int _simpleUploadLimitBytes;
@@ -34,10 +38,16 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         DropboxStorageOptions? options = null,
         HttpClient? httpClient = null,
         int maxRetry = 3,
-        bool disposeHttpClient = false)
+        bool disposeHttpClient = false,
+        string? refreshToken = null,
+        string? clientId = null,
+        string? clientSecret = null)
     {
         _logger = logger;
         _accessToken = accessToken;
+        _refreshToken = refreshToken;
+        _clientId = clientId;
+        _clientSecret = clientSecret;
         _options = options ?? new DropboxStorageOptions();
         _httpClient = httpClient ?? new HttpClient();
         _ownsHttpClient = httpClient is null || disposeHttpClient;
@@ -426,12 +436,26 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     private static bool IsFolderAlreadyExistsConflict(string responseBody)
         => responseBody.Contains("path/conflict/folder", StringComparison.OrdinalIgnoreCase);
 
+    private sealed class DropboxTokenResponse
+    {
+        [JsonPropertyName("access_token")]
+        public required string AccessToken { get; init; }
+    }
+
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         Func<HttpRequestMessage> requestFactory,
         string operation,
         CancellationToken ct,
         HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
     {
+        // アクセストークンが空かつリフレッシュ可能な場合は事前に取得する
+        if (string.IsNullOrEmpty(_accessToken) && HasRefreshCapability())
+        {
+            _logger.LogInformation("Dropbox アクセストークンが未設定のため事前リフレッシュします: {Operation}", operation);
+            await RefreshAccessTokenAsync(ct).ConfigureAwait(false);
+        }
+
+        var tokenRefreshed = false;
         for (var attempt = 0; ; attempt++)
         {
             ct.ThrowIfCancellationRequested();
@@ -439,10 +463,22 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
             {
                 using var request = requestFactory();
                 var response = await _httpClient.SendAsync(request, completionOption, ct).ConfigureAwait(false);
+
+                // 401: トークン期限切れ → リフレッシュして即リトライ（attempt カウントをリセット）
+                if (response.StatusCode == HttpStatusCode.Unauthorized && HasRefreshCapability() && !tokenRefreshed)
+                {
+                    response.Dispose();
+                    _logger.LogWarning("Dropbox 401 を検出。アクセストークンを更新して再試行します: {Operation}", operation);
+                    await RefreshAccessTokenAsync(ct).ConfigureAwait(false);
+                    tokenRefreshed = true;
+                    attempt = -1; // 次の iteration で 0 になる
+                    continue;
+                }
+
                 if (!ShouldRetry(response.StatusCode) || attempt >= _maxRetry)
                     return response;
 
-                var delay = GetRetryDelay(response, attempt);
+                var delay = await GetRetryDelayAsync(response, attempt, ct).ConfigureAwait(false);
                 _logger.LogWarning(
                     "Dropbox API の一時エラーのため再試行します: {Operation} status={StatusCode} attempt={Attempt} delayMs={DelayMs}",
                     operation,
@@ -489,17 +525,35 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         return TimeSpan.FromMilliseconds(backoffMs + jitterMs);
     }
 
-    private static TimeSpan GetRetryDelay(HttpResponseMessage response, int attempt)
+    private static async ValueTask<TimeSpan> GetRetryDelayAsync(
+        HttpResponseMessage response, int attempt, CancellationToken ct)
     {
         var retryAfter = response.Headers.RetryAfter;
         if (retryAfter?.Delta is TimeSpan delta && delta > TimeSpan.Zero)
+        {
+            // Retry-After が短い（≤10s）場合でも too_many_write_operations なら 30s 待機する
+            if (delta <= TimeSpan.FromSeconds(10))
+            {
+                var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                if (body.Contains("too_many_write_operations", StringComparison.OrdinalIgnoreCase))
+                    return TimeSpan.FromSeconds(30);
+            }
             return delta;
+        }
 
         if (retryAfter?.Date is DateTimeOffset date)
         {
             var wait = date - DateTimeOffset.UtcNow;
             if (wait > TimeSpan.Zero)
                 return wait;
+        }
+
+        // Retry-After ヘッダーなし & 429 の場合もボディで too_many_write_operations を確認
+        if ((int)response.StatusCode == 429)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (body.Contains("too_many_write_operations", StringComparison.OrdinalIgnoreCase))
+                return TimeSpan.FromSeconds(30);
         }
 
         return ComputeRetryDelay(attempt);
@@ -603,11 +657,57 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         return totalRead == buffer.Length ? buffer : buffer[..totalRead];
     }
 
+    private bool HasRefreshCapability()
+        => !string.IsNullOrEmpty(_refreshToken)
+            && !string.IsNullOrEmpty(_clientId)
+            && !string.IsNullOrEmpty(_clientSecret);
+
     private void EnsureAccessTokenConfigured()
     {
-        if (string.IsNullOrWhiteSpace(_accessToken))
+        if (string.IsNullOrWhiteSpace(_accessToken) && !HasRefreshCapability())
             throw new InvalidOperationException(
-                "Dropbox アクセストークンが未設定です。MIGRATOR__DROPBOX__ACCESSTOKEN を設定してください。");
+                "Dropbox の認証情報が未設定です。" +
+                "MIGRATOR__DROPBOX__ACCESSTOKEN、または " +
+                "MIGRATOR__DROPBOX__REFRESHTOKEN + MIGRATOR__DROPBOX__CLIENTID + MIGRATOR__DROPBOX__CLIENTSECRET を設定してください。");
+    }
+
+    /// <summary>
+    /// リフレッシュトークンを使って新しいアクセストークンを取得する。
+    /// SemaphoreSlim で同時リフレッシュを 1 つに絞る（複数ワーカーが同時に 401 を受けても 1 回だけ更新）。
+    /// </summary>
+    private async Task RefreshAccessTokenAsync(CancellationToken ct)
+    {
+        await _tokenRefreshLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            _logger.LogInformation("Dropbox アクセストークンを更新しています...");
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = _refreshToken!,
+                ["client_id"] = _clientId!,
+                ["client_secret"] = _clientSecret!,
+            });
+            using var response = await _httpClient
+                .PostAsync("https://api.dropboxapi.com/oauth2/token", content, ct)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                throw new InvalidOperationException(
+                    $"Dropbox トークンリフレッシュに失敗しました: ({(int)response.StatusCode}) {errBody}");
+            }
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            var result = await JsonSerializer.DeserializeAsync<DropboxTokenResponse>(stream, JsonOptions, ct)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException("トークン応答のデシリアライズに失敗しました");
+            _accessToken = result.AccessToken;
+            _logger.LogInformation("Dropbox アクセストークンを更新しました");
+        }
+        finally
+        {
+            _tokenRefreshLock.Release();
+        }
     }
 
     private sealed class ListFolderRequest

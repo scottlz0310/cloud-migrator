@@ -174,3 +174,24 @@
 - [x] テスト: `SetupDoctorCommandTests` 2件・`SetupInitCommandTests` 3件追加（193件全パス）
 - [x] `docs/manual-test-runbook.md`: セクション10「OneDrive→Dropbox テストシナリオ」追記（TC-Dropbox-01〜07）
 - [x] PR #40 マージ済み
+
+## Phase 12: bootstrap 対話選択・verify Dropbox 疎通・初回転送 path/not_found 修正（PR #42）
+
+- [x] PR #42 マージ済み（squash, dcc4e0f5）
+
+## バグ修正 & 信頼性改善: Dropbox 転送安定化（feat/dropbox-oauth2-auto-refresh）
+
+- [x] `configs/config.json`: `maxParallelFolderCreations: 8 → 1`（Dropbox write 429 対策・完全直列化）
+- [x] `configs/config.json`: `retryCount: 6 → 8`（リトライ余裕を増加）
+- [x] `DropboxStorageProvider`: `GetRetryDelayAsync` → `too_many_write_operations` 検出時 30 秒待機
+- [x] `DropboxStorageProvider`: OAuth2 自動リフレッシュ実装（短期アクセストークン問題を恒久解決）
+  - `_accessToken` を非 readonly に変更（リフレッシュ時に上書き）
+  - `_refreshToken / _clientId / _clientSecret / _tokenRefreshLock (SemaphoreSlim)` フィールド追加
+  - `HasRefreshCapability()` / `RefreshAccessTokenAsync()` メソッド追加
+  - `SendWithRetryAsync()`: 空トークン時の事前リフレッシュ・401 検出時の自動リフレッシュ+再試行
+  - `EnsureAccessTokenConfigured()`: リフレッシュ資格情報があればアクセストークン未設定でも OK
+  - `DropboxTokenResponse` シリアライズ用プライベートクラス追加
+- [x] `AppConfiguration`: `GetDropboxRefreshToken / ClientId / ClientSecret` getter 追加
+- [x] `CliServices`: `DropboxStorageProvider` コンストラクタにリフレッシュ資格情報を渡すよう更新
+- [x] `sample.env`: `MIGRATOR__DROPBOX__REFRESHTOKEN / CLIENTID / CLIENTSECRET` 追加
+- [x] ユニットテスト 203 件全パス

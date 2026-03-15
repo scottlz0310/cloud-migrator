@@ -203,7 +203,10 @@ internal sealed class CliServices : IDisposable
             dropboxOptions,
             dropboxHttpClient,
             options.RetryCount,
-            disposeHttpClient: true);
+            disposeHttpClient: true,
+            refreshToken: AppConfiguration.GetDropboxRefreshToken(),
+            clientId: AppConfiguration.GetDropboxClientId(),
+            clientSecret: AppConfiguration.GetDropboxClientSecret());
 
         var crawlCache = new CrawlCache(loggerFactory.CreateLogger<CrawlCache>());
         var skipListManager = new SkipListManager(
