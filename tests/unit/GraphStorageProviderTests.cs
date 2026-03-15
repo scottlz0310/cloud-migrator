@@ -341,4 +341,127 @@ public class GraphStorageProviderTests
         result.Should().HaveCount(1);
         result[0].Name.Should().Be("archive.zip");
     }
+
+    // ── EnsureFolder GET first / POST / 409 フォールバック テスト ────────────────────
+
+    private static (Mock<IRequestAdapter> adapter, GraphServiceClient client) CreateEnsureFolderMockAdapter()
+    {
+        // PostAsync が DriveItem ボディをシリアライズするため、ISerializationWriter を
+        // 空ストリームを返す最小限のモックに仕立てる。
+        var mockWriter = new Mock<ISerializationWriter>();
+        mockWriter.Setup(w => w.GetSerializedContent()).Returns(new System.IO.MemoryStream());
+
+        var mockWriterFactory = new Mock<ISerializationWriterFactory>();
+        mockWriterFactory
+            .Setup(f => f.GetSerializationWriter(It.IsAny<string>()))
+            .Returns(mockWriter.Object);
+
+        var mockAdapter = new Mock<IRequestAdapter>();
+        mockAdapter.Setup(a => a.SerializationWriterFactory).Returns(mockWriterFactory.Object);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        return (mockAdapter, new GraphServiceClient(mockAdapter.Object));
+    }
+
+    [Fact]
+    public async Task EnsureFolderAsync_ExistingFolder_UsesGetOnlyNeverPost()
+    {
+        // 検証対象: EnsureFolderSegmentAsync (GET first)  目的: 既存フォルダは GET 1 回で完了し POST を呼ばないこと
+        var (mockAdapter, client) = CreateEnsureFolderMockAdapter();
+
+        mockAdapter.Setup(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.GET),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DriveItem { Id = "existingFolderId" });
+
+        var options = new GraphStorageOptions { SharePointDriveId = "drive1" };
+        var provider = new GraphStorageProvider(client, Mock.Of<ILogger<GraphStorageProvider>>(), options);
+
+        await provider.EnsureFolderAsync("docs");
+
+        // POST は一切呼ばれていないこと
+        mockAdapter.Verify(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureFolderAsync_NotFound_CreatesViaPost()
+    {
+        // 検証対象: EnsureFolderSegmentAsync (GET 404 → POST)  目的: GET で 404 が返った場合のみ POST でフォルダを作成すること
+        var (mockAdapter, client) = CreateEnsureFolderMockAdapter();
+
+        mockAdapter.Setup(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.GET),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ApiException("Not Found") { ResponseStatusCode = 404 });
+
+        mockAdapter.Setup(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DriveItem { Id = "newFolderId" });
+
+        var options = new GraphStorageOptions { SharePointDriveId = "drive1" };
+        var provider = new GraphStorageProvider(client, Mock.Of<ILogger<GraphStorageProvider>>(), options);
+
+        await provider.EnsureFolderAsync("docs");
+
+        // POST が 1 回呼ばれていること
+        mockAdapter.Verify(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureFolderAsync_PostConflict_FallbackGetCompletesSuccessfully()
+    {
+        // 検証対象: EnsureFolderSegmentAsync (POST 409 → fallback GET)
+        // 目的: POST が 409 を返した場合 (並行作成競合) に再 GET して正常完了すること
+        var (mockAdapter, client) = CreateEnsureFolderMockAdapter();
+
+        // GET(1回目)→404、POST→409 Conflict、GET(2回目 fallback)→成功 の順に呼ばれる。
+        // SetupSequence + Setup の組み合わせによるプラットフォーム差異を避けるため、
+        // 単一 Setup でコール順を数値で制御する（スレッドセーフ）。
+        var sendCallIndex = 0;
+        mockAdapter.Setup(a => a.SendAsync(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<RequestInformation, ParsableFactory<DriveItem>,
+                     Dictionary<string, ParsableFactory<IParsable>>?, CancellationToken>(
+                (_, __, ___, ____) =>
+                {
+                    var idx = System.Threading.Interlocked.Increment(ref sendCallIndex);
+                    return idx switch
+                    {
+                        // 呼び出し 1: GET (存在確認) → 404
+                        1 => Task.FromException<DriveItem?>(
+                                new ApiException("Not Found") { ResponseStatusCode = 404 }),
+                        // 呼び出し 2: POST (作成) → 409 Conflict
+                        2 => Task.FromException<DriveItem?>(
+                                new ApiException("Conflict") { ResponseStatusCode = 409 }),
+                        // 呼び出し 3: GET (fallback) → 既存フォルダ返却
+                        _ => Task.FromResult<DriveItem?>(new DriveItem { Id = "conflictedFolderId" }),
+                    };
+                });
+
+        var options = new GraphStorageOptions { SharePointDriveId = "drive1" };
+        var provider = new GraphStorageProvider(client, Mock.Of<ILogger<GraphStorageProvider>>(), options);
+
+        // 例外なく完了すること
+        var act = async () => await provider.EnsureFolderAsync("docs");
+        await act.Should().NotThrowAsync();
+    }
 }

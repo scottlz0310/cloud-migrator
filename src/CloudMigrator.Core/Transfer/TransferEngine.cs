@@ -89,19 +89,41 @@ public sealed class TransferEngine
             }
         }
 
-        // 親フォルダから順に EnsureFolderAsync を呼び出す
-        var sortedFolders = folderPathSet.OrderBy(p => p.Length).ToList();
-        _logger.LogInformation("フォルダ先行作成: {Count} 件のユニークフォルダを確認・作成中...", sortedFolders.Count);
+        // 親フォルダから順に EnsureFolderAsync を呼び出す。
+        // 同一深さのフォルダは並行処理可能（親は必ず前の深さで作成済み）。
+        var totalFolders = folderPathSet.Count;
+        _logger.LogInformation("フォルダ先行作成: {Count} 件のユニークフォルダを確認・作成中...", totalFolders);
         int foldersDone = 0;
-        foreach (var destFolderPath in sortedFolders)
+
+        // DestinationRoot 自体をフォルダセットに含め、深さ順ループで先に処理されるようにする。
+        // （destRoot は subfolder より必ずセグメント数が少ないため、GroupBy 深さ順で最初に処理される）
+        if (!string.IsNullOrEmpty(destRootNormalized))
+            folderPathSet.Add(destRootNormalized);
+
+        // 深さの計算は / と \ の両方を区切りとするセグメント数ベースで行う（DestinationRoot に \ が
+        // 混在した場合でも親→子の順序が保証される）。
+        var byDepth = folderPathSet
+            .GroupBy(p => p.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Length)
+            .OrderBy(g => g.Key);
+
+        foreach (var depthGroup in byDepth)
         {
-            await _destProvider.EnsureFolderAsync(destFolderPath, cancellationToken)
-                .ConfigureAwait(false);
-            foldersDone++;
-            if (foldersDone % 100 == 0)
-                _logger.LogInformation("フォルダ先行作成進捗: {Done}/{Total}", foldersDone, sortedFolders.Count);
+            await Parallel.ForEachAsync(
+                depthGroup,
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = _options.MaxParallelTransfers,
+                    CancellationToken = cancellationToken,
+                },
+                async (destFolderPath, ct) =>
+                {
+                    await _destProvider.EnsureFolderAsync(destFolderPath, ct).ConfigureAwait(false);
+                    var done = Interlocked.Increment(ref foldersDone);
+                    if (done % 100 == 0)
+                        _logger.LogInformation("フォルダ先行作成進捗: {Done}/{Total}", done, totalFolders);
+                }).ConfigureAwait(false);
         }
-        _logger.LogInformation("フォルダ先行作成完了: {Count} 件", sortedFolders.Count);
+        _logger.LogInformation("フォルダ先行作成完了: {Count} 件", totalFolders);
 
         // ─── 2. スキップ照合・ジョブリスト構築 ──────────────────────────
         var jobs = new List<TransferJob>();
