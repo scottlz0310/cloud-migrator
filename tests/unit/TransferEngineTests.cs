@@ -329,5 +329,14 @@ public sealed class TransferEngineTests : IDisposable
             EnsureCalls.Add(folderPath);
             return Task.CompletedTask;
         }
+
+        public Task<string> DownloadToTempAsync(
+            StorageItem item, CancellationToken cancellationToken = default)
+            => Task.FromResult(Path.GetTempFileName());
+
+        public Task UploadFromLocalAsync(
+            string localFilePath, long fileSizeBytes, string destinationFullPath,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

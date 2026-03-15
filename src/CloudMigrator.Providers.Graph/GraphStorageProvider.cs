@@ -256,6 +256,126 @@ public sealed class GraphStorageProvider : IStorageProvider
             await LargeUploadAsync(job, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    public async Task<string> DownloadToTempAsync(StorageItem item, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(_options.OneDriveUserId))
+            throw new InvalidOperationException("OneDriveUserId が未設定のため OneDrive からダウンロードできません。");
+
+        var oneDriveId = await GetOneDriveDriveIdAsync(cancellationToken).ConfigureAwait(false);
+        var tempPath = Path.GetTempFileName();
+        try
+        {
+            await using var stream = await _client.Drives[oneDriveId].Items[item.Id].Content
+                .GetAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"ダウンロードストリームが null です: {item.SkipKey}");
+
+            await using var tempFile = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            await stream.CopyToAsync(tempFile, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogDebug("OneDrive ダウンロード完了: {SkipKey} → {TempPath}", item.SkipKey, tempPath);
+            return tempPath;
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch { /* ベストエフォート */ }
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task UploadFromLocalAsync(string localFilePath, long fileSizeBytes, string destinationFullPath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(_options.SharePointDriveId))
+            throw new InvalidOperationException("SharePointDriveId が未設定のため SharePoint へアップロードできません。");
+
+        var relPath = destinationFullPath.TrimStart('/');
+        _logger.LogDebug("SharePoint アップロード開始: {DestPath} ({Bytes} bytes)", relPath, fileSizeBytes);
+
+        if (fileSizeBytes < _largeFileThresholdBytes)
+        {
+            await using var stream = File.OpenRead(localFilePath);
+            await _client.Drives[_options.SharePointDriveId].Root.ItemWithPath(relPath).Content
+                .PutAsync(stream, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            _logger.LogDebug("SharePoint 小ファイルアップロード完了: {DestPath}", relPath);
+        }
+        else
+        {
+            await UploadFromLocalLargeAsync(localFilePath, fileSizeBytes, relPath, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>大容量ファイルを Upload Session でアップロード（UploadFromLocalAsync 内部処理）。</summary>
+    private async Task UploadFromLocalLargeAsync(string localFilePath, long fileSizeBytes, string relPath, CancellationToken ct)
+    {
+        var sessionKey = relPath;
+        UploadSession? uploadSession = null;
+        var savedUrl = _sessionStore is not null
+            ? await _sessionStore.GetAsync(sessionKey, ct).ConfigureAwait(false)
+            : null;
+
+        if (savedUrl is not null)
+        {
+            _logger.LogDebug("既存セッションで再開を試みます: {DestPath}", relPath);
+            uploadSession = new UploadSession
+            {
+                UploadUrl = savedUrl,
+                NextExpectedRanges = new List<string> { "0-" },
+            };
+        }
+        else
+        {
+            uploadSession = await _client.Drives[_options.SharePointDriveId].Root
+                .ItemWithPath(relPath)
+                .CreateUploadSession
+                .PostAsync(new(), cancellationToken: ct)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"アップロードセッションの作成に失敗: {relPath}");
+
+            if (_sessionStore is not null && uploadSession.UploadUrl is not null)
+                await _sessionStore.SetAsync(sessionKey, uploadSession.UploadUrl, ct).ConfigureAwait(false);
+        }
+
+        await using var uploadStream = File.OpenRead(localFilePath);
+        var uploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, uploadStream, _chunkSizeBytes, _client.RequestAdapter);
+
+        UploadResult<DriveItem> result;
+        try
+        {
+            result = await uploadTask.UploadAsync().ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode is 404 or 410)
+        {
+            _logger.LogWarning("アップロードセッション期限切れ。再作成します: {DestPath}", relPath);
+            if (_sessionStore is not null)
+                await _sessionStore.RemoveAsync(sessionKey, ct).ConfigureAwait(false);
+
+            uploadStream.Seek(0, SeekOrigin.Begin);
+            uploadSession = await _client.Drives[_options.SharePointDriveId].Root
+                .ItemWithPath(relPath)
+                .CreateUploadSession
+                .PostAsync(new(), cancellationToken: ct)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"セッション再作成に失敗: {relPath}");
+
+            if (_sessionStore is not null && uploadSession.UploadUrl is not null)
+                await _sessionStore.SetAsync(sessionKey, uploadSession.UploadUrl, ct).ConfigureAwait(false);
+
+            uploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, uploadStream, _chunkSizeBytes, _client.RequestAdapter);
+            result = await uploadTask.UploadAsync().ConfigureAwait(false);
+        }
+
+        if (!result.UploadSucceeded)
+            throw new InvalidOperationException($"大容量アップロードが完了しませんでした: {relPath}");
+
+        if (_sessionStore is not null)
+            await _sessionStore.RemoveAsync(sessionKey, ct).ConfigureAwait(false);
+
+        _logger.LogDebug("SharePoint 大容量ファイルアップロード完了: {DestPath}", relPath);
+    }
+
     /// <summary>OneDrive のドライブ ID を 1 回だけ取得してキャッシュする。</summary>
     private async Task<string> GetOneDriveDriveIdAsync(CancellationToken ct)
     {

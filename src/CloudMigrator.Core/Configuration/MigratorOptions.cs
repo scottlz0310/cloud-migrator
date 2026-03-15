@@ -32,6 +32,13 @@ public sealed class MigratorOptions
     /// <summary>転送先 SharePoint ドライブ内のルートパス（例: "Migration/2026"）。空文字でドライブルート。</summary>
     public string DestinationRoot { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 転送先プロバイダー識別子（"sharepoint" または "dropbox"）。デフォルト: "sharepoint"。
+    /// "dropbox" の場合は <see cref="DropboxProviderOptions"/> の設定および
+    /// MIGRATOR__DROPBOX__ACCESSTOKEN 環境変数が必要。
+    /// </summary>
+    public string DestinationProvider { get; set; } = "sharepoint";
+
     // --- Watchdog 設定 ---
     public WatchdogOptions Watchdog { get; set; } = new();
 
