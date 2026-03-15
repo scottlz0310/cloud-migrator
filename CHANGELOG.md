@@ -7,8 +7,16 @@
 
 ## [Unreleased]
 
-### Fixed
-- **`GraphStorageProvider.LargeUploadAsync`: セッション URL 復元時の `NullReferenceException` 修正**
+### Added
+- **フォルダ先行作成の並列化・GET優先・スキップキャッシュ（PR #36）**
+  - `TransferEngine.RunAsync`: フォルダパスを深さ別グループで並列作成（FR-06 強化）
+    - `folderPathSet.GroupBy(深さ).OrderBy(深さ)` でグループ化し `Parallel.ForEachAsync` で並列処理
+    - `destRootNormalized` を `folderPathSet` に追加して深さ順ループで先行処理を保証
+  - `GraphStorageProvider.EnsureFolderSegmentAsync`: GET-first + 409 競合フォールバック実装
+    - `catch(ApiException) { if (status != 409) throw; ... }` パターンで Ubuntu/macOS CI 安定化
+  - テスト: `FakeStorageProvider` による呼び出し順序のプラットフォーム非依存な検証（3件追加）
+
+---
   - `UploadUrl` のみで `UploadSession` を構築すると `NextExpectedRanges` が `null` になり、
     `LargeFileUploadTask<DriveItem>` コンストラクター内の `GetRangesRemaining()` が NPE を投げる問題を修正（cv2.pyd 等の大容量ファイルで実測発生）
   - 復元時に `NextExpectedRanges = new List<string> { "0-" }` を初期値として設定し、セッション再開時の NPE を解消

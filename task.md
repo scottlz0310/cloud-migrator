@@ -135,3 +135,16 @@
 - [x] `CliServices`: レート状態の永続化（`logs/rate_state.json`）を実装
   - 起動時: `rate_state.json` が存在すれば前回終了レートを `initialRate` として復元（コールドスタート排除）
   - 終了時: `Dispose()` 内で現在レートを JSON 保存（UTC 日時付き）
+
+## パフォーマンス改善: フォルダ先行作成並列化・GET優先・スキップキャッシュ（PR #36）
+
+- [x] `TransferEngine.RunAsync`: フォルダパスを深さ別グループで並列作成
+  - `folderPathSet.GroupBy(深さ).OrderBy(深さ)` でグループ化、`Parallel.ForEachAsync` で並列処理
+  - `destRootNormalized` を `folderPathSet` に追加し深さ順ループで先行処理を保証（CI 安定化を含む）
+- [x] `GraphStorageProvider.EnsureFolderAsync`: `_folderIdCache` によるキャッシュ済みセグメントのスキップ（再確認）
+- [x] `GraphStorageProvider.EnsureFolderSegmentAsync`: GET-first パターン + 409 競合フォールバック実装
+  - `catch (ApiException ex) { if (ex.ResponseStatusCode != 409) throw; ... }` パターンに変更（Ubuntu CI 安定化）
+- [x] `GraphStorageProvider.ListItemsAsync`: ストリーミング取得（`PageIterator` 相当）+ スキップリスト早期除外
+- [x] `TransferEngine`: `AdaptiveConcurrencyController` の `GetFirst` 最適化（`GetAsync` 優先呼び出し）
+- [x] テスト: `FakeStorageProvider` を使ったプラットフォーム非依存順序テスト（TransferEngine 3件）
+- [x] CI 全ジョブ（ubuntu / macOS / windows）PASS、PR #36 マージ済み
