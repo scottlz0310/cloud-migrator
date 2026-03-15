@@ -206,10 +206,150 @@ dotnet run --project src/CloudMigrator.Setup.Cli -- verify --skip-sharepoint
 
 ## 5. 代表的な運用フロー
 
-1. `file-crawler onedrive/sharepoint/dropbox` で最新クロール
-2. `file-crawler compare` / `validate` で整合性確認
-3. `transfer` で本転送
-4. 長時間実行時は `watchdog` を使用
+### 5.1 OneDrive → SharePoint（初回セットアップ～転送）
+
+**最短手順**（`transfer` がクロール・スキップリスト構築を自動実行します）
+
+```bash
+# ① 初回: ウィザードで config.json / .env を生成（転送先 SharePoint）
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap
+
+# ② 設定診断（必須設定が揃っているか確認）
+dotnet run --project src/CloudMigrator.Setup.Cli -- doctor
+
+# ③ Graph 疎通確認（OneDrive / SharePoint トークン取得・ID 検証）
+dotnet run --project src/CloudMigrator.Setup.Cli -- verify
+
+# ④ 本転送（OneDrive・SharePoint の自動クロール＆スキップリスト構築込み）
+dotnet run --project src/CloudMigrator.Cli -- transfer
+```
+
+**転送前に差分を確認したい場合**（任意）
+
+```bash
+# OneDrive・SharePoint を個別にクロールしてキャッシュ
+dotnet run --project src/CloudMigrator.Cli -- file-crawler onedrive
+dotnet run --project src/CloudMigrator.Cli -- file-crawler sharepoint
+
+# 差分確認（未転送ファイルを把握してから本転送）
+dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right sharepoint
+dotnet run --project src/CloudMigrator.Cli -- transfer
+```
+
+### 5.2 OneDrive → Dropbox（初回セットアップ～転送）
+
+**最短手順**
+
+```bash
+# ① 初回: ウィザードで config.json / .env を生成（転送先 Dropbox）
+dotnet run --project src/CloudMigrator.Setup.Cli -- bootstrap --destination dropbox
+#   ※ --destination を省略すると起動後に対話選択できます
+
+# ② 設定診断（SharePoint 関連は Warning 扱い、ExitCode=0 が正常）
+dotnet run --project src/CloudMigrator.Setup.Cli -- doctor
+
+# ③ OneDrive 疎通確認（Dropbox 転送先では SharePoint チェックをスキップ）
+dotnet run --project src/CloudMigrator.Setup.Cli -- verify --skip-sharepoint
+
+# ④ 本転送（OneDrive・Dropbox の自動クロール＆スキップリスト構築込み）
+dotnet run --project src/CloudMigrator.Cli -- transfer
+```
+
+**転送前に差分を確認したい場合**（任意）
+
+```bash
+# OneDrive・Dropbox を個別にクロールしてキャッシュ
+dotnet run --project src/CloudMigrator.Cli -- file-crawler onedrive
+dotnet run --project src/CloudMigrator.Cli -- file-crawler dropbox
+
+# 差分確認してから本転送
+dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right dropbox
+dotnet run --project src/CloudMigrator.Cli -- transfer
+```
+
+### 5.3 転送の再開（中断後）
+
+転送が途中で止まった場合、スキップリスト（`logs/skip_list.json`）に転送済みファイルが記録されているため、再実行するだけで差分のみ転送されます。
+
+```bash
+# 増分転送（スキップリストを活かして未転送ファイルのみ処理）
+dotnet run --project src/CloudMigrator.Cli -- transfer
+
+# 長時間実行が見込まれる場合は watchdog を使ってフリーズ時に自動再起動
+dotnet run --project src/CloudMigrator.Cli -- watchdog
+```
+
+### 5.4 キャッシュ・スキップリストの削除
+
+`logs/` 配下に以下のファイルが生成されます。
+
+| ファイル | 内容 | 削除タイミング |
+|---|---|---|
+| `logs/onedrive_files.json` | OneDrive クロール結果キャッシュ | OneDrive 側の変更を反映したい時 |
+| `logs/sharepoint_current_files.json` | SharePoint クロール結果キャッシュ | SharePoint 側の変更を反映したい時 |
+| `logs/dropbox_files.json` | Dropbox クロール結果キャッシュ | Dropbox 側の変更を反映したい時 |
+| `logs/skip_list.json` | 転送済みファイルの記録 | **全件再転送したい時のみ削除**（通常は消さない） |
+| `logs/config_hash.txt` | 設定変更検知用ハッシュ | 通常は自動管理（手動削除不要） |
+
+**`transfer --full-rebuild` による自動クリア（推奨）**
+
+設定変更後や全件再転送したい場合は、手動削除ではなく `--full-rebuild` を使うと安全です。  
+キャッシュ・スキップリスト・設定ハッシュをすべてクリアしてからフルスキャン＆全件転送します。
+
+```bash
+dotnet run --project src/CloudMigrator.Cli -- transfer --full-rebuild
+```
+
+また、設定ファイル（`configs/config.json`）を変更して `transfer` を実行すると、変更が自動検知されてキャッシュがクリアされます。
+
+**手動で個別に削除したい場合**
+
+```powershell
+# キャッシュのみ削除（スキップリストは保持 → 次回クロールは再実行、転送済みはスキップ維持）
+Remove-Item logs/onedrive_files.json -ErrorAction SilentlyContinue
+Remove-Item logs/sharepoint_current_files.json -ErrorAction SilentlyContinue
+Remove-Item logs/dropbox_files.json -ErrorAction SilentlyContinue
+
+# スキップリストのみ削除（次回 transfer で全件再転送される）
+Remove-Item logs/skip_list.json -ErrorAction SilentlyContinue
+
+# キャッシュ・スキップリスト・設定ハッシュをすべて削除
+Remove-Item logs/onedrive_files.json, logs/sharepoint_current_files.json, logs/dropbox_files.json, logs/skip_list.json, logs/config_hash.txt -ErrorAction SilentlyContinue
+```
+
+> **注意**: `skip_list.json` を削除すると、次回の `transfer` で転送先の再クロールが走り、全ファイルが再転送対象になります。意図せず重複アップロードしないよう注意してください。
+
+### 5.5 全件再転送（設定変更後・障害復旧）
+
+設定（転送元/転送先フォルダ等）を変更した場合は `--full-rebuild` でキャッシュとスキップリストをクリアしてから転送します。
+
+```bash
+# キャッシュ・スキップリストをクリアしてフルスキャン＆全件転送
+dotnet run --project src/CloudMigrator.Cli -- transfer --full-rebuild
+
+# キャッシュはそのままでスキップリストのみ再構築（転送はしない）
+dotnet run --project src/CloudMigrator.Cli -- rebuild-skiplist
+```
+
+### 5.5 転送後の検証
+
+```bash
+# 両側をクロールして比較（OneDrive に残っている未転送ファイルを一覧表示）
+dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right sharepoint --top 100
+
+# OneDrive → Dropbox の場合
+dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right dropbox --top 100
+
+# ファイル名・パスの整合性を検証（文字化け・パス重複 等）
+dotnet run --project src/CloudMigrator.Cli -- file-crawler validate --source onedrive --top 50
+
+# スキップリスト上位件数を確認（何件転送済みか把握）
+dotnet run --project src/CloudMigrator.Cli -- file-crawler skiplist --top 50
+
+# 転送先フォルダ構造をブラウズ
+dotnet run --project src/CloudMigrator.Cli -- file-crawler explore --source sharepoint --top 30
+dotnet run --project src/CloudMigrator.Cli -- file-crawler explore --source dropbox --top 30
+```
 
 ## 6. Microsoft MCP Server for Enterprise の設定（任意）
 

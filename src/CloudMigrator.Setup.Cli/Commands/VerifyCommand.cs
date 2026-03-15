@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Providers.Graph.Auth;
@@ -34,11 +35,16 @@ internal static class VerifyCommand
         {
             Description = "SharePoint の疎通確認をスキップします",
         };
+        var skipDropboxOpt = new Option<bool>("--skip-dropbox")
+        {
+            Description = "Dropbox の疎通確認をスキップします",
+        };
 
         cmd.Add(configPathOpt);
         cmd.Add(timeoutSecOpt);
         cmd.Add(skipOnedriveOpt);
         cmd.Add(skipSharepointOpt);
+        cmd.Add(skipDropboxOpt);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
@@ -46,7 +52,8 @@ internal static class VerifyCommand
             var timeoutSec = parseResult.GetValue(timeoutSecOpt);
             var skipOnedrive = parseResult.GetValue(skipOnedriveOpt);
             var skipSharepoint = parseResult.GetValue(skipSharepointOpt);
-            await RunAsync(configPath, timeoutSec, skipOnedrive, skipSharepoint, ct).ConfigureAwait(false);
+            var skipDropbox = parseResult.GetValue(skipDropboxOpt);
+            await RunAsync(configPath, timeoutSec, skipOnedrive, skipSharepoint, skipDropbox, ct).ConfigureAwait(false);
         });
 
         return cmd;
@@ -57,7 +64,8 @@ internal static class VerifyCommand
         int timeoutSec,
         bool skipOnedrive,
         bool skipSharepoint,
-        CancellationToken ct)
+        bool skipDropbox = false,
+        CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -65,8 +73,9 @@ internal static class VerifyCommand
         var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
             ?? new MigratorOptions();
         var clientSecret = AppConfiguration.GetGraphClientSecret();
+        var dropboxToken = AppConfiguration.GetDropboxAccessToken();
 
-        var errors = BuildPreflightErrors(options, clientSecret, skipOnedrive, skipSharepoint);
+        var errors = BuildPreflightErrors(options, clientSecret, dropboxToken, skipOnedrive, skipSharepoint, skipDropbox);
         if (errors.Count > 0)
         {
             foreach (var error in errors)
@@ -140,6 +149,18 @@ internal static class VerifyCommand
                 ct).ConfigureAwait(false));
         }
 
+        if (!skipDropbox)
+        {
+            var isDropboxDest = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+            if (isDropboxDest || !string.IsNullOrWhiteSpace(dropboxToken))
+            {
+                probes.Add(await ProbeDropboxAsync(
+                    dropboxToken,
+                    timeoutSec,
+                    ct).ConfigureAwait(false));
+            }
+        }
+
         foreach (var probe in probes)
         {
             if (probe.Success)
@@ -155,8 +176,10 @@ internal static class VerifyCommand
     internal static IReadOnlyList<string> BuildPreflightErrors(
         MigratorOptions options,
         string clientSecret,
+        string dropboxToken,
         bool skipOnedrive,
-        bool skipSharepoint)
+        bool skipSharepoint,
+        bool skipDropbox = false)
     {
         var errors = new List<string>();
 
@@ -178,7 +201,74 @@ internal static class VerifyCommand
                 errors.Add("MIGRATOR__GRAPH__SHAREPOINTDRIVEID が未設定です。");
         }
 
+        var isDropboxDest = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+        if (!skipDropbox && isDropboxDest && string.IsNullOrWhiteSpace(dropboxToken))
+            errors.Add("MIGRATOR__DROPBOX__ACCESSTOKEN が未設定です。");
+
         return errors;
+    }
+
+    internal static async Task<VerifyProbeResult> ProbeDropboxAsync(
+        string accessToken,
+        int timeoutSec,
+        CancellationToken ct)
+    {
+        const string name = "dropbox.currentAccount";
+
+        if (string.IsNullOrWhiteSpace(accessToken))
+            return VerifyProbeResult.Fail(name, "MIGRATOR__DROPBOX__ACCESSTOKEN が未設定です。");
+
+        using var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(Math.Max(5, timeoutSec)),
+        };
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                "https://api.dropboxapi.com/2/users/get_current_account");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            request.Content = new StringContent("null", Encoding.UTF8, "application/json");
+
+            using var response = await httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var snippet = TrimForLog(body, maxLength: 180);
+                return VerifyProbeResult.Fail(name, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {snippet}");
+            }
+
+            var email = TryReadDropboxEmail(body);
+            return string.IsNullOrWhiteSpace(email)
+                ? VerifyProbeResult.Ok(name, "疎通成功")
+                : VerifyProbeResult.Ok(name, $"疎通成功 (email={email})");
+        }
+        catch (HttpRequestException ex)
+        {
+            return VerifyProbeResult.Fail(name, ex.Message);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return VerifyProbeResult.Fail(name, "タイムアウトが発生しました。");
+        }
+    }
+
+    internal static string? TryReadDropboxEmail(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("email", out var emailProp))
+                return emailProp.GetString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static async Task<VerifyProbeResult> ProbeAsync(

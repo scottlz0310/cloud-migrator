@@ -506,7 +506,7 @@ internal static class BootstrapCommand
         {
             console.WriteLine("Graph API の疎通確認（verify）を実行します...");
             // Dropbox 転送先の場合は SharePoint 疎通確認をスキップ
-            await VerifyCommand.RunAsync(configPath, timeoutSec: 30, skipOnedrive: false, skipSharepoint: isDropboxDest, ct).ConfigureAwait(false);
+            await VerifyCommand.RunAsync(configPath, timeoutSec: 30, skipOnedrive: false, skipSharepoint: isDropboxDest, skipDropbox: !isDropboxDest, ct: ct).ConfigureAwait(false);
             console.WriteLine();
         }
 
