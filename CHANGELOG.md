@@ -8,6 +8,17 @@
 ## [Unreleased]
 
 ### Added
+- **`MigratorOptions`: `MaxParallelFolderCreations` プロパティ追加（デフォルト 4）（PR #38）**
+  - フォルダ先行作成フェーズとファイル転送フェーズの並列度を独立して制御可能に
+  - `configs/config.json` の `maxParallelFolderCreations` に任意の値を設定可能
+
+### Fixed
+- **フォルダ先行作成フェーズの Graph API クォータ枯渇クラッシュ（PR #38）**
+  - フォルダ作成ループが `MaxParallelTransfers`（デフォルト 4、config: 32）を流用していたため
+    大量フォルダ構成で HTTP 429 TooManyRequests を即時枯渇させてクラッシュする問題を修正
+  - `TransferEngine` のフォルダ作成ループを `MaxParallelFolderCreations` に切り替え
+
+### Added
 - **フォルダ先行作成の並列化・GET優先・スキップキャッシュ（PR #36）**
   - `TransferEngine.RunAsync`: フォルダパスを深さ別グループで並列作成（FR-06 強化）
     - `folderPathSet.GroupBy(深さ).OrderBy(深さ)` でグループ化し `Parallel.ForEachAsync` で並列処理
