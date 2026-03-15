@@ -157,4 +157,4 @@
 - [x] `TransferEngine.RunAsync`: フォルダ作成ループを `MaxParallelFolderCreations` に切り替え
   - 修正前: `MaxParallelTransfers`（config: 32）を流用 → 3000+ フォルダで即クォータ枯渇・クラッシュ
   - 修正後: `MaxParallelFolderCreations`（config: 8）で制御 → 24,471 ファイル完走（57:07）
-- [x] ユニットテスト 188 件全通過確認、PR #38 作成済み
+- [x] ユニットテスト 188 件全通過確認、PR #38 マージ済み
