@@ -127,7 +127,10 @@ public interface IMigrationPipeline
 public interface ITransferStateDb : IAsyncDisposable
 {
     Task InitializeAsync(CancellationToken ct);
-    Task<TransferStatus> GetStatusAsync(string path, string name, CancellationToken ct);
+    /// <summary>
+    /// レコードが存在しない場合は null を返す。null → UpsertPendingAsync で INSERT する設計フローと整合。
+    /// </summary>
+    Task<TransferStatus?> GetStatusAsync(string path, string name, CancellationToken ct);
     Task UpsertPendingAsync(StorageItem item, CancellationToken ct);
     Task MarkDoneAsync(string path, string name, CancellationToken ct);
     Task MarkFailedAsync(string path, string name, string error, CancellationToken ct);
