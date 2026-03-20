@@ -74,8 +74,14 @@ internal static class VerifyCommand
             ?? new MigratorOptions();
         var clientSecret = AppConfiguration.GetGraphClientSecret();
         var dropboxToken = AppConfiguration.GetDropboxAccessToken();
+        var dropboxRefreshToken = AppConfiguration.GetDropboxRefreshToken();
+        var dropboxClientId = AppConfiguration.GetDropboxClientId();
+        var dropboxClientSecret = AppConfiguration.GetDropboxClientSecret();
+        var hasDropboxRefresh = !string.IsNullOrWhiteSpace(dropboxRefreshToken)
+            && !string.IsNullOrWhiteSpace(dropboxClientId)
+            && !string.IsNullOrWhiteSpace(dropboxClientSecret);
 
-        var errors = BuildPreflightErrors(options, clientSecret, dropboxToken, skipOnedrive, skipSharepoint, skipDropbox);
+        var errors = BuildPreflightErrors(options, clientSecret, dropboxToken, hasDropboxRefresh, skipOnedrive, skipSharepoint, skipDropbox);
         if (errors.Count > 0)
         {
             foreach (var error in errors)
@@ -156,6 +162,9 @@ internal static class VerifyCommand
             {
                 probes.Add(await ProbeDropboxAsync(
                     dropboxToken,
+                    dropboxRefreshToken,
+                    dropboxClientId,
+                    dropboxClientSecret,
                     timeoutSec,
                     ct).ConfigureAwait(false));
             }
@@ -177,6 +186,7 @@ internal static class VerifyCommand
         MigratorOptions options,
         string clientSecret,
         string dropboxToken,
+        bool hasDropboxRefresh,
         bool skipOnedrive,
         bool skipSharepoint,
         bool skipDropbox = false)
@@ -202,20 +212,29 @@ internal static class VerifyCommand
         }
 
         var isDropboxDest = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
-        if (!skipDropbox && isDropboxDest && string.IsNullOrWhiteSpace(dropboxToken))
-            errors.Add("MIGRATOR__DROPBOX__ACCESSTOKEN が未設定です。");
+        if (!skipDropbox && isDropboxDest
+            && string.IsNullOrWhiteSpace(dropboxToken)
+            && !hasDropboxRefresh)
+            errors.Add("MIGRATOR__DROPBOX__ACCESSTOKEN または リフレッシュトークン（MIGRATOR__DROPBOX__REFRESHTOKEN / CLIENTID / CLIENTSECRET）が未設定です。");
 
         return errors;
     }
 
     internal static async Task<VerifyProbeResult> ProbeDropboxAsync(
         string accessToken,
+        string refreshToken,
+        string clientId,
+        string clientSecret,
         int timeoutSec,
         CancellationToken ct)
     {
         const string name = "dropbox.currentAccount";
 
-        if (string.IsNullOrWhiteSpace(accessToken))
+        var hasRefreshCapability = !string.IsNullOrWhiteSpace(refreshToken)
+            && !string.IsNullOrWhiteSpace(clientId)
+            && !string.IsNullOrWhiteSpace(clientSecret);
+
+        if (string.IsNullOrWhiteSpace(accessToken) && !hasRefreshCapability)
             return VerifyProbeResult.Fail(name, "MIGRATOR__DROPBOX__ACCESSTOKEN が未設定です。");
 
         using var httpClient = new HttpClient
@@ -225,6 +244,16 @@ internal static class VerifyCommand
 
         try
         {
+            // アクセストークンが空でリフレッシュ可能なら事前取得
+            if (string.IsNullOrWhiteSpace(accessToken) && hasRefreshCapability)
+            {
+                accessToken = await TryRefreshDropboxTokenAsync(
+                    httpClient, refreshToken, clientId, clientSecret, ct).ConfigureAwait(false)
+                    ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(accessToken))
+                    return VerifyProbeResult.Fail(name, "リフレッシュトークンによるアクセストークン取得に失敗しました。");
+            }
+
             using var request = new HttpRequestMessage(
                 HttpMethod.Post,
                 "https://api.dropboxapi.com/2/users/get_current_account");
@@ -233,6 +262,35 @@ internal static class VerifyCommand
 
             using var response = await httpClient.SendAsync(request, ct).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            // 401 かつリフレッシュ可能なら一度だけ更新して再試行
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && hasRefreshCapability)
+            {
+                var refreshed = await TryRefreshDropboxTokenAsync(
+                    httpClient, refreshToken, clientId, clientSecret, ct).ConfigureAwait(false);
+                if (refreshed is not null)
+                {
+                    using var retry = new HttpRequestMessage(
+                        HttpMethod.Post,
+                        "https://api.dropboxapi.com/2/users/get_current_account");
+                    retry.Headers.Authorization = new AuthenticationHeaderValue("Bearer", refreshed);
+                    retry.Content = new StringContent("null", Encoding.UTF8, "application/json");
+
+                    using var retryResp = await httpClient.SendAsync(retry, ct).ConfigureAwait(false);
+                    body = await retryResp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+                    if (!retryResp.IsSuccessStatusCode)
+                    {
+                        var snippet = TrimForLog(body, maxLength: 180);
+                        return VerifyProbeResult.Fail(name, $"HTTP {(int)retryResp.StatusCode} {retryResp.ReasonPhrase}: {snippet}");
+                    }
+
+                    var emailRetry = TryReadDropboxEmail(body);
+                    return string.IsNullOrWhiteSpace(emailRetry)
+                        ? VerifyProbeResult.Ok(name, "疎通成功（アクセストークンを自動更新しました）")
+                        : VerifyProbeResult.Ok(name, $"疎通成功（アクセストークンを自動更新しました, email={emailRetry})");
+                }
+            }
 
             if (!response.IsSuccessStatusCode)
             {
@@ -252,6 +310,43 @@ internal static class VerifyCommand
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             return VerifyProbeResult.Fail(name, "タイムアウトが発生しました。");
+        }
+    }
+
+    private static async Task<string?> TryRefreshDropboxTokenAsync(
+        HttpClient httpClient,
+        string refreshToken,
+        string clientId,
+        string clientSecret,
+        CancellationToken ct)
+    {
+        try
+        {
+            var form = new Dictionary<string, string>
+            {
+                ["refresh_token"] = refreshToken,
+                ["grant_type"] = "refresh_token",
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+            };
+
+            using var resp = await httpClient.PostAsync(
+                "https://api.dropboxapi.com/oauth2/token",
+                new FormUrlEncodedContent(form),
+                ct).ConfigureAwait(false);
+
+            if (!resp.IsSuccessStatusCode)
+                return null;
+
+            var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("access_token", out var prop)
+                ? prop.GetString()
+                : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 

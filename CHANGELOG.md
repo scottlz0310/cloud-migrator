@@ -8,6 +8,12 @@
 ## [Unreleased]
 
 ### Added
+- **`setup verify` コマンドの Dropbox OAuth2 リフレッシュトークン対応**
+  - `VerifyCommand.BuildPreflightErrors()`: `hasDropboxRefresh` パラメータ追加。アクセストークン未設定でもリフレッシュ資格情報（`REFRESHTOKEN` / `CLIENTID` / `CLIENTSECRET`）が揃っている場合はエラーを報告しない
+  - `VerifyCommand.ProbeDropboxAsync()`: リフレッシュ資格情報を引数で受け取り、アクセストークンが空の場合に事前取得、401 レスポンス時に自動リフレッシュ + 再試行する実装を追加
+  - `usage.md`: 「4.1 Dropbox 認証情報の取得」セクション追加（`Get-DropboxToken.ps1` ウィザード手順・手動手順）
+
+### Added
 - **Dropbox OAuth2 アクセストークン自動リフレッシュ（feat/dropbox-oauth2-auto-refresh）**
   - `DropboxStorageProvider`: リフレッシュトークン資格情報（`refreshToken` / `clientId` / `clientSecret`）をオプション引数として受け取る実装を追加
   - `SemaphoreSlim(1,1)` で保護された `RefreshAccessTokenAsync()` を実装。複数並列ワーカーが同時 401 を受けても 1 回だけトークン更新を行う
