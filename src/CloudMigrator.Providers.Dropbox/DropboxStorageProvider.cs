@@ -259,8 +259,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
         return new StoragePage
         {
-            Items   = items,
-            Cursor  = response.Cursor,
+            Items = items,
+            Cursor = response.Cursor,
             HasMore = response.HasMore,
         };
     }

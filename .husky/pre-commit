@@ -1,0 +1,7 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+dotnet husky run
+
+
+dotnet format CloudMigrator.slnx --verify-no-changes

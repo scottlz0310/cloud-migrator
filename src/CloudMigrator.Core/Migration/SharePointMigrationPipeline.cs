@@ -22,10 +22,10 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         string destRoot,
         ILogger<SharePointMigrationPipeline> logger)
     {
-        _engine      = engine;
+        _engine = engine;
         _sourceItems = sourceItems;
-        _destRoot    = destRoot;
-        _logger      = logger;
+        _destRoot = destRoot;
+        _logger = logger;
     }
 
     /// <inheritdoc/>

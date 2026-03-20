@@ -74,7 +74,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         return new TransferSummary
         {
             Success = success,
-            Failed  = failed,
+            Failed = failed,
             Skipped = 0,
             Elapsed = sw.Elapsed,
         };
@@ -163,7 +163,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         ChannelReader<TransferJob> reader, CancellationToken ct)
     {
         var success = 0;
-        var failed  = 0;
+        var failed = 0;
 
         var controller = _concurrencyController;
         var maxDegree = controller?.MaxDegree ?? _options.MaxParallelTransfers;
@@ -173,7 +173,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
             new ParallelOptions
             {
                 MaxDegreeOfParallelism = maxDegree,
-                CancellationToken      = ct,
+                CancellationToken = ct,
             },
             async (job, itemCt) =>
             {
@@ -251,11 +251,11 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         {
             Source = new StorageItem
             {
-                Id        = record.SourceId,
-                Name      = record.Name,
-                Path      = record.Path,
+                Id = record.SourceId,
+                Name = record.Name,
+                Path = record.Path,
                 SizeBytes = record.SizeBytes,
-                IsFolder  = false,
+                IsFolder = false,
             },
             DestinationRoot = _options.DestinationRoot,
         };

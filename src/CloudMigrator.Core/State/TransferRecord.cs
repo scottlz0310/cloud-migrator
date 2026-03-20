@@ -6,28 +6,28 @@ namespace CloudMigrator.Core.State;
 public sealed record TransferRecord
 {
     /// <summary>転送元プロバイダー内部 ID（OneDrive driveItem.id 等）。クラッシュリカバリ時の再ダウンロードに使用。</summary>
-    public required string SourceId  { get; init; }
+    public required string SourceId { get; init; }
 
     /// <summary>ルートからの相対パス（末尾スラッシュなし）</summary>
-    public required string Path      { get; init; }
+    public required string Path { get; init; }
 
     /// <summary>ファイル名（パス区切りなし）</summary>
-    public required string Name      { get; init; }
+    public required string Name { get; init; }
 
     /// <summary>ファイルサイズ（バイト）。記録用（スキップ判定には使用しない）</summary>
-    public long?   SizeBytes         { get; init; }
+    public long? SizeBytes { get; init; }
 
     /// <summary>最終更新日時（ISO 8601）。記録用（スキップ判定には使用しない）</summary>
-    public string? Modified          { get; init; }
+    public string? Modified { get; init; }
 
     /// <summary>転送ステータス</summary>
     public required TransferStatus Status { get; init; }
 
     /// <summary>リトライ回数。<see cref="SqliteTransferStateDb.MaxRetry"/> 以上で PermanentFailed に遷移。</summary>
-    public int RetryCount            { get; init; }
+    public int RetryCount { get; init; }
 
     /// <summary>失敗時エラーメッセージ</summary>
-    public string? Error             { get; init; }
+    public string? Error { get; init; }
 
     /// <summary>最終更新日時（UTC）</summary>
     public required DateTimeOffset UpdatedAt { get; init; }

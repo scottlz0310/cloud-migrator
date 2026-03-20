@@ -15,9 +15,9 @@ namespace CloudMigrator.Tests.Unit;
 public class DropboxMigrationPipelineTests
 {
     private readonly Mock<IStorageProvider> _mockSource = new(MockBehavior.Loose);
-    private readonly Mock<IStorageProvider> _mockDest   = new(MockBehavior.Loose);
-    private readonly Mock<ITransferStateDb> _mockDb     = new(MockBehavior.Loose);
-    private readonly MigratorOptions        _options    = new() { DestinationRoot = "/dropbox-root" };
+    private readonly Mock<IStorageProvider> _mockDest = new(MockBehavior.Loose);
+    private readonly Mock<ITransferStateDb> _mockDb = new(MockBehavior.Loose);
+    private readonly MigratorOptions _options = new() { DestinationRoot = "/dropbox-root" };
 
     private DropboxMigrationPipeline CreatePipeline() =>
         new(_mockSource.Object, _mockDest.Object, _mockDb.Object, _options,
@@ -176,11 +176,11 @@ public class DropboxMigrationPipelineTests
         // 検証対象: Phase A リカバリ  目的: DB の pending レコードが転送され、SourceId が使用される
         var record = new TransferRecord
         {
-            SourceId  = "od-recovery-id",
-            Path      = "docs",
-            Name      = "recover.txt",
+            SourceId = "od-recovery-id",
+            Path = "docs",
+            Name = "recover.txt",
             SizeBytes = 256,
-            Status    = TransferStatus.Pending,
+            Status = TransferStatus.Pending,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
 

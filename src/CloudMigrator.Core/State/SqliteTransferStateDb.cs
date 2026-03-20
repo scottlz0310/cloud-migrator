@@ -158,15 +158,15 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
         {
             yield return new TransferRecord
             {
-                Path       = reader.GetString(0),
-                Name       = reader.GetString(1),
-                SourceId   = reader.GetString(2),
-                SizeBytes  = reader.IsDBNull(3) ? null : reader.GetInt64(3),
-                Modified   = reader.IsDBNull(4) ? null : reader.GetString(4),
-                Status     = ParseStatus(reader.GetString(5)),
+                Path = reader.GetString(0),
+                Name = reader.GetString(1),
+                SourceId = reader.GetString(2),
+                SizeBytes = reader.IsDBNull(3) ? null : reader.GetInt64(3),
+                Modified = reader.IsDBNull(4) ? null : reader.GetString(4),
+                Status = ParseStatus(reader.GetString(5)),
                 RetryCount = reader.GetInt32(6),
-                Error      = reader.IsDBNull(7) ? null : reader.GetString(7),
-                UpdatedAt  = DateTimeOffset.Parse(reader.GetString(8)),
+                Error = reader.IsDBNull(7) ? null : reader.GetString(7),
+                UpdatedAt = DateTimeOffset.Parse(reader.GetString(8)),
             };
         }
     }
@@ -196,11 +196,11 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
 
     internal static TransferStatus ParseStatus(string status) => status switch
     {
-        "pending"          => TransferStatus.Pending,
-        "processing"       => TransferStatus.Processing,
-        "done"             => TransferStatus.Done,
-        "failed"           => TransferStatus.Failed,
+        "pending" => TransferStatus.Pending,
+        "processing" => TransferStatus.Processing,
+        "done" => TransferStatus.Done,
+        "failed" => TransferStatus.Failed,
         "permanent_failed" => TransferStatus.PermanentFailed,
-        _                  => TransferStatus.Pending,
+        _ => TransferStatus.Pending,
     };
 }

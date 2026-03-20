@@ -194,14 +194,14 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         // 検証対象: GetPendingStreamAsync  目的: pending/processing/failed のみを返す（done/permanent_failed は除外）
         await _db.InitializeAsync(CancellationToken.None);
 
-        await _db.UpsertPendingAsync(MakeItem("p", "pending.txt", "id1"),   CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "pending.txt", "id1"), CancellationToken.None);
         await _db.UpsertPendingAsync(MakeItem("p", "processing.txt", "id2"), CancellationToken.None);
-        await _db.UpsertPendingAsync(MakeItem("p", "failed.txt", "id3"),    CancellationToken.None);
-        await _db.UpsertPendingAsync(MakeItem("p", "done.txt", "id4"),      CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "failed.txt", "id3"), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "done.txt", "id4"), CancellationToken.None);
 
         await _db.MarkProcessingAsync("p", "processing.txt", CancellationToken.None);
-        await _db.MarkFailedAsync("p", "failed.txt", "err",   CancellationToken.None);
-        await _db.MarkDoneAsync("p", "done.txt",              CancellationToken.None);
+        await _db.MarkFailedAsync("p", "failed.txt", "err", CancellationToken.None);
+        await _db.MarkDoneAsync("p", "done.txt", CancellationToken.None);
 
         var records = new List<TransferRecord>();
         await foreach (var r in _db.GetPendingStreamAsync(CancellationToken.None))
