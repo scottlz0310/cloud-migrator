@@ -215,7 +215,7 @@ internal static class VerifyCommand
         if (!skipDropbox && isDropboxDest
             && string.IsNullOrWhiteSpace(dropboxToken)
             && !hasDropboxRefresh)
-            errors.Add("MIGRATOR__DROPBOX__ACCESSTOKEN または リフレッシュトークン（MIGRATOR__DROPBOX__REFRESHTOKEN / CLIENTID / CLIENTSECRET）が未設定です。");
+            errors.Add("MIGRATOR__DROPBOX__ACCESSTOKEN または リフレッシュトークン（MIGRATOR__DROPBOX__REFRESHTOKEN / MIGRATOR__DROPBOX__CLIENTID / MIGRATOR__DROPBOX__CLIENTSECRET）が未設定です。");
 
         return errors;
     }
@@ -268,7 +268,7 @@ internal static class VerifyCommand
             {
                 var refreshed = await TryRefreshDropboxTokenAsync(
                     httpClient, refreshToken, clientId, clientSecret, ct).ConfigureAwait(false);
-                if (refreshed is not null)
+                if (!string.IsNullOrWhiteSpace(refreshed))
                 {
                     using var retry = new HttpRequestMessage(
                         HttpMethod.Post,
@@ -320,6 +320,7 @@ internal static class VerifyCommand
         string clientSecret,
         CancellationToken ct)
     {
+        // Try* パターン: 失敗時は例外を投げず null を返す
         var form = new Dictionary<string, string>
         {
             ["refresh_token"] = refreshToken,
@@ -328,32 +329,27 @@ internal static class VerifyCommand
             ["client_secret"] = clientSecret,
         };
 
-        using var resp = await httpClient.PostAsync(
-            "https://api.dropboxapi.com/oauth2/token",
-            new FormUrlEncodedContent(form),
-            ct).ConfigureAwait(false);
-
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-
-        if (!resp.IsSuccessStatusCode)
-        {
-            // 非 2xx 応答時はステータスコードと短い本文スニペットを含めて呼び出し元に伝える。
-            var snippet = TrimForLog(body, maxLength: 180);
-            throw new HttpRequestException(
-                $"Dropbox トークン更新失敗: HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {snippet}");
-        }
-
         try
         {
+            using var resp = await httpClient.PostAsync(
+                "https://api.dropboxapi.com/oauth2/token",
+                new FormUrlEncodedContent(form),
+                ct).ConfigureAwait(false);
+
+            if (!resp.IsSuccessStatusCode)
+                return null;
+
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
             using var doc = JsonDocument.Parse(body);
-            return doc.RootElement.TryGetProperty("access_token", out var prop)
+            var token = doc.RootElement.TryGetProperty("access_token", out var prop)
                 ? prop.GetString()
                 : null;
+            return string.IsNullOrWhiteSpace(token) ? null : token;
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is HttpRequestException or JsonException)
         {
-            // 成功応答本文にはアクセストークンが含まれる可能性があるため、本文自体はメッセージに含めない。
-            throw new HttpRequestException("Dropbox トークン応答の JSON 解析に失敗しました。", ex);
+            return null;
         }
     }
 

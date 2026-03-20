@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Dropbox App Console で作成したアプリの App Key / App Secret を入力するだけで、
-    ブラウザ認証 → 認可コード取得 → トークン交換 → .env への書き込みを一括で行います。
+    ブラウザ認証（Authorization Code フロー + client_secret 交換）→ トークン取得 → .env への書き込みを一括で行います。
 
 .EXAMPLE
     .\tools\Get-DropboxToken.ps1
@@ -144,6 +144,13 @@ $lines = Set-EnvLine $lines "MIGRATOR__DROPBOX__CLIENTSECRET" $appSecret
 
 # BOM なし UTF-8 で .env を書き込み（PowerShell 5.1 の Set-Content -Encoding UTF8 は BOM 付きのため非使用）
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+# EnvPath の親ディレクトリが存在しない場合は作成してから書き込む
+$envDir = Split-Path -Parent $EnvPath
+if ($envDir -and -not (Test-Path -LiteralPath $envDir)) {
+    Write-Host "EnvPath のディレクトリ '$envDir' が存在しないため作成します..." -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+}
 [System.IO.File]::WriteAllLines($EnvPath, $lines, $utf8NoBom)
 
 Write-Ok "$EnvPath を更新しました。"
