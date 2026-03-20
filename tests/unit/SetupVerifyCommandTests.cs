@@ -19,6 +19,7 @@ public class SetupVerifyCommandTests
             options,
             clientSecret: string.Empty,
             dropboxToken: string.Empty,
+            hasDropboxRefresh: false,
             skipOnedrive: false,
             skipSharepoint: false);
 
@@ -40,6 +41,7 @@ public class SetupVerifyCommandTests
             options,
             clientSecret: string.Empty,
             dropboxToken: string.Empty,
+            hasDropboxRefresh: false,
             skipOnedrive: true,
             skipSharepoint: false);
 
@@ -56,6 +58,7 @@ public class SetupVerifyCommandTests
             options,
             clientSecret: string.Empty,
             dropboxToken: string.Empty,
+            hasDropboxRefresh: false,
             skipOnedrive: false,
             skipSharepoint: true);
 
@@ -73,10 +76,28 @@ public class SetupVerifyCommandTests
             options,
             clientSecret: "secret",
             dropboxToken: string.Empty,
+            hasDropboxRefresh: false,
             skipOnedrive: true,
             skipSharepoint: true);
 
         errors.Should().Contain(x => x.Contains("MIGRATOR__DROPBOX__ACCESSTOKEN"));
+    }
+
+    [Fact]
+    public void BuildPreflightErrors_ShouldNotReportDropboxToken_WhenRefreshCredentialsPresent()
+    {
+        // 検証対象: BuildPreflightErrors  目的: アクセストークン未設定でもリフレッシュ資格情報がある場合はエラーを返さないこと
+        var options = new MigratorOptions { DestinationProvider = "dropbox" };
+
+        var errors = VerifyCommand.BuildPreflightErrors(
+            options,
+            clientSecret: "secret",
+            dropboxToken: string.Empty,
+            hasDropboxRefresh: true,
+            skipOnedrive: true,
+            skipSharepoint: true);
+
+        errors.Should().NotContain(x => x.Contains("MIGRATOR__DROPBOX__ACCESSTOKEN"));
     }
 
     [Fact]
@@ -89,6 +110,7 @@ public class SetupVerifyCommandTests
             options,
             clientSecret: "secret",
             dropboxToken: string.Empty,
+            hasDropboxRefresh: false,
             skipOnedrive: true,
             skipSharepoint: true);
 
@@ -105,6 +127,7 @@ public class SetupVerifyCommandTests
             options,
             clientSecret: "secret",
             dropboxToken: string.Empty,
+            hasDropboxRefresh: false,
             skipOnedrive: true,
             skipSharepoint: true,
             skipDropbox: true);

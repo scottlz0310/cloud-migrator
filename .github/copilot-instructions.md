@@ -90,8 +90,11 @@ git checkout -b feature/phase{N}-{名前}  # ブランチ作成
 dotnet build CloudMigrator.slnx          # ローカルビルド確認
 dotnet test tests/unit/...               # テスト確認
 ```
+### 2. CHANGELOG・task.md 更新
+- `CHANGELOG.md` に当フェーズの変更内容を追記（Keep a Changelog 形式、日付入り）
+- `task.md` の完了チェックボックスを更新
 
-### 2. コミット & PR
+### 3. コミット & PR
 ```bash
 git add -A
 git commit -m "feat: Phase{N} - {概要}" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
@@ -99,11 +102,11 @@ git push origin feature/phase{N}-{名前}
 gh pr create --title "Phase{N}: {タイトル}" --body "{説明}"
 ```
 
-### 3. CI 監視（自動）
+### 4. CI 監視（自動）
 - **CI**: ubuntu / windows / macos × .NET 10 の 3 ジョブが全 SUCCESS になるまで待機
 - **Copilot code review**: PR 作成後に自動トリガー
 
-### 4. レビュー対処
+### 5. レビュー対処
 Copilot レビューコメントは以下の基準で対処する：
 
 | 種別 | 対応 |
@@ -116,18 +119,15 @@ Copilot レビューコメントは以下の基準で対処する：
 
 対処後：全スレッドに返信 → GraphQL `resolveReviewThread` で全スレッドを解決済みに。
 
-### 5. マージ条件（全て満たすこと）
+### 6. マージ条件（全て満たすこと）
 - [ ] CI 全ジョブ SUCCESS（実行中なし）
 - [ ] 未解決レビュースレッド 0 件
 - [ ] 全コメントに返信済み
 
-### 6. クリーンアップ
+### 7. クリーンアップ
 ```bash
 git checkout main && git pull origin main
 git branch -d feature/phase{N}-{名前}
 # リモートブランチは GitHub 側の "Delete branch" または PR マージ時自動削除
 ```
 
-### 7. CHANGELOG・task.md 更新
-- `CHANGELOG.md` に当フェーズの変更内容を追記（Keep a Changelog 形式、日付入り）
-- `task.md` の完了チェックボックスを更新

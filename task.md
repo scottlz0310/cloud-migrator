@@ -195,3 +195,11 @@
 - [x] `CliServices`: `DropboxStorageProvider` コンストラクタにリフレッシュ資格情報を渡すよう更新
 - [x] `sample.env`: `MIGRATOR__DROPBOX__REFRESHTOKEN / CLIENTID / CLIENTSECRET` 追加
 - [x] ユニットテスト 203 件全パス
+
+## バグ修正 & 信頼性改善: verify コマンド Dropbox OAuth2 対応（feat/verify-dropbox-oauth2-refresh）
+
+- [x] `VerifyCommand.BuildPreflightErrors`: `hasDropboxRefresh` パラメータ追加（アクセストークン未設定でもリフレッシュ資格情報があればエラー非報告）
+- [x] `VerifyCommand.ProbeDropboxAsync`: リフレッシュ関連引数追加・事前取得・401 自動更新+再試行
+- [x] `VerifyCommand.TryRefreshDropboxTokenAsync`: OAuth2 トークン更新プライベートメソッド追加
+- [x] `SetupVerifyCommandTests`: `hasDropboxRefresh` パラメータ対応 + 新テスト追加（207件全パス）
+- [x] `usage.md`: 「4.1 Dropbox 認証情報の取得」セクション追加（Get-DropboxToken.ps1 ウィザード手順・手動手順）
