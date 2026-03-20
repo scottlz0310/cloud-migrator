@@ -320,33 +320,40 @@ internal static class VerifyCommand
         string clientSecret,
         CancellationToken ct)
     {
+        var form = new Dictionary<string, string>
+        {
+            ["refresh_token"] = refreshToken,
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
+        };
+
+        using var resp = await httpClient.PostAsync(
+            "https://api.dropboxapi.com/oauth2/token",
+            new FormUrlEncodedContent(form),
+            ct).ConfigureAwait(false);
+
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            // 非 2xx 応答時はステータスコードと短い本文スニペットを含めて呼び出し元に伝える。
+            var snippet = TrimForLog(body, maxLength: 180);
+            throw new HttpRequestException(
+                $"Dropbox トークン更新失敗: HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {snippet}");
+        }
+
         try
         {
-            var form = new Dictionary<string, string>
-            {
-                ["refresh_token"] = refreshToken,
-                ["grant_type"] = "refresh_token",
-                ["client_id"] = clientId,
-                ["client_secret"] = clientSecret,
-            };
-
-            using var resp = await httpClient.PostAsync(
-                "https://api.dropboxapi.com/oauth2/token",
-                new FormUrlEncodedContent(form),
-                ct).ConfigureAwait(false);
-
-            if (!resp.IsSuccessStatusCode)
-                return null;
-
-            var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(body);
             return doc.RootElement.TryGetProperty("access_token", out var prop)
                 ? prop.GetString()
                 : null;
         }
-        catch
+        catch (JsonException ex)
         {
-            return null;
+            // 成功応答本文にはアクセストークンが含まれる可能性があるため、本文自体はメッセージに含めない。
+            throw new HttpRequestException("Dropbox トークン応答の JSON 解析に失敗しました。", ex);
         }
     }
 

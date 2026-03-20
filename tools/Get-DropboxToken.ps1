@@ -142,7 +142,9 @@ $lines = Set-EnvLine $lines "MIGRATOR__DROPBOX__REFRESHTOKEN" $refreshToken
 $lines = Set-EnvLine $lines "MIGRATOR__DROPBOX__CLIENTID"     $appKey
 $lines = Set-EnvLine $lines "MIGRATOR__DROPBOX__CLIENTSECRET" $appSecret
 
-$lines | Set-Content $EnvPath -Encoding UTF8
+# BOM なし UTF-8 で .env を書き込み（PowerShell 5.1 の Set-Content -Encoding UTF8 は BOM 付きのため非使用）
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllLines($EnvPath, $lines, $utf8NoBom)
 
 Write-Ok "$EnvPath を更新しました。"
 Write-Host ""
