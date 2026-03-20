@@ -77,6 +77,9 @@ public sealed class PathOptions
     public string DropboxCache { get; set; } = "logs/dropbox_files.json";
     public string TransferLog { get; set; } = "logs/transfer.log";
     public string ConfigHash { get; set; } = "logs/config_hash.txt";
+
+    /// <summary>Dropbox 移行の SQLite 状態 DB ファイルパス。</summary>
+    public string DropboxStateDb { get; set; } = "logs/dropbox_transfer_state.db";
 }
 
 /// <summary>

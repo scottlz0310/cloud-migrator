@@ -1,0 +1,262 @@
+using System.Diagnostics;
+using System.Threading.Channels;
+using CloudMigrator.Core.Configuration;
+using CloudMigrator.Core.State;
+using CloudMigrator.Core.Transfer;
+using CloudMigrator.Providers.Abstractions;
+using Microsoft.Extensions.Logging;
+
+namespace CloudMigrator.Core.Migration;
+
+/// <summary>
+/// OneDrive → Dropbox 移行パイプライン。
+/// ストリーミングクロール + SQLite 状態管理 + Bounded Channel による省メモリ設計。
+/// <list type="bullet">
+///   <item>Phase A（リカバリ）: DB の pending/processing/failed レコードを先行キューイング</item>
+///   <item>Phase B（クロール）: OneDrive ストリーミングクロールで新規アイテムを発見・キューイング</item>
+///   <item>Consumer: AdaptiveConcurrencyController で並列制御しながら Dropbox 転送</item>
+/// </list>
+/// </summary>
+public sealed class DropboxMigrationPipeline : IMigrationPipeline
+{
+    internal const string CursorKey = "dropbox_cursor";
+    internal const string SourceRootPath = "onedrive";
+    private const int ChannelCapacity = 1000;
+
+    private readonly IStorageProvider _sourceProvider;
+    private readonly IStorageProvider _destinationProvider;
+    private readonly ITransferStateDb _stateDb;
+    private readonly MigratorOptions _options;
+    private readonly AdaptiveConcurrencyController? _concurrencyController;
+    private readonly ILogger<DropboxMigrationPipeline> _logger;
+
+    public DropboxMigrationPipeline(
+        IStorageProvider sourceProvider,
+        IStorageProvider destinationProvider,
+        ITransferStateDb stateDb,
+        MigratorOptions options,
+        ILogger<DropboxMigrationPipeline> logger,
+        AdaptiveConcurrencyController? concurrencyController = null)
+    {
+        _sourceProvider = sourceProvider;
+        _destinationProvider = destinationProvider;
+        _stateDb = stateDb;
+        _options = options;
+        _logger = logger;
+        _concurrencyController = concurrencyController;
+    }
+
+    /// <inheritdoc/>
+    public async Task<TransferSummary> RunAsync(CancellationToken ct)
+    {
+        await _stateDb.InitializeAsync(ct).ConfigureAwait(false);
+
+        var sw = Stopwatch.StartNew();
+
+        var channel = Channel.CreateBounded<TransferJob>(new BoundedChannelOptions(ChannelCapacity)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = true,
+        });
+
+        // Producer（Phase A + Phase B）と Consumer を並行実行
+        var producerTask = ProduceAsync(channel.Writer, ct);
+        var (success, failed) = await ConsumeAsync(channel.Reader, ct).ConfigureAwait(false);
+        await producerTask.ConfigureAwait(false);
+
+        sw.Stop();
+
+        _logger.LogInformation(
+            "Dropbox 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
+            success, failed, sw.Elapsed);
+
+        return new TransferSummary
+        {
+            Success = success,
+            Failed  = failed,
+            Skipped = 0,
+            Elapsed = sw.Elapsed,
+        };
+    }
+
+    private async Task ProduceAsync(ChannelWriter<TransferJob> writer, CancellationToken ct)
+    {
+        try
+        {
+            // ── Phase A: DB の未完了・失敗レコードをリカバリキューイング ──────────────
+            var recovered = 0;
+            await foreach (var record in _stateDb.GetPendingStreamAsync(ct).ConfigureAwait(false))
+            {
+                var job = RecordToJob(record);
+                await writer.WriteAsync(job, ct).ConfigureAwait(false);
+                recovered++;
+            }
+
+            if (recovered > 0)
+                _logger.LogInformation("リカバリキューイング: {Count} 件 (pending/processing/failed)", recovered);
+
+            // ── Phase B: ソースクロールで新規アイテムを発見 ──────────────────────────
+            var cursor = await _stateDb.GetCheckpointAsync(CursorKey, ct).ConfigureAwait(false);
+            var pageCount = 0;
+            var newItems = 0;
+
+            while (true)
+            {
+                var page = await _sourceProvider.ListPagedAsync(SourceRootPath, cursor, ct)
+                    .ConfigureAwait(false);
+                pageCount++;
+
+                foreach (var item in page.Items.Where(i => !i.IsFolder))
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var status = await _stateDb.GetStatusAsync(item.Path, item.Name, ct)
+                        .ConfigureAwait(false);
+
+                    // null = 未登録の新規アイテム → INSERT して channel に投入
+                    if (status is null)
+                    {
+                        await _stateDb.UpsertPendingAsync(item, ct).ConfigureAwait(false);
+                        var job = new TransferJob { Source = item, DestinationRoot = _options.DestinationRoot };
+                        await writer.WriteAsync(job, ct).ConfigureAwait(false);
+                        newItems++;
+                    }
+                    // それ以外（pending/processing/failed/done/permanent_failed）はスキップ
+                    // pending/processing/failed → Phase A でキューイング済み
+                    // done/permanent_failed → 転送済み・永続失敗
+                }
+
+                // ページ単位でチェックポイント保存（クロール中断時の再開に備える）
+                if (page.Cursor is not null)
+                    await _stateDb.SaveCheckpointAsync(CursorKey, page.Cursor, ct).ConfigureAwait(false);
+
+                _logger.LogDebug("クロール進捗: ページ {Page}, HasMore={HasMore}", pageCount, page.HasMore);
+
+                if (!page.HasMore)
+                    break;
+
+                cursor = page.Cursor;
+            }
+
+            _logger.LogInformation(
+                "ソースクロール完了: {Pages} ページ, 新規 {New} 件", pageCount, newItems);
+        }
+        catch (OperationCanceledException)
+        {
+            writer.TryComplete();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Producer でエラーが発生しました");
+            writer.Complete(ex);
+            throw;
+        }
+        finally
+        {
+            writer.TryComplete();
+        }
+    }
+
+    private async Task<(int success, int failed)> ConsumeAsync(
+        ChannelReader<TransferJob> reader, CancellationToken ct)
+    {
+        var success = 0;
+        var failed  = 0;
+
+        var controller = _concurrencyController;
+        var maxDegree = controller?.MaxDegree ?? _options.MaxParallelTransfers;
+
+        await Parallel.ForEachAsync(
+            reader.ReadAllAsync(ct),
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = maxDegree,
+                CancellationToken      = ct,
+            },
+            async (job, itemCt) =>
+            {
+                // 動的並列度制御のゲート（AdaptiveConcurrencyController が有効な場合）
+                if (controller is not null)
+                    await controller.AcquireAsync(itemCt).ConfigureAwait(false);
+
+                try
+                {
+                    await TransferItemAsync(job, itemCt).ConfigureAwait(false);
+                    await _stateDb.MarkDoneAsync(job.Source.Path, job.Source.Name, itemCt)
+                        .ConfigureAwait(false);
+                    Interlocked.Increment(ref success);
+                    _logger.LogInformation("Dropbox 転送完了: {SkipKey}", job.Source.SkipKey);
+                    controller?.NotifySuccess();
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Dropbox 転送失敗: {SkipKey}", job.Source.SkipKey);
+                    await _stateDb.MarkFailedAsync(job.Source.Path, job.Source.Name, ex.Message, itemCt)
+                        .ConfigureAwait(false);
+                    Interlocked.Increment(ref failed);
+
+                    // 429 / rate limit 検出 → 動的並列度を減少
+                    if (ex.Message.Contains("429", StringComparison.OrdinalIgnoreCase)
+                        || ex.Message.Contains("too_many", StringComparison.OrdinalIgnoreCase)
+                        || ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        controller?.NotifyRateLimit(null);
+                    }
+                }
+                finally
+                {
+                    controller?.Release();
+                }
+            }).ConfigureAwait(false);
+
+        return (success, failed);
+    }
+
+    /// <summary>1 ファイルをクロスプロバイダー転送する（OneDrive ダウンロード → Dropbox アップロード）。</summary>
+    private async Task TransferItemAsync(TransferJob job, CancellationToken ct)
+    {
+        await _stateDb.MarkProcessingAsync(job.Source.Path, job.Source.Name, ct).ConfigureAwait(false);
+
+        // アップロード直前に親フォルダを随時作成（EnsureFolderAsync）
+        await _destinationProvider.EnsureFolderAsync(job.DestinationPath, ct).ConfigureAwait(false);
+
+        if (job.Source.SizeBytes is null)
+            throw new InvalidOperationException(
+                $"SizeBytes が未設定のため転送できません: {job.Source.SkipKey}");
+
+        var tempPath = await _sourceProvider.DownloadToTempAsync(job.Source, ct).ConfigureAwait(false);
+        try
+        {
+            await _destinationProvider.UploadFromLocalAsync(
+                tempPath,
+                job.Source.SizeBytes.Value,
+                job.DestinationFullPath,
+                ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            try { File.Delete(tempPath); }
+            catch (Exception ex) { _logger.LogWarning(ex, "テンポラリファイルの削除に失敗: {Path}", tempPath); }
+        }
+    }
+
+    private TransferJob RecordToJob(TransferRecord record) =>
+        new TransferJob
+        {
+            Source = new StorageItem
+            {
+                Id        = record.SourceId,
+                Name      = record.Name,
+                Path      = record.Path,
+                SizeBytes = record.SizeBytes,
+                IsFolder  = false,
+            },
+            DestinationRoot = _options.DestinationRoot,
+        };
+}

@@ -208,6 +208,64 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Dropbox のネイティブページング API（<c>files/list_folder</c> / <c>files/list_folder/continue</c>）を使用する。
+    /// <paramref name="cursor"/> が null の場合は先頭ページを取得し、以後は続きを取得する。
+    /// </remarks>
+    public async Task<StoragePage> ListPagedAsync(
+        string rootPath,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAccessTokenConfigured();
+
+        ListFolderResponse response;
+        if (cursor is null)
+        {
+            var crawlPath = ResolveCrawlPath(rootPath);
+            try
+            {
+                response = await PostDropboxApiAsync<ListFolderRequest, ListFolderResponse>(
+                    "files/list_folder",
+                    new ListFolderRequest
+                    {
+                        Path = crawlPath,
+                        Recursive = true,
+                        IncludeDeleted = false,
+                        IncludeHasExplicitSharedMembers = false,
+                        IncludeMountedFolders = true,
+                        IncludeNonDownloadableFiles = false,
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+                when (ex.Message.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation(
+                    "Dropbox パスが存在しません。空ページとして返します: {RootPath}", rootPath);
+                return new StoragePage { Items = [], Cursor = null, HasMore = false };
+            }
+        }
+        else
+        {
+            response = await PostDropboxApiAsync<ListFolderContinueRequest, ListFolderResponse>(
+                "files/list_folder/continue",
+                new ListFolderContinueRequest { Cursor = cursor },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var items = new List<StorageItem>();
+        AddFileEntries(response.Entries, items);
+
+        return new StoragePage
+        {
+            Items   = items,
+            Cursor  = response.Cursor,
+            HasMore = response.HasMore,
+        };
+    }
+
+    /// <inheritdoc/>
     public async Task EnsureFolderAsync(string folderPath, CancellationToken cancellationToken = default)
     {
         EnsureAccessTokenConfigured();

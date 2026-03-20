@@ -8,6 +8,22 @@
 ## [Unreleased]
 
 ### Added
+- **Dropbox最適化パイプライン（IMigrationPipeline + SQLite 状態管理）**
+  - `IMigrationPipeline` インターフェース追加（`src/CloudMigrator.Core/Migration/`）
+  - `TransferRecord` / `TransferStatus` 追加（`src/CloudMigrator.Core/State/`）
+  - `ITransferStateDb` インターフェース追加（クラッシュリカバリ・チェックポイント・ストリーム取得）
+  - `SqliteTransferStateDb` 実装追加（`Microsoft.Data.Sqlite v9.0.5`、WAL モード、MaxRetry=3 で automatic permanent_failed 遷移）
+  - `DropboxMigrationPipeline` 追加：2 フェーズ Producer（Phase A: DBリカバリ / Phase B: ストリーミングクロール）+ Bounded Channel + `Parallel.ForEachAsync` Consumer
+  - `SharePointMigrationPipeline` 追加（既存 `TransferEngine` の薄いラッパー）
+  - `IStorageProvider.ListPagedAsync` デフォルト実装追加（`ListItemsAsync` のラッパー）
+  - `DropboxStorageProvider.ListPagedAsync` オーバーライド追加（Dropbox ネイティブページング: `files/list_folder` / `files/list_folder/continue`）
+  - `MigratorOptions.PathOptions.DropboxStateDb` 追加（デフォルト: `logs/dropbox_transfer_state.db`）
+  - `configs/config.json` に `dropboxStateDb` キー追加
+  - `TransferCommand`: Dropbox 判定→`RunDropboxPipelineAsync` 分岐追加（SQLite DB リセット対応含む）
+  - ユニットテスト追加: `SqliteTransferStateDbTests`（11件）/ `DropboxMigrationPipelineTests`（10件）
+  - 全テスト 233 件 PASS
+
+### Added
 - **`setup verify` コマンドの Dropbox OAuth2 リフレッシュトークン対応**
   - `VerifyCommand.BuildPreflightErrors()`: `hasDropboxRefresh` パラメータ追加。アクセストークン未設定でもリフレッシュ資格情報（`REFRESHTOKEN` / `CLIENTID` / `CLIENTSECRET`）が揃っている場合はエラーを報告しない
   - `VerifyCommand.ProbeDropboxAsync()`: リフレッシュ資格情報を引数で受け取り、アクセストークンが空の場合に事前取得、401 レスポンス時に自動リフレッシュ + 再試行する実装を追加
