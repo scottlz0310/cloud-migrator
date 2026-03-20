@@ -69,74 +69,84 @@ public sealed class TransferEngine
         var sw = Stopwatch.StartNew();
 
         // ─── 1. フォルダを先行作成（親→子の順）(FR-06) ─────────────────
-        // ListItemsAsync がフォルダを返さない実装でも動作するよう、
-        // 1) IsFolder == true なアイテムの SkipKey
-        // 2) 全アイテムの Path から導出したフォルダ階層
-        // の両方から転送先フォルダパスを重複排除して作成する。
+        // AutoCreateParentFolders == true のプロバイダー（Dropbox 等）は
+        // ファイルアップロード時に親フォルダを自動生成するため、このフェーズをスキップする。
         var destRootNormalized = destRoot.TrimEnd('/');
-        var folderPathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // 1) 明示的なフォルダアイテム（存在すれば）
-        foreach (var folder in sourceItems.Where(i => i.IsFolder))
+        if (!_destProvider.AutoCreateParentFolders)
         {
-            var destFolderPath = $"{destRootNormalized}/{folder.SkipKey.TrimStart('/')}";
-            folderPathSet.Add(destFolderPath);
-        }
+            // ListItemsAsync がフォルダを返さない実装でも動作するよう、
+            // 1) IsFolder == true なアイテムの SkipKey
+            // 2) 全アイテムの Path から導出したフォルダ階層
+            // の両方から転送先フォルダパスを重複排除して作成する。
+            var folderPathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // 2) ファイル（およびフォルダ）の Path からフォルダ階層を導出
-        foreach (var item in sourceItems)
-        {
-            if (string.IsNullOrWhiteSpace(item.Path))
-                continue;
-
-            var relativePath = item.Path.Trim('/');
-            if (string.IsNullOrEmpty(relativePath))
-                continue;
-
-            var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            var current = destRootNormalized;
-            foreach (var segment in segments)
+            // 1) 明示的なフォルダアイテム（存在すれば）
+            foreach (var folder in sourceItems.Where(i => i.IsFolder))
             {
-                current = $"{current}/{segment}";
-                folderPathSet.Add(current);
+                var destFolderPath = $"{destRootNormalized}/{folder.SkipKey.TrimStart('/')}";
+                folderPathSet.Add(destFolderPath);
             }
+
+            // 2) ファイル（およびフォルダ）の Path からフォルダ階層を導出
+            foreach (var item in sourceItems)
+            {
+                if (string.IsNullOrWhiteSpace(item.Path))
+                    continue;
+
+                var relativePath = item.Path.Trim('/');
+                if (string.IsNullOrEmpty(relativePath))
+                    continue;
+
+                var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var current = destRootNormalized;
+                foreach (var segment in segments)
+                {
+                    current = $"{current}/{segment}";
+                    folderPathSet.Add(current);
+                }
+            }
+
+            // 親フォルダから順に EnsureFolderAsync を呼び出す。
+            // 同一深さのフォルダは並行処理可能（親は必ず前の深さで作成済み）。
+            var totalFolders = folderPathSet.Count;
+            _logger.LogInformation("フォルダ先行作成: {Count} 件のユニークフォルダを確認・作成中...", totalFolders);
+            int foldersDone = 0;
+
+            // DestinationRoot 自体をフォルダセットに含め、深さ順ループで先に処理されるようにする。
+            if (!string.IsNullOrEmpty(destRootNormalized))
+                folderPathSet.Add(destRootNormalized);
+
+            // 深さの計算は / と \ の両方を区切りとするセグメント数ベースで行う。
+            var byDepth = folderPathSet
+                .GroupBy(p => p.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Length)
+                .OrderBy(g => g.Key);
+
+            foreach (var depthGroup in byDepth)
+            {
+                await Parallel.ForEachAsync(
+                    depthGroup,
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = _options.MaxParallelFolderCreations,
+                        CancellationToken = cancellationToken,
+                    },
+                    async (destFolderPath, ct) =>
+                    {
+                        await _destProvider.EnsureFolderAsync(destFolderPath, ct).ConfigureAwait(false);
+                        var done = Interlocked.Increment(ref foldersDone);
+                        if (done % 100 == 0)
+                            _logger.LogInformation("フォルダ先行作成進捗: {Done}/{Total}", done, totalFolders);
+                    }).ConfigureAwait(false);
+            }
+            _logger.LogInformation("フォルダ先行作成完了: {Count} 件", totalFolders);
         }
-
-        // 親フォルダから順に EnsureFolderAsync を呼び出す。
-        // 同一深さのフォルダは並行処理可能（親は必ず前の深さで作成済み）。
-        var totalFolders = folderPathSet.Count;
-        _logger.LogInformation("フォルダ先行作成: {Count} 件のユニークフォルダを確認・作成中...", totalFolders);
-        int foldersDone = 0;
-
-        // DestinationRoot 自体をフォルダセットに含め、深さ順ループで先に処理されるようにする。
-        // （destRoot は subfolder より必ずセグメント数が少ないため、GroupBy 深さ順で最初に処理される）
-        if (!string.IsNullOrEmpty(destRootNormalized))
-            folderPathSet.Add(destRootNormalized);
-
-        // 深さの計算は / と \ の両方を区切りとするセグメント数ベースで行う（DestinationRoot に \ が
-        // 混在した場合でも親→子の順序が保証される）。
-        var byDepth = folderPathSet
-            .GroupBy(p => p.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Length)
-            .OrderBy(g => g.Key);
-
-        foreach (var depthGroup in byDepth)
+        else
         {
-            await Parallel.ForEachAsync(
-                depthGroup,
-                new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = _options.MaxParallelFolderCreations,
-                    CancellationToken = cancellationToken,
-                },
-                async (destFolderPath, ct) =>
-                {
-                    await _destProvider.EnsureFolderAsync(destFolderPath, ct).ConfigureAwait(false);
-                    var done = Interlocked.Increment(ref foldersDone);
-                    if (done % 100 == 0)
-                        _logger.LogInformation("フォルダ先行作成進捗: {Done}/{Total}", done, totalFolders);
-                }).ConfigureAwait(false);
+            _logger.LogInformation(
+                "フォルダ先行作成スキップ: {Provider} は親フォルダを自動作成します",
+                _destProvider.ProviderId);
         }
-        _logger.LogInformation("フォルダ先行作成完了: {Count} 件", totalFolders);
 
         // ─── 2. スキップ照合・ジョブリスト構築 ──────────────────────────
         var jobs = new List<TransferJob>();

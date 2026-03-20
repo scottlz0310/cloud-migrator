@@ -32,6 +32,12 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
     public string ProviderId => "dropbox";
 
+    /// <summary>
+    /// Dropbox の <c>files/upload</c> はパスを指定するだけで親フォルダを自動作成するため、
+    /// フォルダ先行作成フェーズはスキップ可能。
+    /// </summary>
+    public bool AutoCreateParentFolders => true;
+
     public DropboxStorageProvider(
         ILogger<DropboxStorageProvider> logger,
         string accessToken,
@@ -106,6 +112,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         AddFileEntries(firstPage.Entries, result);
 
         var cursor = firstPage.Cursor;
+        var lastLoggedMilestone = 0;
         while (firstPage.HasMore)
         {
             firstPage = await PostDropboxApiAsync<ListFolderContinueRequest, ListFolderResponse>(
@@ -114,6 +121,12 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                 cancellationToken).ConfigureAwait(false);
             cursor = firstPage.Cursor;
             AddFileEntries(firstPage.Entries, result);
+            var milestone = result.Count / 1000;
+            if (milestone > lastLoggedMilestone)
+            {
+                _logger.LogInformation("Dropbox クロール進捗: {Count} 件取得中...", result.Count);
+                lastLoggedMilestone = milestone;
+            }
         }
 
         _logger.LogInformation("Dropbox クロール完了: {Count} 件 (Path={Path})", result.Count, crawlPath);
