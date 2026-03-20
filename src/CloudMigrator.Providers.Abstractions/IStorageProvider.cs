@@ -31,7 +31,7 @@ public interface IStorageProvider
 
     /// <summary>
     /// ファイルアップロード時に親フォルダを自動作成するか。
-    /// <c>true</c> の場合、<see cref="TransferEngine"/> はフォルダ先行作成フェーズをスキップする。
+    /// <c>true</c> の場合、転送オーケストレーション処理はフォルダ先行作成フェーズをスキップする。
     /// デフォルト: <c>false</c>（Graph 等の従来実装への後方互換）。
     /// </summary>
     bool AutoCreateParentFolders => false;

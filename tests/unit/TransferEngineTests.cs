@@ -304,6 +304,25 @@ public sealed class TransferEngineTests : IDisposable
         await act.Should().NotThrowAsync();
     }
 
+    // ─── AutoCreateParentFolders == true のプロバイダー ──────────────────────
+
+    [Fact]
+    public async Task RunAsync_AutoCreateParentFolders_SkipsFolderPreCreation()
+    {
+        // 検証対象: AutoCreateParentFolders == true  目的: プロバイダーが自動フォルダ作成をサポートする場合、
+        // TransferEngine によるフォルダ先行作成フェーズをスキップし EnsureFolderAsync が呼ばれないこと
+        var file = MakeFile("docs/sub", "file.txt");
+        var fake = new FakeAutoCreateStorageProvider();
+        var engine = new TransferEngine(fake, _skipList, _options, _mockLogger.Object);
+
+        await engine.RunAsync([file], "dest/root");
+
+        // AutoCreateParentFolders == true のため EnsureFolderAsync は呼ばれないこと
+        fake.EnsureCalls.Should().BeEmpty();
+        // ファイルのアップロードは実行されること
+        fake.UploadCalls.Should().HaveCount(1);
+    }
+
     /// <summary>
     /// Moq の Callback/Returns/Invocations が Ubuntu 24.04 CI で特定の呼び出しを捕捉しない問題を避けるため、
     /// 具象テストダブルで EnsureFolderAsync の呼び出し順序を直接記録する。
@@ -322,6 +341,49 @@ public sealed class TransferEngineTests : IDisposable
         public Task UploadFileAsync(
             TransferJob job, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        public Task EnsureFolderAsync(
+            string folderPath, CancellationToken cancellationToken = default)
+        {
+            EnsureCalls.Add(folderPath);
+            return Task.CompletedTask;
+        }
+
+        public Task<string> DownloadToTempAsync(
+            StorageItem item, CancellationToken cancellationToken = default)
+            => Task.FromResult(Path.GetTempFileName());
+
+        public Task UploadFromLocalAsync(
+            string localFilePath, long fileSizeBytes, string destinationFullPath,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// AutoCreateParentFolders == true を返すテストダブル。
+    /// EnsureFolderAsync と UploadFileAsync の呼び出しをそれぞれ記録する。
+    /// </summary>
+    private sealed class FakeAutoCreateStorageProvider : IStorageProvider
+    {
+        public string ProviderId => "fake-autocreate";
+        public bool AutoCreateParentFolders => true;
+
+        /// <summary>EnsureFolderAsync が呼ばれた folderPath を記録する（呼ばれないことを検証する用途）。</summary>
+        public List<string> EnsureCalls { get; } = [];
+
+        /// <summary>UploadFileAsync が呼ばれた TransferJob を記録する。</summary>
+        public List<TransferJob> UploadCalls { get; } = [];
+
+        public Task<IReadOnlyList<StorageItem>> ListItemsAsync(
+            string rootPath, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<StorageItem>>([]);
+
+        public Task UploadFileAsync(
+            TransferJob job, CancellationToken cancellationToken = default)
+        {
+            UploadCalls.Add(job);
+            return Task.CompletedTask;
+        }
 
         public Task EnsureFolderAsync(
             string folderPath, CancellationToken cancellationToken = default)

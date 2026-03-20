@@ -221,7 +221,7 @@ public sealed class GraphStorageProvider : IStorageProvider
             {
                 result.Add(storageItem);
                 if (result.Count % 1000 == 0)
-                    _logger.LogInformation("OneDrive クロール進捗: {Count} 件取得中...", result.Count);
+                    _logger.LogInformation("Graph クロール進捗: {Count} 件取得中...", result.Count);
             }
         }
     }

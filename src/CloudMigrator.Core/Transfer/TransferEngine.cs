@@ -107,15 +107,15 @@ public sealed class TransferEngine
                 }
             }
 
+            // DestinationRoot 自体をフォルダセットに含め、深さ順ループで先に処理されるようにする。
+            if (!string.IsNullOrEmpty(destRootNormalized))
+                folderPathSet.Add(destRootNormalized);
+
             // 親フォルダから順に EnsureFolderAsync を呼び出す。
             // 同一深さのフォルダは並行処理可能（親は必ず前の深さで作成済み）。
             var totalFolders = folderPathSet.Count;
             _logger.LogInformation("フォルダ先行作成: {Count} 件のユニークフォルダを確認・作成中...", totalFolders);
             int foldersDone = 0;
-
-            // DestinationRoot 自体をフォルダセットに含め、深さ順ループで先に処理されるようにする。
-            if (!string.IsNullOrEmpty(destRootNormalized))
-                folderPathSet.Add(destRootNormalized);
 
             // 深さの計算は / と \ の両方を区切りとするセグメント数ベースで行う。
             var byDepth = folderPathSet
