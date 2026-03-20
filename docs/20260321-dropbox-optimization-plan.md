@@ -14,7 +14,7 @@ Dropbox へそのまま適用するとボトルネックが生じる（フォル
 
 | 項目 | 決定内容 |
 |---|---|
-| フォルダ先行作成 | **廃止**（Dropbox はフルパス直転送で親フォルダを自動生成） |
+| フォルダ先行作成 | **廃止**（フォルダ先行作成フェーズを廃止し、アップロード直前に `EnsureFolderAsync` で親フォルダを随時作成） |
 | 処理モデル | バッチ型 → **ストリーミング型**（列挙しながら即転送） |
 | 状態管理 | JSON skiplist → **SQLite 状態 DB**（pending/done/failed + nextLink） |
 | スキップ判定 | FR-07 維持（**path + name のみ**、サイズ・日時は記録するが判定不使用） |
@@ -31,7 +31,7 @@ Dropbox へそのまま適用するとボトルネックが生じる（フォル
 ```
 src/CloudMigrator.Core/Transfer/TransferEngine.cs        ← SharePoint 版として維持
 src/CloudMigrator.Core/Storage/SkipListManager.cs        ← SharePoint 版が引き続き使用
-src/CloudMigrator.Providers.Abstractions/IStorageProvider.cs  ← 変更なし
+src/CloudMigrator.Providers.Abstractions/IStorageProvider.cs  ← 既存メソッドは維持。Dropbox 向けにページング列挙 API（nextLink 対応）を追加拡張
 ```
 
 ### 新規追加コンポーネント
@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS transfer_records (
     name        TEXT NOT NULL,
     size_bytes  INTEGER,           -- 記録用（判定不使用）
     modified    TEXT,              -- 記録用（判定不使用）
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending / done / failed
+    status      TEXT NOT NULL DEFAULT 'pending',  -- pending / processing / done / failed / permanent_failed
+    retry_count INTEGER NOT NULL DEFAULT 0,        -- リトライ回数（MAX_RETRY 超過で permanent_failed に遷移）
     error       TEXT,              -- 失敗時エラーメッセージ
     updated_at  TEXT NOT NULL,     -- ISO 8601 UTC
     PRIMARY KEY (path, name)
@@ -84,23 +85,27 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 ```
 1. DB に nextLink チェックポイントが存在すれば読み込む
       ↓
-2. IStorageProvider.ListItemsAsync（IAsyncEnumerable）でストリーミング列挙
+2. IStorageProvider のページング列挙 API（nextLink 対応）でストリーミングクロール
+   ※ 既存 ListItemsAsync は維持。Dropbox 専用のページング API を IStorageProvider に追加拡張
       ↓
-3. 各ファイルについて：
-   a. status = done  → スキップ
-   b. status = failed → status を pending に更新（再試行対象）
-   c. 未存在          → INSERT status = pending
+3. ページ取得ごとに：
+   a. status = done / permanent_failed         → スキップ
+   b. status = failed かつ retry_count < MAX_RETRY → status を pending に更新（再試行対象）
+   c. 未存在                                   → INSERT status = pending
+   d. nextLink を checkpoints テーブルへ即時保存（ページ単位・クロール中断時の再開に備える）
       ↓
-4. Channel<TransferJob> に投入（Producer）
+4. Channel.CreateBounded<TransferJob>（capacity: 1000）に投入（Producer）
+   ※ Bounded Channel で Producer/Consumer バランスを制御しメモリ膨張を防止
       ↓
-5. SemaphoreSlim（並列数: AdaptiveConcurrencyController）で Consumer が Dropbox フルパス転送
+5. AdaptiveConcurrencyController で並列数を動的調整しながら Consumer が Dropbox 転送
+   ※ 429 / Retry-After ヘッダーに基づいて並列数を自動減少・回復
+   ※ アップロード直前に EnsureFolderAsync で親フォルダを随時作成（status = processing に更新）
       ↓
 6. 成功 → status = done
-   失敗 → status = failed + error 記録 + リトライキューへ
+   失敗 → retry_count++ → status = failed + error 記録
+          retry_count >= MAX_RETRY → status = permanent_failed（無限リトライ防止）
       ↓
-7. クロール完了ごとに nextLink を checkpoints テーブルへ保存
-      ↓
-8. TransferSummary（Success / Failed / Skipped / Elapsed）を返す
+7. TransferSummary（Success / Failed / Skipped / Elapsed）を返す
 ```
 
 ---
@@ -128,7 +133,11 @@ public interface ITransferStateDb : IAsyncDisposable
     Task MarkFailedAsync(string path, string name, string error, CancellationToken ct);
     Task<string?> GetCheckpointAsync(string key, CancellationToken ct);
     Task SaveCheckpointAsync(string key, string value, CancellationToken ct);
-    Task<IReadOnlyList<TransferRecord>> GetPendingAsync(CancellationToken ct);
+    /// <summary>
+    /// pending レコードをストリーミングで返す。大量件数でもメモリ爆発しない。
+    /// </summary>
+    IAsyncEnumerable<TransferRecord> GetPendingStreamAsync(CancellationToken ct);
+    Task MarkProcessingAsync(string path, string name, CancellationToken ct);
 }
 ```
 
@@ -146,7 +155,7 @@ public sealed record TransferRecord
     public required DateTimeOffset UpdatedAt { get; init; }
 }
 
-public enum TransferStatus { Pending, Done, Failed }
+public enum TransferStatus { Pending, Processing, Done, Failed, PermanentFailed }
 ```
 
 ---
@@ -195,7 +204,7 @@ await pipeline.RunAsync(ct);
 
 - SharePoint 版 TransferEngine の改修
 - SkipListManager の SQLite 化
-- サイズ・日時によるスキップ判定
+- サイズ・日時によるスキップ判定（**技術的負債として認識済み**：現在は path + name のみ（FR-07）。同名ファイルの更新検知は不可。将来フェーズで size / lastModified / hash による判定拡張を予定）
 - E2E テスト（実 Dropbox API）
 - SharePoint / その他クラウドドライブ対応
 
