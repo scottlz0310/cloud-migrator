@@ -4,7 +4,7 @@
 設計計画: [docs/20260321-dropbox-optimization-plan.md](docs/20260321-dropbox-optimization-plan.md)  
 前フェーズ履歴: [task-archive-20260321.md](task-archive-20260321.md)
 
-## 現在の状態: Dropbox最適化フェーズ 完了（マージ済み・テスト済み）+ Web ダッシュボード実装完了
+## 現在の状態: Web ダッシュボードフェーズ 完了（PR #55 マージ済み・main 反映済み）
 
 ---
 
@@ -153,4 +153,11 @@ dotnet run --project src/CloudMigrator.Cli -- dashboard --no-browser
 | `GET /api/status` | ステータス別件数・完了率・バイト数 |
 | `GET /api/metrics?name=rate_limit_pct&minutes=60` | 時系列メトリクス |
 | `GET /api/errors` | 最近の失敗ファイル（最大5件） |
+
+### PR #55 完了
+
+- [x] CI 全ジョブ SUCCESS（ubuntu / macOS / windows / Quality Gate）
+- [x] Copilot レビュー9件すべて対応・解決済み
+- [x] squash マージ: `2d680e0`（2026-03-21）
+- [x] main ローカル同期済み
 
