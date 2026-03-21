@@ -127,6 +127,16 @@ public sealed class DropboxProviderOptions
 
     /// <summary>upload session のチャンクサイズ（MB）。</summary>
     public int UploadChunkSizeMb { get; set; } = 8;
+
+    /// <summary>
+    /// アップロード前に親フォルダを事前作成するかどうか（EnsureFolderAsync 有効化）。
+    /// デフォルト: false。
+    /// Dropbox はファイルアップロード時に親フォルダを自動作成するため、通常は不要です。
+    /// 有効にすると files/create_folder_v2 API の呼び出し数が増加し、性能が低下します。
+    /// デバッグ・互換性検証以外での有効化は非推奨です。
+    /// 環境変数: MIGRATOR__DROPBOX__ENABLEENSUREFOLDER
+    /// </summary>
+    public bool EnableEnsureFolder { get; set; } = false;
 }
 
 /// <summary>

@@ -16,6 +16,11 @@ namespace CloudMigrator.Core.Migration;
 ///   <item>Phase B（クロール）: OneDrive ストリーミングクロールで新規アイテムを発見・キューイング</item>
 ///   <item>Consumer: AdaptiveConcurrencyController で並列制御しながら Dropbox 転送</item>
 /// </list>
+/// <para>
+/// 「空フォルダの非転送」: Phase B クロール時に IsFolder=true のアイテムはスキップされます。
+/// Dropbox はファイルアップロード時に親フォルダを自動作成するため、EnsureFolderAsync はデフォルトで無効です。
+/// 有効化には <see cref="CloudMigrator.Core.Configuration.DropboxProviderOptions.EnableEnsureFolder"/> を参照してください。
+/// </para>
 /// </summary>
 public sealed class DropboxMigrationPipeline : IMigrationPipeline
 {
@@ -29,6 +34,11 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     private readonly MigratorOptions _options;
     private readonly AdaptiveConcurrencyController? _concurrencyController;
     private readonly ILogger<DropboxMigrationPipeline> _logger;
+
+    // メトリクスカウンタ（Interlocked によるスレッドセーフな並列カウント）
+    private int _ensureFolderCallCount;
+    private int _totalTransferAttempts;
+    private int _rateLimitHitCount;
 
     public DropboxMigrationPipeline(
         IStorageProvider sourceProvider,
@@ -84,9 +94,13 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
 
         sw.Stop();
 
+        var rateLimitRate = _totalTransferAttempts > 0
+            ? (double)_rateLimitHitCount / _totalTransferAttempts * 100.0
+            : 0.0;
         _logger.LogInformation(
-            "Dropbox 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
-            success, failed, sw.Elapsed);
+            "Dropbox 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c} | フォルダAPI {EnsureFolder} 回 / 転送試行 {Total} 回 / 429 {RateLimit} 回 ({RateLimitRate:F1}%)",
+            success, failed, sw.Elapsed,
+            _ensureFolderCallCount, _totalTransferAttempts, _rateLimitHitCount, rateLimitRate);
 
         return new TransferSummary
         {
@@ -204,6 +218,8 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 if (controller is not null)
                     await controller.AcquireAsync(itemCt).ConfigureAwait(false);
 
+                Interlocked.Increment(ref _totalTransferAttempts);
+
                 try
                 {
                     await TransferItemAsync(job, itemCt).ConfigureAwait(false);
@@ -232,6 +248,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                         || ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase);
                     if (isRateLimit)
                     {
+                        Interlocked.Increment(ref _rateLimitHitCount);
                         controller?.NotifyRateLimit(null);
                     }
                 }
@@ -249,8 +266,14 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     {
         await _stateDb.MarkProcessingAsync(job.Source.Path, job.Source.Name, ct).ConfigureAwait(false);
 
-        // アップロード直前に親フォルダを随時作成（EnsureFolderAsync）
-        await _destinationProvider.EnsureFolderAsync(job.DestinationPath, ct).ConfigureAwait(false);
+        // EnsureFolderAsync（フォルダ事前作成）は Feature Flag 制御。
+        // Dropbox はアップロード時に親フォルダを自動作成するため、デフォルト false。
+        // 有効化には DropboxProviderOptions.EnableEnsureFolder = true を設定すること、0
+        if (_options.Dropbox.EnableEnsureFolder)
+        {
+            Interlocked.Increment(ref _ensureFolderCallCount);
+            await _destinationProvider.EnsureFolderAsync(job.DestinationPath, ct).ConfigureAwait(false);
+        }
 
         if (job.Source.SizeBytes is null)
             throw new InvalidOperationException(

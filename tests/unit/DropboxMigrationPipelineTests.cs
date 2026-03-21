@@ -315,4 +315,72 @@ public class DropboxMigrationPipelineTests
         _mockDb.Verify(db => db.GetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    // ── EnsureFolder Feature Flag ─────────────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_EnableEnsureFolderFalse_DoesNotCallEnsureFolder()
+    {
+        // 検証対象: Feature Flag  目的: EnableEnsureFolder=false（デフォルト）のとき EnsureFolderAsync が呼ばれない
+        var item = MakeItem("docs", "report.pdf", "od-ff-off");
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            SetupDbBase();
+            _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
+                   .ReturnsAsync((TransferStatus?)null);
+            _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(SingleItemPage(item));
+            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(tempFile);
+            SetupDestBase();
+
+            // EnableEnsureFolder はデフォルト false
+            var summary = await CreatePipeline().RunAsync(CancellationToken.None);
+
+            summary.Success.Should().Be(1);
+            _mockDest.Verify(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_EnableEnsureFolderTrue_CallsEnsureFolder()
+    {
+        // 検証対象: Feature Flag  目的: EnableEnsureFolder=true のとき EnsureFolderAsync が 1 回呼ばれる
+        var item = MakeItem("docs", "report.pdf", "od-ff-on");
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            SetupDbBase();
+            _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
+                   .ReturnsAsync((TransferStatus?)null);
+            _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(SingleItemPage(item));
+            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(tempFile);
+            SetupDestBase();
+
+            var options = new MigratorOptions
+            {
+                DestinationRoot = "/dropbox-root",
+                Dropbox = new CloudMigrator.Core.Configuration.DropboxProviderOptions { EnableEnsureFolder = true },
+            };
+            var pipeline = new DropboxMigrationPipeline(
+                _mockSource.Object, _mockDest.Object, _mockDb.Object, options,
+                NullLogger<DropboxMigrationPipeline>.Instance);
+
+            var summary = await pipeline.RunAsync(CancellationToken.None);
+
+            summary.Success.Should().Be(1);
+            _mockDest.Verify(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
 }

@@ -28,6 +28,13 @@
   - `DropboxStorageProvider`: `catch (InvalidOperationException)` → `catch (DropboxApiException)` に変更（`path/not_found` 判定を `ResponseBody` で実施）
 - **`setup verify` コマンドの Dropbox OAuth2 リフレッシュトークン対応**
   - `VerifyCommand.BuildPreflightErrors()`: `hasDropboxRefresh` パラメータ追加。アクセストークン未設定でもリフレッシュ資格情報（`REFRESHTOKEN` / `CLIENTID` / `CLIENTSECRET`）が揃っている場合はエラーを報告しない
+- **EnsureFolderAsync Feature Flag・観測性メトリクス追加（品質底上げ）**
+  - `DropboxProviderOptions.EnableEnsureFolder` プロパティ追加（デフォルト: `false`）。Dropbox はアップロード時に親フォルダを自動作成するため、デフォルト無効
+  - `DropboxMigrationPipeline.TransferItemAsync`: `EnableEnsureFolder` フラグが `false` の場合は `EnsureFolderAsync` を呼ばずに転送性能を最適化
+  - `DropboxMigrationPipeline` に観測性カウンタ追加: `_ensureFolderCallCount` / `_totalTransferAttempts` / `_rateLimitHitCount`
+  - 移行完了ログにメトリクスを追加出力（フォルダAPI 呼び出し回数 / 転送試行数 / 429発生回数・発生率）
+  - `DropboxMigrationPipeline` クラスコメントに「空フォルダ非転送」「EnsureFolder 非推奨」の設計仕様を明記
+  - ユニットテスト +2 件（`EnableEnsureFolderFalse_DoesNotCallEnsureFolder` / `EnableEnsureFolderTrue_CallsEnsureFolder`）・全テスト 235 件 PASS
   - `VerifyCommand.ProbeDropboxAsync()`: リフレッシュ資格情報を引数で受け取り、アクセストークンが空の場合に事前取得、401 レスポンス時に自動リフレッシュ + 再試行する実装を追加
   - `usage.md`: 「4.1 Dropbox 認証情報の取得」セクション追加（`Get-DropboxToken.ps1` ウィザード手順・手動手順）
 - **Dropbox OAuth2 アクセストークン自動リフレッシュ（feat/dropbox-oauth2-auto-refresh）**
