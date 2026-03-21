@@ -7,25 +7,11 @@
 
 ## [Unreleased]
 
-### Added
-- **GraphStorageProvider: BuildDeltaPage ユニットテスト追加**（PR #59）
-  - `BuildDeltaPage` を `private` → `internal` に変更してテストから直接呼び出し可能化
-  - `BuildDeltaPage_ExcludesDeletedItems` — Deleted ファセット付きアイテムの除外を検証
-  - `BuildDeltaPage_WithNextLink_HasMoreTrueAndCursorIsNextLink` — nextLink → `HasMore=true` を検証
-  - `BuildDeltaPage_WithDeltaLinkOnly_HasMoreFalseAndCursorIsDeltaLink` — deltaLink → `HasMore=false` を検証
-  - `BuildDeltaPage_WithFolderPrefix_RelativizesParentPath` — `OneDriveSourceFolder` 指定時の相対パス正規化（4パターン Theory）
-  - `BuildDeltaPage_NullResponse_ReturnsEmptyPage` — null レスポンスの安全処理
-  - 全テスト 255 件 PASS
-
-### Fixed
-- **GraphStorageProvider: `ListPagedAsync` パス正規化バグ修正**（PR #59）
-  - `OneDriveSourceFolder` 指定時、Delta API が返す `parentReference.Path` のフォルダプレフィックスを除去するよう `BuildDeltaPage` に `normalizedFolderPrefix` 引数を追加
-  - 例: `OneDriveSourceFolder = "Documents/Projects"` のとき `"Documents/Projects/Sub1"` → `"Sub1"` に正規化（`ListOneDriveItemsAsync` と同一の相対パス生成、FR-07 スキップリスト整合性）
-  - `ListPagedAsync` で `normalizedFolderPrefix` を cursor 分岐前に計算し、cursor 継続時にも同じ正規化が適用されるよう修正
+今後の開発予定用。現在は開発中の機能なし。
 
 ---
 
-## [前バージョン]
+## [0.1.0] - 2026-03-22
 
 ### Added
 - **GraphStorageProvider: Graph Delta API によるネイティブページングクロール**
@@ -243,7 +229,7 @@
 
 ---
 
-## [0.8.0] - 2026-03-02
+### 2026-03-02 開発履歴 1
 
 ### Added
 - `FileCrawlerCommand`（`CloudMigrator.Cli.Commands`）- `file-crawler` サブコマンド（FR-18）
@@ -267,7 +253,7 @@
 
 ---
 
-## [0.7.0] - 2026-03-02
+### 2026-03-02 開発履歴 2
 
 ### Added
 - `WatchdogCommand`（`CloudMigrator.Cli.Commands`）- `watchdog` サブコマンド（FR-16/FR-17）
@@ -298,7 +284,7 @@
 
 ---
 
-## [0.6.0] - 2026-03-08
+### 2026-03-08 開発履歴 3
 
 ### Added
 - `ConfigHashChecker`（`CloudMigrator.Core.Configuration`）- 設定変更を SHA-256 ハッシュで検知（FR-10）
@@ -321,7 +307,7 @@
 
 ---
 
-## [0.5.0] - 2026-03-01
+### 2026-03-01 開発履歴 4
 
 ### Added
 - `TransferSummary`（`CloudMigrator.Core.Transfer`）- 転送結果サマリーレコード（Success / Failed / Skipped / Elapsed）
@@ -344,7 +330,7 @@
 
 ---
 
-## [0.4.0] - 2026-03-01
+### 2026-03-01 開発履歴 5
 
 ### Added
 - `CrawlCache`（`CloudMigrator.Core.Storage`）- クロール結果を JSON ファイルへキャッシュ（FR-09）
@@ -368,7 +354,7 @@
 
 ---
 
-## [0.3.0] - 2026-03-01
+### 2026-03-01 開発履歴 6
 
 ### Added
 - `GraphAuthenticator`（MSAL client credentials、`IAccessTokenProvider` 実装）
@@ -385,7 +371,7 @@
 
 ---
 
-## [0.2.1] - 2026-03-01
+### 2026-03-01 開発履歴 7
 
 ### Fixed
 - `StorageItem.SkipKey`: 空パス時に先頭スラッシュが混入する問題を修正
@@ -404,7 +390,7 @@
 
 ---
 
-## [0.2.0] - 2026-03-01
+### 2026-03-01 開発履歴 8
 
 ### Added
 - NuGet パッケージ追加（Microsoft.Graph, System.CommandLine, Serilog, FluentAssertions, Moq 等）
@@ -419,7 +405,7 @@
 
 ---
 
-## [0.1.0] - 2026-03-01
+### 2026-03-01 初期構成
 
 ### Added
 - ソリューション `CloudMigrator.slnx` 作成（.NET 10）
@@ -437,13 +423,5 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.8.0...HEAD
-[0.8.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/scottlz0310/cloud-migrator/releases/tag/v0.1.0
