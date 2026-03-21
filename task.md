@@ -109,7 +109,8 @@
 ### 使い方
 
 ```bash
-dotnet run --project src/CloudMigrator.Cli -- status
+dotnet run --project src/CloudMigrator.Cli -- status --db logs/dropbox_transfer_state.db
+# --db 省略時は configs/config.json の設定値（Paths.DropboxStateDb）を使用
 ```
 
 ---

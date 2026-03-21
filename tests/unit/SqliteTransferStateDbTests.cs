@@ -337,6 +337,9 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         var summary = await _db.GetSummaryAsync(CancellationToken.None);
 
         summary.RecentFailed.Should().HaveCount(5);
+        // 新しい順（f7→f3）に並んでいることを検証（f1, f2 は除外される）
+        summary.RecentFailed.Select(f => f.Name)
+            .Should().ContainInOrder("f7.txt", "f6.txt", "f5.txt", "f4.txt", "f3.txt");
         // エラーメッセージが正しく含まれている
         summary.RecentFailed.All(f => f.Error != null).Should().BeTrue();
     }

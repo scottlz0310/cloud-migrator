@@ -1,5 +1,7 @@
 using System.CommandLine;
+using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.State;
+using Microsoft.Extensions.Configuration;
 
 namespace CloudMigrator.Cli.Commands;
 
@@ -10,16 +12,26 @@ internal static class TransferStatusCommand
 {
     public static Command Build()
     {
+        var dbOpt = new Option<string?>("--db", "転送状態 DB ファイルパス（省略時: 設定ファイルの値を使用）");
         var cmd = new Command("status", "Dropbox 転送状態ダッシュボードを表示します");
-        cmd.SetAction(async (_, ct) => await RunAsync(ct).ConfigureAwait(false));
+        cmd.Add(dbOpt);
+        cmd.SetAction(async (parseResult, ct) =>
+        {
+            var dbPath = parseResult.GetValue(dbOpt) ?? ResolveDefaultDbPath();
+            await RunAsync(dbPath, ct).ConfigureAwait(false);
+        });
         return cmd;
     }
 
-    private static async Task RunAsync(CancellationToken ct)
+    private static string ResolveDefaultDbPath()
     {
-        using var svc = CliServices.Build();
-        var dbPath = svc.Options.Paths.DropboxStateDb;
+        var config = AppConfiguration.Build();
+        var opts = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>() ?? new MigratorOptions();
+        return opts.Paths.DropboxStateDb;
+    }
 
+    private static async Task RunAsync(string dbPath, CancellationToken ct)
+    {
         if (!File.Exists(dbPath))
         {
             Console.WriteLine("転送状態 DB が見つかりません。transfer コマンドを先に実行してください。");

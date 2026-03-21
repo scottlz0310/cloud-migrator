@@ -10,7 +10,7 @@
 ### Added
 - **`status` コマンド（Dropbox 転送ダッシュボード）**
   - `TransferDbSummary` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）: ステータス別件数・完了率・完了バイト数・最近の失敗5件
-  - `ITransferStateDb.GetSummaryAsync` 追加（SQL 単一クエリで集計、DB 空時はゼロサマリー返却）
+  - `ITransferStateDb.GetSummaryAsync` 追加（サマリー情報を取得、DB 空時はゼロサマリー返却）
   - `SqliteTransferStateDb.GetSummaryAsync` 実装（2クエリ: 集計 + 最近の失敗）
   - `TransferStatusCommand` 追加（`src/CloudMigrator.Cli/Commands/TransferStatusCommand.cs`）: プログレスバー・完了率・ステータス別件数・最近の失敗を表示
   - `Program.cs` に `status` コマンド登録
