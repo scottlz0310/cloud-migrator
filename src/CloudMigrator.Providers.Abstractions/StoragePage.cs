@@ -10,7 +10,8 @@ public sealed record StoragePage
 
     /// <summary>
     /// 次ページを取得するためのカーソル文字列（Dropbox cursor / Graph skipToken 等）。
-    /// null の場合はこのページが最終ページ。
+    /// プロバイダーによっては最終ページでも値が返ることがあります。
+    /// 終了判定は <see cref="HasMore"/> を参照してください。
     /// </summary>
     public string? Cursor { get; init; }
 

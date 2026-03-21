@@ -12,7 +12,7 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     /// <summary>失敗回数がこの値以上になると <see cref="TransferStatus.PermanentFailed"/> に遷移する。</summary>
     public const int MaxRetry = 3;
 
-    private readonly SqliteConnection _connection;
+    private readonly string _connectionString;
 
     public SqliteTransferStateDb(string dbPath)
     {
@@ -20,15 +20,27 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        _connection = new SqliteConnection($"Data Source={dbPath}");
+        _connectionString = $"Data Source={dbPath}";
     }
 
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct)
     {
-        await _connection.OpenAsync(ct).ConfigureAwait(false);
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
 
-        await using var cmd = _connection.CreateCommand();
+        // WAL モードで並列読み書きのロック競合を低減する
+        await using (var pragma = conn.CreateCommand())
+        {
+            pragma.CommandText = """
+                PRAGMA journal_mode=WAL;
+                PRAGMA synchronous=NORMAL;
+                PRAGMA busy_timeout=5000;
+                """;
+            await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS transfer_records (
                 path        TEXT NOT NULL,
@@ -54,7 +66,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     /// <inheritdoc/>
     public async Task<TransferStatus?> GetStatusAsync(string path, string name, CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT status FROM transfer_records WHERE path=@path AND name=@name";
         cmd.Parameters.AddWithValue("@path", path);
         cmd.Parameters.AddWithValue("@name", name);
@@ -66,7 +80,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     /// <inheritdoc/>
     public async Task UpsertPendingAsync(StorageItem item, CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO transfer_records (path, name, source_id, size_bytes, modified, status, retry_count, error, updated_at)
             VALUES (@path, @name, @sourceId, @size, @modified, 'pending', 0, NULL, @updatedAt)
@@ -99,7 +115,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     /// <inheritdoc/>
     public async Task MarkFailedAsync(string path, string name, string error, CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             UPDATE transfer_records
             SET retry_count = retry_count + 1,
@@ -119,7 +137,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     /// <inheritdoc/>
     public async Task<string?> GetCheckpointAsync(string key, CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT value FROM checkpoints WHERE key=@key";
         cmd.Parameters.AddWithValue("@key", key);
 
@@ -130,7 +150,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     /// <inheritdoc/>
     public async Task SaveCheckpointAsync(string key, string value, CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO checkpoints (key, value, updated_at)
             VALUES (@key, @value, @updatedAt)
@@ -146,7 +168,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     public async IAsyncEnumerable<TransferRecord> GetPendingStreamAsync(
         [EnumeratorCancellation] CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT path, name, source_id, size_bytes, modified, status, retry_count, error, updated_at
             FROM transfer_records
@@ -172,15 +196,13 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     }
 
     /// <inheritdoc/>
-    public ValueTask DisposeAsync()
-    {
-        _connection.Dispose();
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private async Task UpdateStatusAsync(string path, string name, string status, string? error, CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             UPDATE transfer_records
             SET status=@status, error=@error, updated_at=@updatedAt
@@ -201,6 +223,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
         "done" => TransferStatus.Done,
         "failed" => TransferStatus.Failed,
         "permanent_failed" => TransferStatus.PermanentFailed,
-        _ => TransferStatus.Pending,
+        _ => throw new ArgumentOutOfRangeException(
+                 nameof(status),
+                 status,
+                 "未知のステータス値です。DB 破損または実装との不整合の可能性があります。"),
     };
 }

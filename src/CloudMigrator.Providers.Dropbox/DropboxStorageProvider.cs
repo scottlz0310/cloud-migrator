@@ -99,8 +99,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                 },
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-            when (ex.Message.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
+        catch (DropboxApiException ex)
+            when (ex.ResponseBody.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
         {
             // 転送先フォルダーがまだ存在しない場合は転送済み0件として扱う
             _logger.LogInformation(
@@ -238,8 +238,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                     },
                     cancellationToken).ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex)
-                when (ex.Message.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
+            catch (DropboxApiException ex)
+                when (ex.ResponseBody.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogInformation(
                     "Dropbox パスが存在しません。空ページとして返します: {RootPath}", rootPath);
@@ -501,8 +501,18 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         CancellationToken ct)
     {
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        throw new InvalidOperationException(
-            $"Dropbox API 呼び出しに失敗しました: {endpoint} ({(int)response.StatusCode}) {body}");
+
+        TimeSpan? retryAfter = null;
+        if (response.Headers.RetryAfter?.Delta is { } delta)
+            retryAfter = delta;
+        else if (response.Headers.RetryAfter?.Date is { } date)
+            retryAfter = date - DateTimeOffset.UtcNow;
+
+        throw new DropboxApiException(
+            $"Dropbox API 呼び出しに失敗しました: {endpoint} ({(int)response.StatusCode}) {body}",
+            response.StatusCode,
+            body,
+            retryAfter);
     }
 
     private static bool IsFolderAlreadyExistsConflict(string responseBody)

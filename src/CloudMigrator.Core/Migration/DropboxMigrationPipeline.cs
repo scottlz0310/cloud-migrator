@@ -61,8 +61,25 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         });
 
         // Producer（Phase A + Phase B）と Consumer を並行実行
-        var producerTask = ProduceAsync(channel.Writer, ct);
-        var (success, failed) = await ConsumeAsync(channel.Reader, ct).ConfigureAwait(false);
+        // linked CTS により、一方が異常終了した際にもう一方をキャンセルする
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var producerTask = ProduceAsync(channel.Writer, linkedCts.Token);
+        var consumerTask = ConsumeAsync(channel.Reader, linkedCts.Token);
+
+        int success;
+        int failed;
+        try
+        {
+            (success, failed) = await consumerTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Consumer が例外で終了した場合、Producer もキャンセルして待機する
+            await linkedCts.CancelAsync().ConfigureAwait(false);
+            await producerTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            throw;
+        }
+
         await producerTask.ConfigureAwait(false);
 
         sw.Stop();
@@ -97,6 +114,12 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 _logger.LogInformation("リカバリキューイング: {Count} 件 (pending/processing/failed)", recovered);
 
             // ── Phase B: ソースクロールで新規アイテムを発見 ──────────────────────────
+            // 【前提】_sourceProvider.ListPagedAsync がネイティブページング（cursor/nextLink）を
+            // 実装している場合のみ、省メモリ・途中再開の効果が得られます。
+            // デフォルト実装（IStorageProvider.ListPagedAsync の基底）は ListItemsAsync
+            // の全件取得ラッパーであり、GraphStorageProvider 等はそれを利用します。
+            // 真のストリーミングが必要な場合は、ソースプロバイダーで ListPagedAsync を
+            // オーバーライドしてください（例: DropboxStorageProvider）。
             var cursor = await _stateDb.GetCheckpointAsync(CursorKey, ct).ConfigureAwait(false);
             var pageCount = 0;
             var newItems = 0;
@@ -202,9 +225,12 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                     Interlocked.Increment(ref failed);
 
                     // 429 / rate limit 検出 → 動的並列度を減少
-                    if (ex.Message.Contains("429", StringComparison.OrdinalIgnoreCase)
+                    // DropboxApiException : HttpRequestException なので StatusCode で型安全に判定できる
+                    var isRateLimit =
+                        ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests }
                         || ex.Message.Contains("too_many", StringComparison.OrdinalIgnoreCase)
-                        || ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase))
+                        || ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase);
+                    if (isRateLimit)
                     {
                         controller?.NotifyRateLimit(null);
                     }

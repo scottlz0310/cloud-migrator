@@ -22,8 +22,10 @@
   - `TransferCommand`: Dropbox 判定→`RunDropboxPipelineAsync` 分岐追加（SQLite DB リセット対応含む）
   - ユニットテスト追加: `SqliteTransferStateDbTests`（11件）/ `DropboxMigrationPipelineTests`（10件）
   - 全テスト 233 件 PASS
-
-### Added
+- **`DropboxApiException` 型付き例外を追加（PR #52 レビュー対応）**
+  - `CloudMigrator.Providers.Dropbox.DropboxApiException : HttpRequestException` 追加（`StatusCode` / `RetryAfter` / `ResponseBody` を保持）
+  - `ThrowDropboxErrorAsync`: `InvalidOperationException` → `DropboxApiException` に変更（`Retry-After` ヘッダーも解析）
+  - `DropboxStorageProvider`: `catch (InvalidOperationException)` → `catch (DropboxApiException)` に変更（`path/not_found` 判定を `ResponseBody` で実施）
 - **`setup verify` コマンドの Dropbox OAuth2 リフレッシュトークン対応**
   - `VerifyCommand.BuildPreflightErrors()`: `hasDropboxRefresh` パラメータ追加。アクセストークン未設定でもリフレッシュ資格情報（`REFRESHTOKEN` / `CLIENTID` / `CLIENTSECRET`）が揃っている場合はエラーを報告しない
   - `VerifyCommand.ProbeDropboxAsync()`: リフレッシュ資格情報を引数で受け取り、アクセストークンが空の場合に事前取得、401 レスポンス時に自動リフレッシュ + 再試行する実装を追加
