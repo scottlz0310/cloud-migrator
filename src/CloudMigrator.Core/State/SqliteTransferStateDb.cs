@@ -198,6 +198,82 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     /// <inheritdoc/>
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
+    /// <inheritdoc/>
+    public async Task<TransferDbSummary> GetSummaryAsync(CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+
+        // ステータス別集計と完了バイト数を一括取得
+        await using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = """
+            SELECT
+                SUM(CASE WHEN status='pending'          THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status='processing'       THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status='done'             THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status='failed'           THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status='permanent_failed' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status='done' THEN COALESCE(size_bytes, 0) ELSE 0 END),
+                MIN(updated_at),
+                MAX(updated_at)
+            FROM transfer_records;
+            """;
+
+        int pending = 0, processing = 0, done = 0, failed = 0, permanentFailed = 0;
+        long doneSizeBytes = 0;
+        DateTimeOffset? firstUpdatedAt = null, lastUpdatedAt = null;
+
+        await using (var reader = await countCmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            if (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                pending = reader.IsDBNull(0) ? 0 : (int)reader.GetInt64(0);
+                processing = reader.IsDBNull(1) ? 0 : (int)reader.GetInt64(1);
+                done = reader.IsDBNull(2) ? 0 : (int)reader.GetInt64(2);
+                failed = reader.IsDBNull(3) ? 0 : (int)reader.GetInt64(3);
+                permanentFailed = reader.IsDBNull(4) ? 0 : (int)reader.GetInt64(4);
+                doneSizeBytes = reader.IsDBNull(5) ? 0L : reader.GetInt64(5);
+                firstUpdatedAt = reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6));
+                lastUpdatedAt = reader.IsDBNull(7) ? null : DateTimeOffset.Parse(reader.GetString(7));
+            }
+        }
+
+        // 最近の失敗レコード（最大5件、新しい順）
+        await using var failedCmd = conn.CreateCommand();
+        failedCmd.CommandText = """
+            SELECT path, name, error
+            FROM transfer_records
+            WHERE status IN ('failed', 'permanent_failed')
+            ORDER BY updated_at DESC
+            LIMIT 5;
+            """;
+
+        var recentFailed = new List<FailedItem>();
+        await using (var reader = await failedCmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                recentFailed.Add(new FailedItem(
+                    Path: reader.GetString(0),
+                    Name: reader.GetString(1),
+                    Error: reader.IsDBNull(2) ? null : reader.GetString(2)));
+            }
+        }
+
+        return new TransferDbSummary
+        {
+            Pending = pending,
+            Processing = processing,
+            Done = done,
+            Failed = failed,
+            PermanentFailed = permanentFailed,
+            TotalDoneSizeBytes = doneSizeBytes,
+            FirstUpdatedAt = firstUpdatedAt,
+            LastUpdatedAt = lastUpdatedAt,
+            RecentFailed = recentFailed,
+        };
+    }
+
     private async Task UpdateStatusAsync(string path, string name, string status, string? error, CancellationToken ct)
     {
         await using var conn = new SqliteConnection(_connectionString);

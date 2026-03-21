@@ -4,7 +4,7 @@
 設計計画: [docs/20260321-dropbox-optimization-plan.md](docs/20260321-dropbox-optimization-plan.md)  
 前フェーズ履歴: [task-archive-20260321.md](task-archive-20260321.md)
 
-## 現在の状態: Dropbox最適化フェーズ 完了（マージ済み・テスト済み）
+## 現在の状態: Dropbox最適化フェーズ 完了（マージ済み・テスト済み）+ ダッシュボード機能追加中
 
 ---
 
@@ -81,6 +81,25 @@
 - [x] TC-07: file-crawler dropbox → 0 件（転送前のため正常）✅
 - [x] TC-08: transfer（Dropbox E2E）→ ファイル転送開始・SQLite DB 作成・429 検出＋リトライ動作 ✅
 - [x] TC-09: transfer --full-rebuild → SQLite DB・WAL サイドカー削除（339,968B→4,096B）確認 ✅
+
+---
+
+## ダッシュボード機能（status コマンド）
+
+### 変更ファイル
+
+- [x] `TransferDbSummary` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）
+- [x] `ITransferStateDb.GetSummaryAsync` 追加
+- [x] `SqliteTransferStateDb.GetSummaryAsync` 実装（SQL 集計クエリ + 最近の失敗5件）
+- [x] `TransferStatusCommand.cs` 追加（`src/CloudMigrator.Cli/Commands/`）
+- [x] `Program.cs` に `status` コマンド登録
+- [x] `SqliteTransferStateDbTests` に GetSummaryAsync テスト 5 件追加（計 240 件 PASS）
+
+### 使い方
+
+```bash
+dotnet run --project src/CloudMigrator.Cli -- status
+```
 
 ---
 

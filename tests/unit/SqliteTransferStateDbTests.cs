@@ -226,4 +226,118 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         record.Should().NotBeNull();
         record!.SourceId.Should().Be("onedrive-id-xyz");
     }
+
+    // ── GetSummaryAsync ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSummaryAsync_EmptyDb_ReturnsAllZeros()
+    {
+        // 検証対象: GetSummaryAsync  目的: DB が空の場合はすべてゼロのサマリーを返す
+        await _db.InitializeAsync(CancellationToken.None);
+
+        var summary = await _db.GetSummaryAsync(CancellationToken.None);
+
+        summary.Pending.Should().Be(0);
+        summary.Processing.Should().Be(0);
+        summary.Done.Should().Be(0);
+        summary.Failed.Should().Be(0);
+        summary.PermanentFailed.Should().Be(0);
+        summary.TotalDoneSizeBytes.Should().Be(0L);
+        summary.Total.Should().Be(0);
+        summary.CompletionRate.Should().Be(0.0);
+        summary.FirstUpdatedAt.Should().BeNull();
+        summary.LastUpdatedAt.Should().BeNull();
+        summary.RecentFailed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_MixedStatuses_ReturnsCorrectCounts()
+    {
+        // 検証対象: GetSummaryAsync  目的: 各ステータス件数が正しく集計される
+        await _db.InitializeAsync(CancellationToken.None);
+
+        // 2 pending, 1 processing, 3 done, 1 failed, 1 permanent_failed を作成
+        await _db.UpsertPendingAsync(MakeItem("p", "a.txt", "id1", 100), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "b.txt", "id2", 200), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "c.txt", "id3", 300), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "d.txt", "id4", 400), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "e.txt", "id5", 500), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "f.txt", "id6", 600), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "g.txt", "id7", 700), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "h.txt", "id8", 800), CancellationToken.None);
+
+        await _db.MarkProcessingAsync("p", "c.txt", CancellationToken.None);
+        await _db.MarkDoneAsync("p", "d.txt", CancellationToken.None);
+        await _db.MarkDoneAsync("p", "e.txt", CancellationToken.None);
+        await _db.MarkDoneAsync("p", "f.txt", CancellationToken.None);
+        await _db.MarkFailedAsync("p", "g.txt", "timeout", CancellationToken.None);
+        // permanent_failed: MaxRetry 回失敗させる
+        for (var i = 0; i < SqliteTransferStateDb.MaxRetry; i++)
+            await _db.MarkFailedAsync("p", "h.txt", "fatal", CancellationToken.None);
+
+        var summary = await _db.GetSummaryAsync(CancellationToken.None);
+
+        summary.Pending.Should().Be(2);
+        summary.Processing.Should().Be(1);
+        summary.Done.Should().Be(3);
+        summary.Failed.Should().Be(1);
+        summary.PermanentFailed.Should().Be(1);
+        summary.Total.Should().Be(8);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_DoneItems_SumsSizeBytes()
+    {
+        // 検証対象: GetSummaryAsync  目的: done ファイルのバイト数のみが TotalDoneSizeBytes に集計される
+        await _db.InitializeAsync(CancellationToken.None);
+
+        await _db.UpsertPendingAsync(MakeItem("p", "a.txt", "id1", 1000), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "b.txt", "id2", 2000), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "c.txt", "id3", 4000), CancellationToken.None);
+        await _db.MarkDoneAsync("p", "a.txt", CancellationToken.None);
+        await _db.MarkDoneAsync("p", "b.txt", CancellationToken.None);
+        // c.txt は pending のまま（集計に含まれないはず）
+
+        var summary = await _db.GetSummaryAsync(CancellationToken.None);
+
+        summary.TotalDoneSizeBytes.Should().Be(3000L); // 1000 + 2000
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_CompletionRate_IsCalculatedCorrectly()
+    {
+        // 検証対象: GetSummaryAsync  目的: CompletionRate が done/total × 100 で計算される
+        await _db.InitializeAsync(CancellationToken.None);
+
+        await _db.UpsertPendingAsync(MakeItem("p", "a.txt", "id1"), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "b.txt", "id2"), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "c.txt", "id3"), CancellationToken.None);
+        await _db.UpsertPendingAsync(MakeItem("p", "d.txt", "id4"), CancellationToken.None);
+        await _db.MarkDoneAsync("p", "a.txt", CancellationToken.None);
+        await _db.MarkDoneAsync("p", "b.txt", CancellationToken.None);
+
+        var summary = await _db.GetSummaryAsync(CancellationToken.None);
+
+        summary.CompletionRate.Should().BeApproximately(50.0, precision: 0.01);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_RecentFailed_ReturnsAtMostFive()
+    {
+        // 検証対象: GetSummaryAsync  目的: RecentFailed は最大5件で新しい順に返される
+        await _db.InitializeAsync(CancellationToken.None);
+
+        // 7 件を failed にする
+        for (var i = 1; i <= 7; i++)
+        {
+            await _db.UpsertPendingAsync(MakeItem("p", $"f{i}.txt", $"id{i}"), CancellationToken.None);
+            await _db.MarkFailedAsync("p", $"f{i}.txt", $"error{i}", CancellationToken.None);
+        }
+
+        var summary = await _db.GetSummaryAsync(CancellationToken.None);
+
+        summary.RecentFailed.Should().HaveCount(5);
+        // エラーメッセージが正しく含まれている
+        summary.RecentFailed.All(f => f.Error != null).Should().BeTrue();
+    }
 }

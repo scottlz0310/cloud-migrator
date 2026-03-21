@@ -45,4 +45,10 @@ public interface ITransferStateDb : IAsyncDisposable
     /// 大量件数でもメモリ爆発しない設計。クラッシュリカバリ時に使用する。
     /// </summary>
     IAsyncEnumerable<TransferRecord> GetPendingStreamAsync(CancellationToken ct);
+
+    /// <summary>
+    /// ステータス別件数・完了バイト数などの集計サマリーを取得する。
+    /// DB が空の場合はすべてゼロのサマリーを返す。
+    /// </summary>
+    Task<TransferDbSummary> GetSummaryAsync(CancellationToken ct);
 }
