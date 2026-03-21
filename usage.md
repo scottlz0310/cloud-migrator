@@ -83,6 +83,44 @@ dotnet run --project src/CloudMigrator.Cli -- file-crawler validate --source one
 dotnet run --project src/CloudMigrator.Cli -- file-crawler explore --source sharepoint --top 30
 ```
 
+### dashboard
+
+転送状況をブラウザでリアルタイム監視します。転送実行中または実行後に使用します。
+
+```bash
+# --db / --port 省略時は設定値を使用（DB: 設定値のパス［既定: logs/dropbox_transfer_state.db］、ポート: 設定値のポート［既定: 5050］）
+dotnet run --project src/CloudMigrator.Cli -- dashboard
+
+# DB パスとポートを指定
+dotnet run --project src/CloudMigrator.Cli -- dashboard --db logs/dropbox_transfer_state.db --port 8080
+
+# ブラウザを自動で開かない
+dotnet run --project src/CloudMigrator.Cli -- dashboard --no-browser
+```
+
+起動すると `http://localhost:5050`（または指定ポート）が自動でブラウザに開き、以下が表示されます。
+
+| グラフ / 表示項目 | 内容 |
+|---|---|
+| **転送サマリ** | 成功数 / スキップ数 / 失敗数 / 総転送バイト数 |
+| **レート制限ヒット率（%）** | 100 件ごとに計測された Graph API レート制限ヒット率の推移 |
+| **スループット（ファイル/分）** | 100 件ごとに計測された転送速度（ファイル数/分）の推移 |
+| **スループット（バイト/秒）** | 100 件ごとに計測された転送速度（バイト/秒）の推移 |
+| **直近エラーログ** | 転送失敗の最大 5 件 |
+
+**API エンドポイント（直接取得したい場合）**
+
+```
+GET /api/status                                          # 転送サマリ JSON
+GET /api/metrics?name=rate_limit_pct&minutes=60         # レート制限ヒット率
+GET /api/metrics?name=throughput_files_per_min&minutes=60  # スループット（ファイル/分）
+GET /api/metrics?name=throughput_bytes_per_sec&minutes=60  # スループット（バイト/秒）
+GET /api/errors                                          # 直近エラーログ（最大 5 件）
+```
+
+> **グラフ更新間隔**: 5 秒ごとに自動更新されます。  
+> **注意**: `dashboard` コマンドはスループット計測に転送 DB（SQLite）を使用するため、`transfer` コマンドで生成された DB ファイルが必要です。
+
 ### quality-metrics
 
 `.trx` と Cobertura XML を集計し、品質メトリクスを出力します。
