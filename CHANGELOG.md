@@ -30,6 +30,11 @@
   - `CloudMigrator.slnx` に `CloudMigrator.Dashboard` 追加
   - 全テスト 240 件 PASS（既存テストへの影響なし）
 
+### Docs
+- `usage.md` に `dashboard` コマンドのセクションを追加（コマンド例・表示項目・REST API エンドポイント一覧）
+  - 更新間隔を実装値（5秒）に修正、エラー件数上限を実装値（最大5件）に修正
+  - `--db` 省略時は設定値を参照する旨を明記
+
 - **`status` コマンド（Dropbox 転送ダッシュボード）**
   - `TransferDbSummary` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）: ステータス別件数・完了率・完了バイト数・最近の失敗5件
   - `ITransferStateDb.GetSummaryAsync` 追加（サマリー情報を取得、DB 空時はゼロサマリー返却）
