@@ -243,6 +243,164 @@ public sealed class GraphStorageProvider : IStorageProvider
     }
 
     // ─────────────────────────────────────────────────────────────
+    // IStorageProvider: ListPagedAsync（OneDrive のみ。Graph Delta API 使用）
+    // ─────────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// OneDrive に対して Graph Delta API（<c>/drives/{id}/root/delta</c>）を使ったページングを実装する。
+    /// <list type="bullet">
+    ///   <item>cursor = null: Delta クロールを先頭から開始（または OneDriveSourceFolder 起点）</item>
+    ///   <item>cursor = @odata.nextLink: 同一クロールの続きページを取得</item>
+    ///   <item>cursor = @odata.deltaLink: クロール完了後の増分取得起点として保存される</item>
+    /// </list>
+    /// SharePoint（rootPath="sharepoint"）はデフォルト実装（全件一括）にフォールバックする。
+    /// </remarks>
+    public async Task<StoragePage> ListPagedAsync(
+        string rootPath,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        if (!rootPath.StartsWith("onedrive", StringComparison.OrdinalIgnoreCase))
+        {
+            // SharePoint はページング未実装 → 全件取得ラッパーにフォールバック
+            var allItems = await ListItemsAsync(rootPath, cancellationToken).ConfigureAwait(false);
+            return new StoragePage { Items = allItems, Cursor = null, HasMore = false };
+        }
+
+        if (string.IsNullOrEmpty(_options.OneDriveUserId))
+        {
+            _logger.LogWarning("OneDriveUserId が未設定のため OneDrive クロールをスキップします");
+            return new StoragePage { Items = [], Cursor = null, HasMore = false };
+        }
+
+        var driveId = await GetOneDriveDriveIdAsync(cancellationToken).ConfigureAwait(false);
+
+        // OneDriveSourceFolder が設定されている場合は、Delta API が返すパスからそのプレフィックスを除去し
+        // 既存の ListOneDriveItemsAsync と同一の相対パスを生成する（FR-07 スキップリストとの整合性）
+        var normalizedFolderPrefix = string.IsNullOrWhiteSpace(_options.OneDriveSourceFolder)
+            ? string.Empty
+            : _options.OneDriveSourceFolder.Trim('/');
+
+        if (cursor is not null)
+        {
+            // 2回目以降: cursor は @odata.nextLink または @odata.deltaLink の URL
+            // WithUrl で任意 URL にリクエストを向ける（Kiota の標準パターン）
+            var contResponse = await _client.Drives[driveId].Items["root"].Delta
+                .WithUrl(cursor)
+                .GetAsDeltaGetResponseAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return BuildDeltaPage(contResponse, driveId, normalizedFolderPrefix);
+        }
+
+        // 初回: OneDriveSourceFolder が設定されている場合はそのフォルダ起点で delta を開始する。
+        // フォルダ起点の delta は Items[itemId].Delta で取得でき、そのフォルダ以下のみが返る。
+        string? startItemId = null;
+        if (!string.IsNullOrWhiteSpace(_options.OneDriveSourceFolder))
+        {
+            var folderPath = _options.OneDriveSourceFolder.Trim('/');
+            if (!string.IsNullOrEmpty(folderPath))
+            {
+                try
+                {
+                    var folderItem = await _client.Drives[driveId].Root
+                        .ItemWithPath(folderPath)
+                        .GetAsync(cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    startItemId = folderItem?.Id
+                        ?? throw new InvalidOperationException(
+                            $"OneDrive の指定フォルダが見つかりません: '{folderPath}'");
+                }
+                catch (ApiException ex) when (ex.ResponseStatusCode == 404 || ex.ResponseStatusCode == 400)
+                {
+                    throw new InvalidOperationException(
+                        $"OneDrive の指定フォルダが見つかりません: '{folderPath}' (UserId={_options.OneDriveUserId})",
+                        ex);
+                }
+            }
+        }
+
+        var targetItemId = startItemId ?? "root";
+        var initResponse = await _client.Drives[driveId].Items[targetItemId].Delta
+            .GetAsDeltaGetResponseAsync(
+                requestConfiguration: cfg =>
+                {
+                    cfg.QueryParameters.Top = 200;
+                    cfg.QueryParameters.Select =
+                        ["id", "name", "parentReference", "size", "lastModifiedDateTime", "file", "folder", "deleted"];
+                },
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        return BuildDeltaPage(initResponse, driveId, normalizedFolderPrefix);
+    }
+
+    internal StoragePage BuildDeltaPage(
+        Microsoft.Graph.Drives.Item.Items.Item.Delta.DeltaGetResponse? response,
+        string driveId,
+        string normalizedFolderPrefix = "")
+    {
+        if (response?.Value is null)
+            return new StoragePage { Items = [], Cursor = null, HasMore = false };
+
+        // /drives/{driveId}/root: プレフィックスを除去して相対パスを計算する
+        var driveRootPrefix = $"/drives/{driveId}/root:";
+        var items = new List<StorageItem>(response.Value.Count);
+
+        foreach (var driveItem in response.Value)
+        {
+            // 削除済みアイテムは移行対象外（delta API では deleted ファセットが付く）
+            if (driveItem.Deleted is not null) continue;
+            if (driveItem.Id is null || string.IsNullOrEmpty(driveItem.Name)) continue;
+
+            var parentPath = string.Empty;
+            if (driveItem.ParentReference?.Path is { } rawPath &&
+                rawPath.StartsWith(driveRootPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                // "/drives/{driveId}/root:/A/B" → "A/B"、"/drives/{driveId}/root:" → ""
+                parentPath = rawPath.Substring(driveRootPrefix.Length).TrimStart('/');
+                // パスはパーセントエンコードされている場合があるためデコードする
+                parentPath = Uri.UnescapeDataString(parentPath);
+                // OneDriveSourceFolder 起点クロール時は、そのフォルダパスを相対パスの先頭から除去する
+                // 例: folderPrefix="Documents/Projects", parentPath="Documents/Projects/Sub1" → "Sub1"
+                if (!string.IsNullOrEmpty(normalizedFolderPrefix))
+                {
+                    if (parentPath.Equals(normalizedFolderPrefix, StringComparison.OrdinalIgnoreCase))
+                        parentPath = string.Empty;
+                    else if (parentPath.Length > normalizedFolderPrefix.Length + 1 &&
+                             parentPath.StartsWith(normalizedFolderPrefix + "/", StringComparison.OrdinalIgnoreCase))
+                        parentPath = parentPath.Substring(normalizedFolderPrefix.Length + 1);
+                }
+            }
+
+            var storageItem = DriveItemToStorageItem(driveItem, parentPath);
+            if (storageItem is not null)
+                items.Add(storageItem);
+        }
+
+        // @odata.nextLink / @odata.deltaLink は OdataNextLink / OdataDeltaLink プロパティで取得する。
+        // SDK バージョンによっては AdditionalData に格納されている場合もあるため両方確認する。
+        var nextLink = response.OdataNextLink
+            ?? (response.AdditionalData.TryGetValue("@odata.nextLink", out var nl) ? nl as string : null);
+        var deltaLink = response.OdataDeltaLink
+            ?? (response.AdditionalData.TryGetValue("@odata.deltaLink", out var dl) ? dl as string : null);
+        var nextCursor = nextLink ?? deltaLink;
+        var hasMore = nextLink is not null;
+
+        _logger.LogDebug(
+            "OneDrive Delta ページ取得: {Count} 件, HasMore={HasMore}, CursorType={CursorType}",
+            items.Count, hasMore,
+            nextLink is not null ? "nextLink" : deltaLink is not null ? "deltaLink" : "none");
+
+        return new StoragePage
+        {
+            Items = items,
+            Cursor = nextCursor,
+            HasMore = hasMore,
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // IStorageProvider: UploadFileAsync
     // FR-04: 4MB 未満 → PUT
     // FR-05: 4MB 以上 → Upload Session（LargeFileUploadTask）

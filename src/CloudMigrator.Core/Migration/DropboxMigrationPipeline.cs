@@ -138,12 +138,10 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 _logger.LogInformation("リカバリキューイング: {Count} 件 (pending/processing/failed)", recovered);
 
             // ── Phase B: ソースクロールで新規アイテムを発見 ──────────────────────────
-            // 【前提】_sourceProvider.ListPagedAsync がネイティブページング（cursor/nextLink）を
-            // 実装している場合のみ、省メモリ・途中再開の効果が得られます。
-            // デフォルト実装（IStorageProvider.ListPagedAsync の基底）は ListItemsAsync
-            // の全件取得ラッパーであり、GraphStorageProvider 等はそれを利用します。
-            // 真のストリーミングが必要な場合は、ソースプロバイダーで ListPagedAsync を
-            // オーバーライドしてください（例: DropboxStorageProvider）。
+            // GraphStorageProvider は ListPagedAsync で Graph Delta API を使ったネイティブページングを
+            // 実装しており、ページ単位（200 件）で即座に Channel へ投入できる。
+            // @odata.nextLink が cursor として保存されるため、中断→再開時も途中ページから再開可能。
+            // クロール完了後は @odata.deltaLink が cursor に保存され、次回実行では差分のみ取得する。
             var cursor = await _stateDb.GetCheckpointAsync(CursorKey, ct).ConfigureAwait(false);
             var pageCount = 0;
             var newItems = 0;

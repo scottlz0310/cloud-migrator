@@ -3,6 +3,7 @@ using CloudMigrator.Providers.Graph;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
+using Microsoft.Graph.Drives.Item.Items.Item.Delta;
 using Microsoft.Graph.Models;
 using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
@@ -463,5 +464,139 @@ public class GraphStorageProviderTests
         // 例外なく完了すること
         var act = async () => await provider.EnsureFolderAsync("docs");
         await act.Should().NotThrowAsync();
+    }
+
+    // ── BuildDeltaPage 直接テスト ──────────────────────────────────────
+
+    /// <summary>BuildDeltaPage テスト用に最小限の GraphStorageProvider を生成する。</summary>
+    private GraphStorageProvider CreateProviderForBuildDeltaPage(string? sourceFolderOption = null)
+    {
+        var mockAdapter = new Mock<IRequestAdapter>();
+        mockAdapter.Setup(a => a.SerializationWriterFactory).Returns(new Mock<ISerializationWriterFactory>().Object);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        var client = new GraphServiceClient(mockAdapter.Object);
+        var options = new GraphStorageOptions
+        {
+            OneDriveUserId = "user1",
+            OneDriveSourceFolder = sourceFolderOption ?? string.Empty,
+        };
+        return new GraphStorageProvider(client, Mock.Of<ILogger<GraphStorageProvider>>(), options);
+    }
+
+    [Fact]
+    public void BuildDeltaPage_ExcludesDeletedItems()
+    {
+        // 検証対象: BuildDeltaPage  目的: Deleted ファセットが付いたアイテムは結果に含まれないこと
+        const string driveId = "drive-abc";
+        var provider = CreateProviderForBuildDeltaPage();
+
+        var response = new DeltaGetResponse
+        {
+            Value =
+            [
+                new() { Id = "alive1", Name = "keep.txt",    Size = 100,
+                    ParentReference = new() { Path = $"/drives/{driveId}/root:" } },
+                new() { Id = "dead1",  Name = "deleted.txt", Size = 200,
+                    Deleted = new(),
+                    ParentReference = new() { Path = $"/drives/{driveId}/root:" } },
+            ],
+            OdataDeltaLink = "https://delta-link/",
+        };
+
+        var result = provider.BuildDeltaPage(response, driveId);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].Name.Should().Be("keep.txt");
+    }
+
+    [Fact]
+    public void BuildDeltaPage_WithNextLink_HasMoreTrueAndCursorIsNextLink()
+    {
+        // 検証対象: BuildDeltaPage  目的: OdataNextLink がある場合 HasMore=true、Cursor=nextLink であること
+        const string driveId = "drive-abc";
+        const string nextLink = "https://graph.microsoft.com/nextpage";
+        var provider = CreateProviderForBuildDeltaPage();
+
+        var response = new DeltaGetResponse
+        {
+            Value =
+            [
+                new() { Id = "f1", Name = "file.txt", Size = 10,
+                    ParentReference = new() { Path = $"/drives/{driveId}/root:" } },
+            ],
+            OdataNextLink = nextLink,
+        };
+
+        var result = provider.BuildDeltaPage(response, driveId);
+
+        result.HasMore.Should().BeTrue();
+        result.Cursor.Should().Be(nextLink);
+    }
+
+    [Fact]
+    public void BuildDeltaPage_WithDeltaLinkOnly_HasMoreFalseAndCursorIsDeltaLink()
+    {
+        // 検証対象: BuildDeltaPage  目的: OdataDeltaLink のみの場合 HasMore=false、Cursor=deltaLink であること
+        const string driveId = "drive-abc";
+        const string deltaLink = "https://graph.microsoft.com/delta";
+        var provider = CreateProviderForBuildDeltaPage();
+
+        var response = new DeltaGetResponse
+        {
+            Value =
+            [
+                new() { Id = "f1", Name = "file.txt", Size = 10,
+                    ParentReference = new() { Path = $"/drives/{driveId}/root:" } },
+            ],
+            OdataDeltaLink = deltaLink,
+        };
+
+        var result = provider.BuildDeltaPage(response, driveId);
+
+        result.HasMore.Should().BeFalse();
+        result.Cursor.Should().Be(deltaLink);
+    }
+
+    [Theory]
+    [InlineData("Documents/Projects", "/drives/drv1/root:/Documents/Projects", "")]
+    [InlineData("Documents/Projects", "/drives/drv1/root:/Documents/Projects/Sub1", "Sub1")]
+    [InlineData("Documents/Projects", "/drives/drv1/root:/Documents/Projects/A/B", "A/B")]
+    [InlineData("", "/drives/drv1/root:/Documents/Projects/A/B", "Documents/Projects/A/B")]
+    public void BuildDeltaPage_WithFolderPrefix_RelativizesParentPath(
+        string sourceFolder, string rawParentPath, string expectedParentPath)
+    {
+        // 検証対象: BuildDeltaPage  目的: OneDriveSourceFolder 設定時に Delta API パスから
+        //           フォルダプレフィックスが除去され既存 ListOneDriveItemsAsync と同じ相対パスになること
+        const string driveId = "drv1";
+        var provider = CreateProviderForBuildDeltaPage(sourceFolderOption: sourceFolder);
+        var normalizedPrefix = string.IsNullOrEmpty(sourceFolder) ? string.Empty : sourceFolder.Trim('/');
+
+        var response = new DeltaGetResponse
+        {
+            Value =
+            [
+                new() { Id = "f1", Name = "doc.docx", Size = 50,
+                    ParentReference = new() { Path = rawParentPath } },
+            ],
+            OdataDeltaLink = "https://delta/",
+        };
+
+        var result = provider.BuildDeltaPage(response, driveId, normalizedPrefix);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].Path.Should().Be(expectedParentPath);
+    }
+
+    [Fact]
+    public void BuildDeltaPage_NullResponse_ReturnsEmptyPage()
+    {
+        // 検証対象: BuildDeltaPage  目的: response が null の場合は Items 空・HasMore=false を返すこと
+        var provider = CreateProviderForBuildDeltaPage();
+
+        var result = provider.BuildDeltaPage(null, "drv1");
+
+        result.Items.Should().BeEmpty();
+        result.HasMore.Should().BeFalse();
+        result.Cursor.Should().BeNull();
     }
 }
