@@ -218,7 +218,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 if (controller is not null)
                     await controller.AcquireAsync(itemCt).ConfigureAwait(false);
 
-                Interlocked.Increment(ref _totalTransferAttempts);
+                var totalNow = Interlocked.Increment(ref _totalTransferAttempts);
 
                 try
                 {
@@ -268,6 +268,25 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 }
                 finally
                 {
+                    // 100 回ごとに rate_limit_pct をダッシュボード向けに記録する
+                    if (totalNow % 100 == 0)
+                    {
+                        var pct = (double)Volatile.Read(ref _rateLimitHitCount) / totalNow * 100.0;
+                        try
+                        {
+                            await _stateDb.RecordMetricAsync("rate_limit_pct", pct, itemCt)
+                                .ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            // メトリクス失敗はメイン処理に影響させないが、障害検知のためにログは出力する
+                            _logger.LogWarning(
+                                ex,
+                                "rate_limit_pct メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
+                                job.Source.SkipKey);
+                        }
+                    }
+
                     controller?.Release();
                 }
             }).ConfigureAwait(false);

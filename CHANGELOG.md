@@ -8,6 +8,19 @@
 ## [Unreleased]
 
 ### Added
+- **Web ダッシュボード（`dashboard` コマンド）**
+  - `CloudMigrator.Dashboard` プロジェクト追加（`src/CloudMigrator.Dashboard/`）: ASP.NET Core Minimal API + Chart.js インライン HTML
+  - `ITransferStateDb` に `RecordMetricAsync` / `GetMetricsAsync` 追加（`metrics` テーブルへの時系列書き込みと読み取り）
+  - `SqliteTransferStateDb` に `metrics` テーブル + インデックス作成・実装追加（`InitializeAsync` でスキーマ自動作成）
+  - `MetricPoint` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）: `(Timestamp, Name, Value)` の時系列データ型
+  - `DropboxMigrationPipeline`: 転送試行 100 回ごとに `rate_limit_pct` を `metrics` テーブルへ記録（`RecordMetricAsync`）
+  - `DashboardServer.cs` 追加: `GET /api/status`・`GET /api/metrics`・`GET /api/errors`・`GET /`（Chart.js UI）
+  - `DashboardCommand.cs` 追加（`src/CloudMigrator.Cli/Commands/`）: `--db`・`--port`・`--no-browser` オプション対応
+  - `Program.cs` に `dashboard` コマンド登録
+  - `CloudMigrator.Cli.csproj` に `FrameworkReference Microsoft.AspNetCore.App` と `CloudMigrator.Dashboard` 参照追加
+  - `CloudMigrator.slnx` に `CloudMigrator.Dashboard` 追加
+  - 全テスト 240 件 PASS（既存テストへの影響なし）
+
 - **`status` コマンド（Dropbox 転送ダッシュボード）**
   - `TransferDbSummary` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）: ステータス別件数・完了率・完了バイト数・最近の失敗5件
   - `ITransferStateDb.GetSummaryAsync` 追加（サマリー情報を取得、DB 空時はゼロサマリー返却）

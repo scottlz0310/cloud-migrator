@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/CloudMigrator.Cli/CloudMigrator.Cli.csproj" />
     <Project Path="src/CloudMigrator.Core/CloudMigrator.Core.csproj" />
+    <Project Path="src/CloudMigrator.Dashboard/CloudMigrator.Dashboard.csproj" />
     <Project Path="src/CloudMigrator.Observability/CloudMigrator.Observability.csproj" />
     <Project Path="src/CloudMigrator.Providers.Abstractions/CloudMigrator.Providers.Abstractions.csproj" />
     <Project Path="src/CloudMigrator.Providers.Dropbox/CloudMigrator.Providers.Dropbox.csproj" />

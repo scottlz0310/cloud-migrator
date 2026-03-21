@@ -41,3 +41,6 @@ public sealed record TransferDbSummary
 
 /// <summary>失敗したファイルの概要。</summary>
 public sealed record FailedItem(string Path, string Name, string? Error);
+
+/// <summary>metrics テーブルの 1 レコード。ダッシュボード向け時系列データ。</summary>
+public sealed record MetricPoint(DateTimeOffset Timestamp, string Name, double Value);

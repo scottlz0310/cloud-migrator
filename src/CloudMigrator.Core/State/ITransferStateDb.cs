@@ -51,4 +51,16 @@ public interface ITransferStateDb : IAsyncDisposable
     /// DB が空の場合はすべてゼロのサマリーを返す。
     /// </summary>
     Task<TransferDbSummary> GetSummaryAsync(CancellationToken ct);
+
+    /// <summary>
+    /// メトリクス値を記録する（metrics テーブルへ INSERT）。
+    /// パイプラインが定期的に呼び出してダッシュボード向けに時系列データを蓄積する。
+    /// </summary>
+    Task RecordMetricAsync(string name, double value, CancellationToken ct);
+
+    /// <summary>
+    /// 直近 <paramref name="recentMinutes"/> 分以内の指定メトリクスを時系列で取得する。
+    /// メトリクステーブルが空の場合は空リストを返す。
+    /// </summary>
+    Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(string name, int recentMinutes, CancellationToken ct);
 }

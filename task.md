@@ -4,7 +4,7 @@
 設計計画: [docs/20260321-dropbox-optimization-plan.md](docs/20260321-dropbox-optimization-plan.md)  
 前フェーズ履歴: [task-archive-20260321.md](task-archive-20260321.md)
 
-## 現在の状態: Dropbox最適化フェーズ 完了（マージ済み・テスト済み）+ ダッシュボード機能追加中
+## 現在の状態: Dropbox最適化フェーズ 完了（マージ済み・テスト済み）+ Web ダッシュボード実装完了
 
 ---
 
@@ -121,4 +121,36 @@ dotnet run --project src/CloudMigrator.Cli -- status --db logs/dropbox_transfer_
 - サイズ・日時によるスキップ判定強化
 - 本番切替計画・段階カットオーバー
 - 運用手順書（セットアップ/日次/障害対応/ロールバック）
+
+---
+
+## Web ダッシュボード（dashboard コマンド）
+
+### 実装済みファイル
+
+- [x] `MetricPoint` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）
+- [x] `ITransferStateDb.RecordMetricAsync` / `GetMetricsAsync` 追加
+- [x] `SqliteTransferStateDb`: `metrics` テーブル + 両メソッド実装
+- [x] `DropboxMigrationPipeline`: 100 回ごとに `rate_limit_pct` を metrics 記録
+- [x] `CloudMigrator.Dashboard` プロジェクト追加（Minimal API + Chart.js）
+- [x] `DashboardCommand.cs` 追加（`--db`, `--port`, `--no-browser`）
+- [x] `Program.cs` に `dashboard` コマンド登録
+- [x] `CloudMigrator.slnx` 更新
+
+### 使い方
+
+```bash
+dotnet run --project src/CloudMigrator.Cli -- dashboard
+dotnet run --project src/CloudMigrator.Cli -- dashboard --db logs/dropbox_transfer_state.db --port 8080
+dotnet run --project src/CloudMigrator.Cli -- dashboard --no-browser
+```
+
+### API エンドポイント
+
+| エンドポイント | 説明 |
+|---|---|
+| `GET /` | Chart.js ダッシュボード UI |
+| `GET /api/status` | ステータス別件数・完了率・バイト数 |
+| `GET /api/metrics?name=rate_limit_pct&minutes=60` | 時系列メトリクス |
+| `GET /api/errors` | 最近の失敗ファイル（最大5件） |
 
