@@ -249,7 +249,21 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                     if (isRateLimit)
                     {
                         Interlocked.Increment(ref _rateLimitHitCount);
-                        controller?.NotifyRateLimit(null);
+
+                        // プロバイダ層で解析済みの Retry-After を HttpRequestException.Data 経由で受け取る
+                        // （Core 層は Providers.Dropbox を直接参照できないため Data ディクショナリを使用）
+                        TimeSpan? retryAfter = null;
+                        if (ex is HttpRequestException httpEx && httpEx.Data.Contains("Retry-After"))
+                        {
+                            retryAfter = httpEx.Data["Retry-After"] switch
+                            {
+                                TimeSpan ts => ts,
+                                string s when TimeSpan.TryParse(s, out var parsed) => parsed,
+                                _ => null,
+                            };
+                        }
+
+                        controller?.NotifyRateLimit(retryAfter);
                     }
                 }
                 finally
@@ -268,7 +282,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
 
         // EnsureFolderAsync（フォルダ事前作成）は Feature Flag 制御。
         // Dropbox はアップロード時に親フォルダを自動作成するため、デフォルト false。
-        // 有効化には DropboxProviderOptions.EnableEnsureFolder = true を設定すること、0
+        // 有効化には DropboxProviderOptions.EnableEnsureFolder = true を設定すること。
         if (_options.Dropbox.EnableEnsureFolder)
         {
             Interlocked.Increment(ref _ensureFolderCallCount);

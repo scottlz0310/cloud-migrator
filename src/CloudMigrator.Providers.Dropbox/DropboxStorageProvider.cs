@@ -506,7 +506,12 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         if (response.Headers.RetryAfter?.Delta is { } delta)
             retryAfter = delta;
         else if (response.Headers.RetryAfter?.Date is { } date)
-            retryAfter = date - DateTimeOffset.UtcNow;
+        {
+            // 時計ずれ・過去日時で負値になる場合は null として扱う（防御的クランプ）
+            var diff = date - DateTimeOffset.UtcNow;
+            if (diff > TimeSpan.Zero)
+                retryAfter = diff;
+        }
 
         throw new DropboxApiException(
             $"Dropbox API 呼び出しに失敗しました: {endpoint} ({(int)response.StatusCode}) {body}",

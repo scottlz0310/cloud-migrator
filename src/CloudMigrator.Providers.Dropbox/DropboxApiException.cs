@@ -29,5 +29,10 @@ public sealed class DropboxApiException : HttpRequestException
         StatusCode = statusCode;
         ResponseBody = responseBody;
         RetryAfter = retryAfter;
+
+        // Core 層（Providers.Dropbox を直接参照できない）が HttpRequestException.Data 経由で
+        // Retry-After を取得できるよう、標準の Exception.Data ディクショナリにも格納する。
+        if (retryAfter.HasValue)
+            Data["Retry-After"] = retryAfter.Value;
     }
 }

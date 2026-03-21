@@ -149,6 +149,15 @@ internal static class TransferCommand
             if (File.Exists(dbPath))
             {
                 File.Delete(dbPath);
+
+                // WAL モード利用時は .db-wal / .db-shm サイドカーファイルも残存するため併せて削除する。
+                // 削除しないと次回起動時に古い WAL が復元され、意図しない状態になる可能性がある。
+                var walPath = dbPath + "-wal";
+                if (File.Exists(walPath)) File.Delete(walPath);
+
+                var shmPath = dbPath + "-shm";
+                if (File.Exists(shmPath)) File.Delete(shmPath);
+
                 logger.LogInformation("Dropbox 状態 DB をリセットしました: {Path}", dbPath);
             }
         }
