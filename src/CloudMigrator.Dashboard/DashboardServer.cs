@@ -148,6 +148,14 @@ public static class DashboardServer
                 <h2>429 レートリミット率（%）</h2>
                 <canvas id="rlChart"></canvas>
               </div>
+              <div class="chart-box">
+                <h2>スループット（ファイル/分）</h2>
+                <canvas id="filesChart"></canvas>
+              </div>
+              <div class="chart-box">
+                <h2>スループット（バイト/秒）</h2>
+                <canvas id="bytesChart"></canvas>
+              </div>
             </section>
 
             <section class="errors">
@@ -207,6 +215,58 @@ public static class DashboardServer
               }
             });
 
+            const filesChart = new Chart(document.getElementById('filesChart'), {
+              type: 'line',
+              data: {
+                labels: [],
+                datasets: [{
+                  label: 'files/min',
+                  data: [],
+                  borderColor: '#60a5fa',
+                  backgroundColor: 'rgba(96,165,250,.1)',
+                  fill: true,
+                  tension: 0.3,
+                  pointRadius: 2,
+                }]
+              },
+              options: {
+                animation: false,
+                scales: {
+                  x: { ticks: { maxTicksLimit: 8 } },
+                  y: { beginAtZero: true, ticks: { callback: v => v + ' f/m' } }
+                }
+              }
+            });
+
+            function fmtBytesPerSec(v) {
+              if (v < 1024) return v.toFixed(0) + ' B/s';
+              if (v < 1024 * 1024) return (v / 1024).toFixed(1) + ' KB/s';
+              return (v / (1024 * 1024)).toFixed(1) + ' MB/s';
+            }
+
+            const bytesChart = new Chart(document.getElementById('bytesChart'), {
+              type: 'line',
+              data: {
+                labels: [],
+                datasets: [{
+                  label: 'bytes/sec',
+                  data: [],
+                  borderColor: '#a78bfa',
+                  backgroundColor: 'rgba(167,139,250,.1)',
+                  fill: true,
+                  tension: 0.3,
+                  pointRadius: 2,
+                }]
+              },
+              options: {
+                animation: false,
+                scales: {
+                  x: { ticks: { maxTicksLimit: 8 } },
+                  y: { beginAtZero: true, ticks: { callback: v => fmtBytesPerSec(v) } }
+                }
+              }
+            });
+
             function fmtBytes(b) {
               if (b === 0) return '0 B';
               const units = ['B','KB','MB','GB','TB'];
@@ -243,13 +303,35 @@ public static class DashboardServer
             }
 
             async function refreshMetrics() {
-              const res = await fetch('/api/metrics?name=rate_limit_pct&minutes=60');
-              if (!res.ok) return;
-              const data = await res.json();
-              if (!data.length) return;
-              rlChart.data.labels   = data.map(p => fmtTime(p.timestamp));
-              rlChart.data.datasets[0].data = data.map(p => p.value);
-              rlChart.update();
+              const [rlRes, filesRes, bytesRes] = await Promise.all([
+                fetch('/api/metrics?name=rate_limit_pct&minutes=60'),
+                fetch('/api/metrics?name=throughput_files_per_min&minutes=60'),
+                fetch('/api/metrics?name=throughput_bytes_per_sec&minutes=60'),
+              ]);
+              if (rlRes.ok) {
+                const data = await rlRes.json();
+                if (data.length) {
+                  rlChart.data.labels = data.map(p => fmtTime(p.timestamp));
+                  rlChart.data.datasets[0].data = data.map(p => p.value);
+                  rlChart.update();
+                }
+              }
+              if (filesRes.ok) {
+                const data = await filesRes.json();
+                if (data.length) {
+                  filesChart.data.labels = data.map(p => fmtTime(p.timestamp));
+                  filesChart.data.datasets[0].data = data.map(p => p.value);
+                  filesChart.update();
+                }
+              }
+              if (bytesRes.ok) {
+                const data = await bytesRes.json();
+                if (data.length) {
+                  bytesChart.data.labels = data.map(p => fmtTime(p.timestamp));
+                  bytesChart.data.datasets[0].data = data.map(p => p.value);
+                  bytesChart.update();
+                }
+              }
             }
 
             async function refreshErrors() {

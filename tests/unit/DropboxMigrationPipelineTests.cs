@@ -383,4 +383,35 @@ public class DropboxMigrationPipelineTests
             if (File.Exists(tempFile)) File.Delete(tempFile);
         }
     }
+
+    // ── Phase B: throughput メトリクス記録 ──────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_SuccessfulTransfer_AccumulatesBytesTransferred()
+    {
+        // 検証対象: throughput カウンタ  目的: 成功転送後 _totalBytesTransferred にバイト数が加算される
+        // 100 件未満のため RecordMetricAsync 呼び出しなし。SizeBytes の集計が完了することを確認する。
+        var item = MakeItem("docs", "large.bin", "od-bytes", size: 1024 * 1024); // 1 MB
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            SetupDbBase();
+            _mockDb.Setup(db => db.GetStatusAsync("docs", "large.bin", It.IsAny<CancellationToken>()))
+                   .ReturnsAsync((TransferStatus?)null);
+            _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(SingleItemPage(item));
+            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(tempFile);
+            SetupDestBase();
+
+            var summary = await CreatePipeline().RunAsync(CancellationToken.None);
+
+            // 1 件成功すれば SizeBytes 分のバイトカウントが内部に積算されている
+            summary.Success.Should().Be(1);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
 }

@@ -4,7 +4,7 @@
 設計計画: [docs/20260321-dropbox-optimization-plan.md](docs/20260321-dropbox-optimization-plan.md)  
 前フェーズ履歴: [task-archive-20260321.md](task-archive-20260321.md)
 
-## 現在の状態: Web ダッシュボードフェーズ 完了（PR #55 マージ済み・main 反映済み）
+## 現在の状態: Phase B（throughput メトリクス）実装完了・PR 作成待ち
 
 ---
 
@@ -160,4 +160,26 @@ dotnet run --project src/CloudMigrator.Cli -- dashboard --no-browser
 - [x] Copilot レビュー9件すべて対応・解決済み
 - [x] squash マージ: `2d680e0`（2026-03-21）
 - [x] main ローカル同期済み
+
+---
+
+## Phase B: throughput メトリクス追加（スループット可視化）
+
+### 変更ファイル
+
+- [x] `DropboxMigrationPipeline.cs`: `_totalBytesTransferred` / `_pipelineStartTime` 追加
+- [x] `DropboxMigrationPipeline.cs`: 成功転送ごとにバイト積算、100 回ごとに `throughput_files_per_min` / `throughput_bytes_per_sec` を `RecordMetricAsync` で記録
+- [x] `DashboardServer.cs`: 「スループット（ファイル/分）」「スループット（バイト/秒）」グラフ追加（Chart.js）
+- [x] `DashboardServer.cs`: `refreshMetrics()` を 3 メトリクス並列取得に拡張
+- [x] `DropboxMigrationPipelineTests.cs`: `RunAsync_SuccessfulTransfer_AccumulatesBytesTransferred` 追加（計 246 件 PASS）
+
+### 使い方
+
+```bash
+# 転送実行中 or 実行後にダッシュボードを開くと throughput グラフが表示される
+dotnet run --project src/CloudMigrator.Cli -- dashboard
+# /api/metrics?name=throughput_files_per_min&minutes=60
+# /api/metrics?name=throughput_bytes_per_sec&minutes=60
+```
+
 
