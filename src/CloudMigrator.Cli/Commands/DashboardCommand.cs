@@ -28,9 +28,9 @@ internal static class DashboardCommand
         };
 
         var cmd = new Command("dashboard", "移行進捗の Web ダッシュボードを起動します");
-        cmd.Options.Add(dbOption);
-        cmd.Options.Add(portOption);
-        cmd.Options.Add(noBrowserOption);
+        cmd.Add(dbOption);
+        cmd.Add(portOption);
+        cmd.Add(noBrowserOption);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
@@ -42,6 +42,13 @@ internal static class DashboardCommand
             var port = parseResult.GetValue(portOption);
             var noBrowser = parseResult.GetValue(noBrowserOption);
             var url = $"http://localhost:{port}";
+
+            if (!File.Exists(dbPath))
+            {
+                Console.Error.WriteLine($"エラー: DB ファイルが見つかりません: {dbPath}");
+                Console.Error.WriteLine("--db オプションで正しいパスを指定してください。");
+                return;
+            }
 
             Console.WriteLine($"ダッシュボード起動: {url}");
             Console.WriteLine($"DB          : {dbPath}");

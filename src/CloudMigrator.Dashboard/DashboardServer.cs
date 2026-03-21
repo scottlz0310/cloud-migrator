@@ -8,7 +8,7 @@ namespace CloudMigrator.Dashboard;
 
 /// <summary>
 /// 移行進捗 Web ダッシュボードの Minimal API ホスト。
-/// SQLite 状態 DB を読み取り専用で参照し、Chart.js UI へ JSON を提供する。
+/// SQLite 状態 DB を参照し、Chart.js UI へ JSON を提供する。
 /// </summary>
 public static class DashboardServer
 {
@@ -24,13 +24,15 @@ public static class DashboardServer
         var app = builder.Build();
         app.Urls.Add($"http://localhost:{port}");
 
+        // 起動時に 1 回だけ DB を初期化し、各ハンドラーで共有する
+        await using var db = new SqliteTransferStateDb(dbPath);
+        await db.InitializeAsync(ct).ConfigureAwait(false);
+
         // ── API エンドポイント ────────────────────────────────────────────────
 
         // GET /api/status  → ステータス別件数・完了率・バイト数
         app.MapGet("/api/status", async (CancellationToken cancellationToken) =>
         {
-            await using var db = new SqliteTransferStateDb(dbPath);
-            await db.InitializeAsync(cancellationToken).ConfigureAwait(false);
             var summary = await db.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
             return Results.Ok(summary);
         });
@@ -41,8 +43,6 @@ public static class DashboardServer
             int? minutes,
             CancellationToken cancellationToken) =>
         {
-            await using var db = new SqliteTransferStateDb(dbPath);
-            await db.InitializeAsync(cancellationToken).ConfigureAwait(false);
             var data = await db.GetMetricsAsync(
                 name ?? "rate_limit_pct",
                 minutes ?? 60,
@@ -53,8 +53,6 @@ public static class DashboardServer
         // GET /api/errors  → 最近の失敗ファイル（最大5件）
         app.MapGet("/api/errors", async (CancellationToken cancellationToken) =>
         {
-            await using var db = new SqliteTransferStateDb(dbPath);
-            await db.InitializeAsync(cancellationToken).ConfigureAwait(false);
             var summary = await db.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
             return Results.Ok(summary.RecentFailed);
         });
@@ -248,13 +246,27 @@ public static class DashboardServer
               if (!res.ok) return;
               const errs = await res.json();
               const el = document.getElementById('errorList');
+              el.textContent = '';
               if (!errs.length) {
-                el.innerHTML = '<span class="no-errors">現在エラーはありません</span>';
+                const span = document.createElement('span');
+                span.className = 'no-errors';
+                span.textContent = '現在エラーはありません';
+                el.appendChild(span);
                 return;
               }
-              el.innerHTML = errs.map(e =>
-                `<div class="error-item"><span class="path">${e.path}/${e.name}</span><br>${e.error ?? ''}</div>`
-              ).join('');
+              errs.forEach(e => {
+                const item = document.createElement('div');
+                item.className = 'error-item';
+                const pathSpan = document.createElement('span');
+                pathSpan.className = 'path';
+                pathSpan.textContent = `${e.path}/${e.name}`;
+                item.appendChild(pathSpan);
+                item.appendChild(document.createElement('br'));
+                const msgSpan = document.createElement('span');
+                msgSpan.textContent = e.error ?? '';
+                item.appendChild(msgSpan);
+                el.appendChild(item);
+              });
             }
 
             async function refresh() {

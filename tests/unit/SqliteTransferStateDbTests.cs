@@ -343,4 +343,101 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         // エラーメッセージが正しく含まれている
         summary.RecentFailed.All(f => f.Error != null).Should().BeTrue();
     }
+
+    // ── RecordMetricAsync / GetMetricsAsync ──────────────────────────────────
+
+    [Fact]
+    public async Task RecordMetricAsync_ThenGetMetricsAsync_ReturnsInsertedValues()
+    {
+        // 検証対象: RecordMetricAsync / GetMetricsAsync  目的: 書き込んだメトリクスが取得できる
+        await _db.InitializeAsync(CancellationToken.None);
+
+        await _db.RecordMetricAsync("test_metric", 42.5, CancellationToken.None);
+        await _db.RecordMetricAsync("test_metric", 99.0, CancellationToken.None);
+
+        var results = await _db.GetMetricsAsync("test_metric", 60, CancellationToken.None);
+
+        results.Should().HaveCount(2);
+        results[0].Name.Should().Be("test_metric");
+        results[0].Value.Should().Be(42.5);
+        results[1].Value.Should().Be(99.0);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_AscendingOrder_ReturnsOldestFirst()
+    {
+        // 検証対象: GetMetricsAsync  目的: timestamp ASC で返される
+        await _db.InitializeAsync(CancellationToken.None);
+
+        await _db.RecordMetricAsync("order_metric", 1.0, CancellationToken.None);
+        await Task.Delay(10); // タイムスタンプに差をつける
+        await _db.RecordMetricAsync("order_metric", 2.0, CancellationToken.None);
+        await Task.Delay(10);
+        await _db.RecordMetricAsync("order_metric", 3.0, CancellationToken.None);
+
+        var results = await _db.GetMetricsAsync("order_metric", 60, CancellationToken.None);
+
+        results.Should().HaveCount(3);
+        results.Select(p => p.Value).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_DifferentName_ReturnsEmptyList()
+    {
+        // 検証対象: GetMetricsAsync  目的: 別名のメトリクスはフィルタされる
+        await _db.InitializeAsync(CancellationToken.None);
+
+        await _db.RecordMetricAsync("metric_a", 10.0, CancellationToken.None);
+
+        var results = await _db.GetMetricsAsync("metric_b", 60, CancellationToken.None);
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_OldRecordsOutsideWindow_AreExcluded()
+    {
+        // 検証対象: GetMetricsAsync  目的: recentMinutes 時間外のレコードは除外される
+        await _db.InitializeAsync(CancellationToken.None);
+
+        // 過去のレコードを直接 INSERT（2 時間前）
+        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_dbPath};");
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO metrics (timestamp, name, value)
+            VALUES (@ts, @name, @value);
+            """;
+        var oldTs = DateTimeOffset.UtcNow.AddHours(-2).ToString("O");
+        cmd.Parameters.AddWithValue("@ts", oldTs);
+        cmd.Parameters.AddWithValue("@name", "window_metric");
+        cmd.Parameters.AddWithValue("@value", 999.0);
+        await cmd.ExecuteNonQueryAsync();
+
+        // 直近60分以内のレコードを追加
+        await _db.RecordMetricAsync("window_metric", 1.0, CancellationToken.None);
+
+        var results = await _db.GetMetricsAsync("window_metric", 60, CancellationToken.None);
+
+        // 2時間前のレコードは除外され、直近のみ返る
+        results.Should().HaveCount(1);
+        results[0].Value.Should().Be(1.0);
+    }
+
+    [Fact]
+    public async Task RecordMetricAsync_Timestamp_IsStoredAsRoundtripFormat()
+    {
+        // 検証対象: RecordMetricAsync  目的: Timestamp が "O" フォーマットで往復変換できる
+        await _db.InitializeAsync(CancellationToken.None);
+
+        var before = DateTimeOffset.UtcNow;
+        await _db.RecordMetricAsync("ts_check", 1.0, CancellationToken.None);
+        var after = DateTimeOffset.UtcNow;
+
+        var results = await _db.GetMetricsAsync("ts_check", 60, CancellationToken.None);
+
+        results.Should().HaveCount(1);
+        results[0].Timestamp.Should().BeOnOrAfter(before.AddSeconds(-1));
+        results[0].Timestamp.Should().BeOnOrBefore(after.AddSeconds(1));
+    }
 }

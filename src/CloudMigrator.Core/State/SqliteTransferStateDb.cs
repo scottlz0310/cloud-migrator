@@ -326,18 +326,22 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
             SELECT timestamp, name, value
             FROM metrics
             WHERE name = @name
-              AND timestamp >= datetime('now', '-' || @minutes || ' minutes')
+              AND timestamp >= @cutoff
             ORDER BY timestamp ASC;
             """;
         cmd.Parameters.AddWithValue("@name", name);
-        cmd.Parameters.AddWithValue("@minutes", recentMinutes);
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-recentMinutes).ToString("O");
+        cmd.Parameters.AddWithValue("@cutoff", cutoff);
 
         var results = new List<MetricPoint>();
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             results.Add(new MetricPoint(
-                Timestamp: DateTimeOffset.Parse(reader.GetString(0)),
+                Timestamp: DateTimeOffset.ParseExact(
+                    reader.GetString(0), "O",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind),
                 Name: reader.GetString(1),
                 Value: reader.GetDouble(2)));
         }

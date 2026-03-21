@@ -72,3 +72,4 @@ configs/config.json
 # テスト結果
 *.trx
 TestResults/
+LocalQualityResults/

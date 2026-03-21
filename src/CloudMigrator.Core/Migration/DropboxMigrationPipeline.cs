@@ -277,7 +277,14 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                             await _stateDb.RecordMetricAsync("rate_limit_pct", pct, itemCt)
                                 .ConfigureAwait(false);
                         }
-                        catch { /* メトリクス失敗はメイン処理に影響させない */ }
+                        catch (Exception ex)
+                        {
+                            // メトリクス失敗はメイン処理に影響させないが、障害検知のためにログは出力する
+                            _logger.LogWarning(
+                                ex,
+                                "rate_limit_pct メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
+                                job.Source.SkipKey);
+                        }
                     }
 
                     controller?.Release();
