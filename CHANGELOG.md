@@ -229,7 +229,30 @@
 
 ---
 
-### 2026-03-02 開発履歴 1
+## 2026-03-08 開発履歴 3
+
+### Added
+- `ConfigHashChecker`（`CloudMigrator.Core.Configuration`）- 設定変更を SHA-256 ハッシュで検知（FR-10）
+  - `ComputeHash`: ClientId / TenantId / OneDriveUserId / SharePointSiteId / SharePointDriveId / DestinationRoot を結合してハッシュ化
+  - `HasChangedAsync` / `SaveHashAsync`: ハッシュファイルへの保存・比較
+  - `ClearCaches` / `ClearSkipList`: 変更検知時のキャッシュ・skip_list 削除
+- `MigratorOptions.DestinationRoot`（`CloudMigrator.Core.Configuration`）- SharePoint 転送先ルートパス（例: `"Migration/2026"`）
+- `LoggingSetup`（`CloudMigrator.Observability`）- Serilog コンソール + ファイル（CLEF 形式、30 日ローテーション）
+- `CliServices`（`CloudMigrator.Cli`）- アプリケーション依存関係ワイヤリング（`IDisposable`）
+- `TransferCommand`（`CloudMigrator.Cli.Commands`）- `transfer` サブコマンド（FR-12/13）
+  - 通常実行（FR-13）: ハッシュ確認 → OneDrive クロール（キャッシュ優先）→ skip_list 欠損時に SharePoint から自動再構築 → 転送実行
+  - `--full-rebuild`（FR-12）: キャッシュ・skip_list をクリア → フル再クロール・再転送
+- `RebuildSkipListCommand`（`CloudMigrator.Cli.Commands`）- `rebuild-skiplist` サブコマンド（FR-11）
+  - SharePoint を再クロールして skip_list のみ再構築（転送なし）
+- `Program.cs` エントリーポイント実装 - `System.CommandLine` 3.0-preview を使用したサブコマンド登録
+- `ConfigHashCheckerTests`（`CloudMigrator.Tests.Unit`）- ConfigHashChecker の 9 ユニットテスト追加
+
+### Changed
+- `configs/config.json` に `destinationRoot` フィールド追加（デフォルト空文字）
+
+---
+
+## 2026-03-02 開発履歴 1
 
 ### Added
 - `FileCrawlerCommand`（`CloudMigrator.Cli.Commands`）- `file-crawler` サブコマンド（FR-18）
@@ -253,7 +276,7 @@
 
 ---
 
-### 2026-03-02 開発履歴 2
+## 2026-03-02 開発履歴 2
 
 ### Added
 - `WatchdogCommand`（`CloudMigrator.Cli.Commands`）- `watchdog` サブコマンド（FR-16/FR-17）
@@ -284,30 +307,7 @@
 
 ---
 
-### 2026-03-08 開発履歴 3
-
-### Added
-- `ConfigHashChecker`（`CloudMigrator.Core.Configuration`）- 設定変更を SHA-256 ハッシュで検知（FR-10）
-  - `ComputeHash`: ClientId / TenantId / OneDriveUserId / SharePointSiteId / SharePointDriveId / DestinationRoot を結合してハッシュ化
-  - `HasChangedAsync` / `SaveHashAsync`: ハッシュファイルへの保存・比較
-  - `ClearCaches` / `ClearSkipList`: 変更検知時のキャッシュ・skip_list 削除
-- `MigratorOptions.DestinationRoot`（`CloudMigrator.Core.Configuration`）- SharePoint 転送先ルートパス（例: `"Migration/2026"`）
-- `LoggingSetup`（`CloudMigrator.Observability`）- Serilog コンソール + ファイル（CLEF 形式、30 日ローテーション）
-- `CliServices`（`CloudMigrator.Cli`）- アプリケーション依存関係ワイヤリング（`IDisposable`）
-- `TransferCommand`（`CloudMigrator.Cli.Commands`）- `transfer` サブコマンド（FR-12/13）
-  - 通常実行（FR-13）: ハッシュ確認 → OneDrive クロール（キャッシュ優先）→ skip_list 欠損時に SharePoint から自動再構築 → 転送実行
-  - `--full-rebuild`（FR-12）: キャッシュ・skip_list をクリア → フル再クロール・再転送
-- `RebuildSkipListCommand`（`CloudMigrator.Cli.Commands`）- `rebuild-skiplist` サブコマンド（FR-11）
-  - SharePoint を再クロールして skip_list のみ再構築（転送なし）
-- `Program.cs` エントリーポイント実装 - `System.CommandLine` 3.0-preview を使用したサブコマンド登録
-- `ConfigHashCheckerTests`（`CloudMigrator.Tests.Unit`）- ConfigHashChecker の 9 ユニットテスト追加
-
-### Changed
-- `configs/config.json` に `destinationRoot` フィールド追加（デフォルト空文字）
-
----
-
-### 2026-03-01 開発履歴 4
+## 2026-03-01 開発履歴 4
 
 ### Added
 - `TransferSummary`（`CloudMigrator.Core.Transfer`）- 転送結果サマリーレコード（Success / Failed / Skipped / Elapsed）
@@ -330,7 +330,7 @@
 
 ---
 
-### 2026-03-01 開発履歴 5
+## 2026-03-01 開発履歴 5
 
 ### Added
 - `CrawlCache`（`CloudMigrator.Core.Storage`）- クロール結果を JSON ファイルへキャッシュ（FR-09）
@@ -354,7 +354,7 @@
 
 ---
 
-### 2026-03-01 開発履歴 6
+## 2026-03-01 開発履歴 6
 
 ### Added
 - `GraphAuthenticator`（MSAL client credentials、`IAccessTokenProvider` 実装）
@@ -371,7 +371,7 @@
 
 ---
 
-### 2026-03-01 開発履歴 7
+## 2026-03-01 開発履歴 7
 
 ### Fixed
 - `StorageItem.SkipKey`: 空パス時に先頭スラッシュが混入する問題を修正
@@ -390,7 +390,7 @@
 
 ---
 
-### 2026-03-01 開発履歴 8
+## 2026-03-01 開発履歴 8
 
 ### Added
 - NuGet パッケージ追加（Microsoft.Graph, System.CommandLine, Serilog, FluentAssertions, Moq 等）
@@ -405,7 +405,7 @@
 
 ---
 
-### 2026-03-01 初期構成
+## 2026-03-01 初期構成
 
 ### Added
 - ソリューション `CloudMigrator.slnx` 作成（.NET 10）
