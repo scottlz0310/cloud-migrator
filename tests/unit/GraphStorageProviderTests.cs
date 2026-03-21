@@ -478,7 +478,7 @@ public class GraphStorageProviderTests
         var options = new GraphStorageOptions
         {
             OneDriveUserId = "user1",
-            OneDriveSourceFolder = sourceFolderOption,
+            OneDriveSourceFolder = sourceFolderOption ?? string.Empty,
         };
         return new GraphStorageProvider(client, Mock.Of<ILogger<GraphStorageProvider>>(), options);
     }
