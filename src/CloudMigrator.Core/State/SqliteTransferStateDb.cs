@@ -267,6 +267,27 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
             }
         }
 
+        // クロール完了フラグ + 確定総数（DropboxMigrationPipeline が Phase B 完了後に書き込む）
+        await using var crawlCmd = conn.CreateCommand();
+        crawlCmd.CommandText = """
+            SELECT key, value FROM checkpoints
+            WHERE key IN ('crawl_complete', 'crawl_total')
+            """;
+        // 備考: 旧バージョンで作成された DB や空 DB では crawl_complete チェックポイントが存在しない。
+        // その場合でもダッシュボードが常に「クロール中」とならないよう、未記録時の既定値を true とする。
+        var crawlComplete = true;
+        int? crawlTotal = null;
+        await using (var reader = await crawlCmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var k = reader.GetString(0);
+                var v = reader.GetString(1);
+                if (k == "crawl_complete") crawlComplete = v == "true";
+                if (k == "crawl_total" && int.TryParse(v, out var n)) crawlTotal = n;
+            }
+        }
+
         return new TransferDbSummary
         {
             Pending = pending,
@@ -278,6 +299,8 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
             FirstUpdatedAt = firstUpdatedAt,
             LastUpdatedAt = lastUpdatedAt,
             RecentFailed = recentFailed,
+            CrawlComplete = crawlComplete,
+            CrawlTotal = crawlTotal,
         };
     }
 

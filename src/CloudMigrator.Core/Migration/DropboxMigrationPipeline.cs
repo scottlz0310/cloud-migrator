@@ -114,10 +114,17 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         };
     }
 
+    /// <summary>クロール完了をダッシュボードに知らせるチェックポイントキー。</summary>
+    internal const string CrawlCompleteKey = "crawl_complete";
+    internal const string CrawlTotalKey = "crawl_total";
+
     private async Task ProduceAsync(ChannelWriter<TransferJob> writer, CancellationToken ct)
     {
         try
         {
+            // クロール開始をリセット（前回の crawl_complete フラグを上書き）
+            await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "false", ct).ConfigureAwait(false);
+
             // ── Phase A: DB の未完了・失敗レコードをリカバリキューイング ──────────────
             var recovered = 0;
             await foreach (var record in _stateDb.GetPendingStreamAsync(ct).ConfigureAwait(false))
@@ -181,6 +188,15 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
 
             _logger.LogInformation(
                 "ソースクロール完了: {Pages} ページ, 新規 {New} 件", pageCount, newItems);
+
+            // クロール完了時点の真の総数（pending + processing + done + failed + permanent_failed）を
+            // チェックポイントに保存する。Consumer が並列で done に変化させてもカウント自体は変わらない。
+            var crawlSummary = await _stateDb.GetSummaryAsync(ct).ConfigureAwait(false);
+            await _stateDb.SaveCheckpointAsync(CrawlTotalKey, crawlSummary.Total.ToString(), ct).ConfigureAwait(false);
+            _logger.LogInformation("クロール確定総数: {Total} 件", crawlSummary.Total);
+
+            // クロール完了フラグを保存（ダッシュボードで総数が確定済みかを判定するために使用）
+            await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "true", ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

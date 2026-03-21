@@ -68,6 +68,7 @@ logs/
 .env
 .env.*
 configs/config.json
+.playwright-mcp/
 
 # テスト結果
 *.trx

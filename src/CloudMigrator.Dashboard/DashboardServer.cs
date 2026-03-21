@@ -129,7 +129,7 @@ public static class DashboardServer
               <div class="card pending"><div class="label">待機中</div><div class="value" id="c-pending">—</div></div>
               <div class="card processing"><div class="label">処理中</div><div class="value" id="c-processing">—</div></div>
               <div class="card failed"><div class="label">失敗</div><div class="value" id="c-failed">—</div></div>
-              <div class="card"><div class="label">合計</div><div class="value" id="c-total">—</div></div>
+              <div class="card"><div class="label">合計 <span id="crawl-badge" style="display:none;font-size:.65rem;background:#f59e0b;color:#1a1a2e;border-radius:4px;padding:1px 5px;vertical-align:middle;">クロール中</span></div><div class="value" id="c-total">—</div></div>
               <div class="card"><div class="label">転送済みバイト</div><div class="value" id="c-bytes">—</div></div>
             </section>
 
@@ -288,13 +288,19 @@ public static class DashboardServer
               document.getElementById('c-pending').textContent    = fmt(s.pending);
               document.getElementById('c-processing').textContent = fmt(s.processing);
               document.getElementById('c-failed').textContent     = fmt(s.failed + s.permanentFailed);
-              document.getElementById('c-total').textContent      = fmt(s.total);
               document.getElementById('c-bytes').textContent      = fmtBytes(s.totalDoneSizeBytes);
 
-              const pct = s.total > 0 ? (s.done / s.total * 100) : 0;
+              // クロール完了後は確定総数 (crawlTotal) を分母に使う
+              const crawlDone = s.crawlComplete === true;
+              const denominator = (crawlDone && s.crawlTotal > 0) ? s.crawlTotal : s.total;
+              document.getElementById('c-total').textContent      = fmt(denominator);
+              document.getElementById('crawl-badge').style.display = crawlDone ? 'none' : 'inline';
+
+              const pct = denominator > 0 ? (s.done / denominator * 100) : 0;
               document.getElementById('progressBar').style.width  = pct.toFixed(1) + '%';
-              document.getElementById('progressLabel').textContent =
-                `${fmt(s.done)} / ${fmt(s.total)} (${pct.toFixed(1)}%)`;
+              document.getElementById('progressLabel').textContent = crawlDone
+                ? `${fmt(s.done)} / ${fmt(denominator)} (${pct.toFixed(1)}%)`
+                : `${fmt(s.done)} / ${fmt(s.total)} (${pct.toFixed(1)}% ※クロール中のため推定)`;
 
               // 完了推移グラフ更新
               const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
