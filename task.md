@@ -4,7 +4,7 @@
 設計計画: [docs/20260321-dropbox-optimization-plan.md](docs/20260321-dropbox-optimization-plan.md)  
 前フェーズ履歴: [task-archive-20260321.md](task-archive-20260321.md)
 
-## 現在の状態: GraphStorageProvider Delta API ページング実装完了・PR 作成待ち
+## 現在の状態: Graph Delta API ページング実装・バグ修正・PR #59 マージ済み
 
 ---
 

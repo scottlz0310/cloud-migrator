@@ -8,6 +8,26 @@
 ## [Unreleased]
 
 ### Added
+- **GraphStorageProvider: BuildDeltaPage ユニットテスト追加**（PR #59）
+  - `BuildDeltaPage` を `private` → `internal` に変更してテストから直接呼び出し可能化
+  - `BuildDeltaPage_ExcludesDeletedItems` — Deleted ファセット付きアイテムの除外を検証
+  - `BuildDeltaPage_WithNextLink_HasMoreTrueAndCursorIsNextLink` — nextLink → `HasMore=true` を検証
+  - `BuildDeltaPage_WithDeltaLinkOnly_HasMoreFalseAndCursorIsDeltaLink` — deltaLink → `HasMore=false` を検証
+  - `BuildDeltaPage_WithFolderPrefix_RelativizesParentPath` — `OneDriveSourceFolder` 指定時の相対パス正規化（4パターン Theory）
+  - `BuildDeltaPage_NullResponse_ReturnsEmptyPage` — null レスポンスの安全処理
+  - 全テスト 255 件 PASS
+
+### Fixed
+- **GraphStorageProvider: `ListPagedAsync` パス正規化バグ修正**（PR #59）
+  - `OneDriveSourceFolder` 指定時、Delta API が返す `parentReference.Path` のフォルダプレフィックスを除去するよう `BuildDeltaPage` に `normalizedFolderPrefix` 引数を追加
+  - 例: `OneDriveSourceFolder = "Documents/Projects"` のとき `"Documents/Projects/Sub1"` → `"Sub1"` に正規化（`ListOneDriveItemsAsync` と同一の相対パス生成、FR-07 スキップリスト整合性）
+  - `ListPagedAsync` で `normalizedFolderPrefix` を cursor 分岐前に計算し、cursor 継続時にも同じ正規化が適用されるよう修正
+
+---
+
+## [前バージョン]
+
+### Added
 - **GraphStorageProvider: Graph Delta API によるネイティブページングクロール**
   - `GraphStorageProvider.ListPagedAsync` を実装（デフォルト実装から Graph Delta API へオーバーライド）
   - `GET /drives/{id}/items/{itemId}/delta?$top=200` でページ単位（200 件）のストリーミングクロールを実現
