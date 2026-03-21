@@ -8,6 +8,17 @@
 ## [Unreleased]
 
 ### Added
+- **GraphStorageProvider: Graph Delta API によるネイティブページングクロール**
+  - `GraphStorageProvider.ListPagedAsync` を実装（デフォルト実装から Graph Delta API へオーバーライド）
+  - `GET /drives/{id}/items/{itemId}/delta?$top=200` でページ単位（200 件）のストリーミングクロールを実現
+  - `cursor = null` → Delta クロール先頭から開始（`OneDriveSourceFolder` 指定時はそのフォルダ起点）
+  - `cursor = @odata.nextLink` → 同一クロールの続きページを取得（Kiota `WithUrl` パターン使用）
+  - `cursor = @odata.deltaLink` → クロール完了後の増分取得起点として SQLite checkpoints に保存される
+  - `parentReference.Path` から `driveRootPrefix` を除去して `StorageItem.Path` を計算（URL デコード対応）
+  - 削除済みアイテム（`Deleted` ファセット付き）は自動スキップ
+  - プライベートヘルパー `BuildDeltaPage` で `DeltaGetResponse` → `StoragePage` への変換を集約
+  - `DropboxMigrationPipeline.cs` のコメントを新実装に合わせて更新
+
 - **ダッシュボード: クロール確定総数の表示**
   - `DropboxMigrationPipeline` に `CrawlTotalKey = "crawl_total"` 定数追加
   - Phase B 完了直後に `GetSummaryAsync` で確定総数を取得し `crawl_total` チェックポイントに保存（`crawl_complete` フラグより先に保存）
