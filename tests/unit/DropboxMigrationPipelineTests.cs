@@ -388,6 +388,59 @@ public class DropboxMigrationPipelineTests
     // ── Phase B: throughput メトリクス記録 ──────────────────────────────────
 
     [Fact]
+    public async Task ProduceAsync_CrawlComplete_SavesCrawlTotalThenCrawlComplete()
+    {
+        // 検証対象: Phase B 完了後のチェックポイント保存順序
+        // 目的: crawl_total → crawl_complete の順に SaveCheckpointAsync が呼ばれることを確認する
+        var item = MakeItem("docs", "a.txt");
+        var tempFile = Path.GetTempFileName();
+        var callOrder = new List<string>();
+        try
+        {
+            SetupDbBase();
+            _mockDb.Setup(db => db.GetStatusAsync("docs", "a.txt", It.IsAny<CancellationToken>()))
+                   .ReturnsAsync((TransferStatus?)null);
+            // crawl_total / crawl_complete 保存時の呼び出し順を記録
+            _mockDb.Setup(db => db.SaveCheckpointAsync(
+                DropboxMigrationPipeline.CrawlTotalKey, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .Callback((string k, string _, CancellationToken __) => callOrder.Add(k))
+                .Returns(Task.CompletedTask);
+            _mockDb.Setup(db => db.SaveCheckpointAsync(
+                DropboxMigrationPipeline.CrawlCompleteKey, "true", It.IsAny<CancellationToken>()))
+                .Callback((string k, string _, CancellationToken __) => callOrder.Add(k + "=true"))
+                .Returns(Task.CompletedTask);
+            // GetSummaryAsync が Total=1 を返すよう設定
+            _mockDb.Setup(db => db.GetSummaryAsync(It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(new TransferDbSummary { Pending = 0, Done = 1 });
+            _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(SingleItemPage(item));
+            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(tempFile);
+            SetupDestBase();
+
+            await CreatePipeline().RunAsync(CancellationToken.None);
+
+            // crawl_total が crawl_complete より先に保存されること
+            callOrder.Should().ContainInOrder(DropboxMigrationPipeline.CrawlTotalKey, "crawl_complete=true");
+            // crawl_total に "1" が保存されること
+            _mockDb.Verify(
+                db => db.SaveCheckpointAsync(DropboxMigrationPipeline.CrawlTotalKey, "1", It.IsAny<CancellationToken>()),
+                Times.Once);
+            // crawl_complete に "false"（開始時リセット）と "true"（完了時）が両方保存されること
+            _mockDb.Verify(
+                db => db.SaveCheckpointAsync(DropboxMigrationPipeline.CrawlCompleteKey, "false", It.IsAny<CancellationToken>()),
+                Times.Once);
+            _mockDb.Verify(
+                db => db.SaveCheckpointAsync(DropboxMigrationPipeline.CrawlCompleteKey, "true", It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_100Transfers_RecordsThroughputBytesPerSec()
     {
         // 検証対象: throughput メトリクス記録  目的: 100 件転送完了で throughput_bytes_per_sec が RecordMetricAsync に記録される

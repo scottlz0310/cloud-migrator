@@ -273,7 +273,9 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
             SELECT key, value FROM checkpoints
             WHERE key IN ('crawl_complete', 'crawl_total')
             """;
-        var crawlComplete = false;
+        // 備考: 旧バージョンで作成された DB や空 DB では crawl_complete チェックポイントが存在しない。
+        // その場合でもダッシュボードが常に「クロール中」とならないよう、未記録時の既定値を true とする。
+        var crawlComplete = true;
         int? crawlTotal = null;
         await using (var reader = await crawlCmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
