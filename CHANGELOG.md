@@ -11,11 +11,12 @@
 - **Phase B: throughput メトリクス（スループット計測・グラフ表示）**
   - `DropboxMigrationPipeline` に `throughput_files_per_min` / `throughput_bytes_per_sec` の定期記録追加（100 回ごと、`rate_limit_pct` と同タイミング）
   - `_totalBytesTransferred`（成功転送バイト積算）・`_pipelineStartTime`（パイプライン起動時刻）フィールド追加
+  - `filesPerMin` 算出の分子を `totalNow`（スナップショット）に統一し他スレッドとの不整合を解消
+  - `fmtBytesPerSec` に `Number` 正規化と `NaN` フォールバック追加（Chart.js `ticks.callback` 防御）
   - `DashboardServer` HTML に「スループット（ファイル/分）」「スループット（バイト/秒）」グラフ追加（Chart.js 折れ線）
   - `refreshMetrics()` を 3 メトリクス並列取得に拡張（`rate_limit_pct` / `throughput_files_per_min` / `throughput_bytes_per_sec`）
-  - ユニットテスト追加: `RunAsync_SuccessfulTransfer_AccumulatesBytesTransferred`（全テスト 246 件 PASS）
-
-### Added
+  - メトリクス記録失敗ログのメッセージを一般化（メトリクス名に依存しない文言に変更）
+  - ユニットテスト追加: `RunAsync_100Transfers_RecordsThroughputBytesPerSec`（全テスト 246 件 PASS）
 - **Web ダッシュボード（`dashboard` コマンド）**
   - `CloudMigrator.Dashboard` プロジェクト追加（`src/CloudMigrator.Dashboard/`）: ASP.NET Core Minimal API + Chart.js インライン HTML
   - `ITransferStateDb` に `RecordMetricAsync` / `GetMetricsAsync` 追加（`metrics` テーブルへの時系列書き込みと読み取り）

@@ -239,9 +239,11 @@ public static class DashboardServer
             });
 
             function fmtBytesPerSec(v) {
-              if (v < 1024) return v.toFixed(0) + ' B/s';
-              if (v < 1024 * 1024) return (v / 1024).toFixed(1) + ' KB/s';
-              return (v / (1024 * 1024)).toFixed(1) + ' MB/s';
+              const n = Number(v);
+              if (!Number.isFinite(n)) return '-';
+              if (n < 1024) return n.toFixed(0) + ' B/s';
+              if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB/s';
+              return (n / (1024 * 1024)).toFixed(1) + ' MB/s';
             }
 
             const bytesChart = new Chart(document.getElementById('bytesChart'), {

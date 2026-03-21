@@ -387,27 +387,37 @@ public class DropboxMigrationPipelineTests
     // ── Phase B: throughput メトリクス記録 ──────────────────────────────────
 
     [Fact]
-    public async Task RunAsync_SuccessfulTransfer_AccumulatesBytesTransferred()
+    public async Task RunAsync_100Transfers_RecordsThroughputBytesPerSec()
     {
-        // 検証対象: throughput カウンタ  目的: 成功転送後 _totalBytesTransferred にバイト数が加算される
-        // 100 件未満のため RecordMetricAsync 呼び出しなし。SizeBytes の集計が完了することを確認する。
-        var item = MakeItem("docs", "large.bin", "od-bytes", size: 1024 * 1024); // 1 MB
+        // 検証対象: throughput メトリクス記録  目的: 100 件転送完了で throughput_bytes_per_sec が RecordMetricAsync に記録される
         var tempFile = Path.GetTempFileName();
+        var items = Enumerable.Range(1, 100)
+            .Select(i => MakeItem("docs", $"file{i:D3}.bin", $"od-{i}", size: 1024))
+            .ToList();
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync("docs", "large.bin", It.IsAny<CancellationToken>()))
+            _mockDb.Setup(db => db.GetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                    .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+                   .Returns(Task.CompletedTask);
+            var page = new StoragePage { Items = items, HasMore = false, Cursor = null };
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(SingleItemPage(item));
+                       .ReturnsAsync(page);
             _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
                        .ReturnsAsync(tempFile);
             SetupDestBase();
 
             var summary = await CreatePipeline().RunAsync(CancellationToken.None);
 
-            // 1 件成功すれば SizeBytes 分のバイトカウントが内部に積算されている
-            summary.Success.Should().Be(1);
+            summary.Success.Should().Be(100);
+            // 100 回目の転送完了で throughput_bytes_per_sec が記録される
+            _mockDb.Verify(
+                db => db.RecordMetricAsync(
+                    "throughput_bytes_per_sec",
+                    It.IsAny<double>(),
+                    It.IsAny<CancellationToken>()),
+                Times.AtLeastOnce);
         }
         finally
         {

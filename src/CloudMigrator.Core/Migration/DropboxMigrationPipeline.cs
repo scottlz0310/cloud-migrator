@@ -278,7 +278,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                         var pct = (double)Volatile.Read(ref _rateLimitHitCount) / totalNow * 100.0;
                         var elapsedSeconds = (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds;
                         var filesPerMin = elapsedSeconds > 0
-                            ? Volatile.Read(ref _totalTransferAttempts) / elapsedSeconds * 60.0
+                            ? totalNow / elapsedSeconds * 60.0
                             : 0.0;
                         var bytesPerSec = elapsedSeconds > 0
                             ? Volatile.Read(ref _totalBytesTransferred) / elapsedSeconds
@@ -297,7 +297,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                             // メトリクス失敗はメイン処理に影響させないが、障害検知のためにログは出力する
                             _logger.LogWarning(
                                 ex,
-                                "rate_limit_pct メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
+                                "メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
                                 job.Source.SkipKey);
                         }
                     }
