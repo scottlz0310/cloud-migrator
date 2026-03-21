@@ -383,4 +383,45 @@ public class DropboxMigrationPipelineTests
             if (File.Exists(tempFile)) File.Delete(tempFile);
         }
     }
+
+    // ── Phase B: throughput メトリクス記録 ──────────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_100Transfers_RecordsThroughputBytesPerSec()
+    {
+        // 検証対象: throughput メトリクス記録  目的: 100 件転送完了で throughput_bytes_per_sec が RecordMetricAsync に記録される
+        var tempFile = Path.GetTempFileName();
+        var items = Enumerable.Range(1, 100)
+            .Select(i => MakeItem("docs", $"file{i:D3}.bin", $"od-{i}", size: 1024))
+            .ToList();
+        try
+        {
+            SetupDbBase();
+            _mockDb.Setup(db => db.GetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+                   .Returns(Task.CompletedTask);
+            var page = new StoragePage { Items = items, HasMore = false, Cursor = null };
+            _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(page);
+            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(tempFile);
+            SetupDestBase();
+
+            var summary = await CreatePipeline().RunAsync(CancellationToken.None);
+
+            summary.Success.Should().Be(100);
+            // 100 回目の転送完了で throughput_bytes_per_sec が記録される
+            _mockDb.Verify(
+                db => db.RecordMetricAsync(
+                    "throughput_bytes_per_sec",
+                    It.IsAny<double>(),
+                    It.IsAny<CancellationToken>()),
+                Times.AtLeastOnce);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
 }
