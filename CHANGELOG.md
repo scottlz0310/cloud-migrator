@@ -8,6 +8,17 @@
 ## [Unreleased]
 
 ### Added
+- **ダッシュボード: クロール確定総数の表示**
+  - `DropboxMigrationPipeline` に `CrawlTotalKey = "crawl_total"` 定数追加
+  - Phase B 完了直後に `GetSummaryAsync` で確定総数を取得し `crawl_total` チェックポイントに保存（`crawl_complete` フラグより先に保存）
+  - `TransferDbSummary` に `CrawlTotal` プロパティ（`int?`）追加
+  - `SqliteTransferStateDb.GetSummaryAsync` で `crawl_complete` / `crawl_total` を単一 IN クエリで一括取得し `CrawlTotal` を返す
+  - `DashboardServer` JS: クロール完了後は `crawlTotal` を分母に使用（変動しない確定値）、クロール中は「クロール中」バッジを表示し進捗を「※クロール中のため推定」と明示
+  - `DropboxMigrationPipelineTests.SetupDbBase()` に `GetSummaryAsync` モック設定を追加（ユニットテスト 246 件 PASS）
+
+### Fixed
+- **DashboardServer.cs `c-total` 二重書き込み修正**: `refreshStatus()` 内で `c-total` を旧コード `fmt(s.total)` と新コード `fmt(denominator)` の両方でセットしており、後者（正しい値）が有効だが不要な旧行を削除
+
 - **Phase B: throughput メトリクス（スループット計測・グラフ表示）**
   - `DropboxMigrationPipeline` に `throughput_files_per_min` / `throughput_bytes_per_sec` の定期記録追加（100 回ごと、`rate_limit_pct` と同タイミング）
   - `_totalBytesTransferred`（成功転送バイト積算）・`_pipelineStartTime`（パイプライン起動時刻）フィールド追加
