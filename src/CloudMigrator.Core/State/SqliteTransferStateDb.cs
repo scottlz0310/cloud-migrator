@@ -59,6 +59,13 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 value       TEXT NOT NULL,
                 updated_at  TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS metrics (
+                timestamp   TEXT NOT NULL,
+                name        TEXT NOT NULL,
+                value       REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_metrics_name_ts
+                ON metrics(name, timestamp DESC);
             """;
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -290,6 +297,51 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
         cmd.Parameters.AddWithValue("@path", path);
         cmd.Parameters.AddWithValue("@name", name);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task RecordMetricAsync(string name, double value, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO metrics (timestamp, name, value)
+            VALUES (@ts, @name, @value);
+            """;
+        cmd.Parameters.AddWithValue("@ts", DateTimeOffset.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("@name", name);
+        cmd.Parameters.AddWithValue("@value", value);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(
+        string name, int recentMinutes, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT timestamp, name, value
+            FROM metrics
+            WHERE name = @name
+              AND timestamp >= datetime('now', '-' || @minutes || ' minutes')
+            ORDER BY timestamp ASC;
+            """;
+        cmd.Parameters.AddWithValue("@name", name);
+        cmd.Parameters.AddWithValue("@minutes", recentMinutes);
+
+        var results = new List<MetricPoint>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            results.Add(new MetricPoint(
+                Timestamp: DateTimeOffset.Parse(reader.GetString(0)),
+                Name: reader.GetString(1),
+                Value: reader.GetDouble(2)));
+        }
+        return results;
     }
 
     internal static TransferStatus ParseStatus(string status) => status switch
