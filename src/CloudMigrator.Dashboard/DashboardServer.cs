@@ -1,6 +1,7 @@
 using CloudMigrator.Core.State;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -21,29 +22,37 @@ public static class DashboardServer
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
 
+        // ITransferStateDb を DI コンテナに登録する。
+        // テストや将来の DB 差し替えはここを変更するだけで対応できる。
+        builder.Services.AddSingleton<ITransferStateDb>(_ => new SqliteTransferStateDb(dbPath));
+
         var app = builder.Build();
         app.Urls.Add($"http://localhost:{port}");
 
-        // 起動時に 1 回だけ DB を初期化し、各ハンドラーで共有する
-        await using var db = new SqliteTransferStateDb(dbPath);
+        // 起動時に 1 回だけスキーマ初期化（IDisposable はホスト停止時に解放される）
+        var db = app.Services.GetRequiredService<ITransferStateDb>();
         await db.InitializeAsync(ct).ConfigureAwait(false);
 
         // ── API エンドポイント ────────────────────────────────────────────────
 
         // GET /api/status  → ステータス別件数・完了率・バイト数
-        app.MapGet("/api/status", async (CancellationToken cancellationToken) =>
+        app.MapGet("/api/status", async (
+            ITransferStateDb stateDb,
+            CancellationToken cancellationToken) =>
         {
-            var summary = await db.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
+            var summary = await stateDb.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
             return Results.Ok(summary);
         });
 
         // GET /api/metrics?name=rate_limit_pct&minutes=60  → 時系列メトリクス
+        // name 省略時は "rate_limit_pct"（Pipeline が 100 件ごとに記録する唯一の既定メトリクス）
         app.MapGet("/api/metrics", async (
+            ITransferStateDb stateDb,
             string? name,
             int? minutes,
             CancellationToken cancellationToken) =>
         {
-            var data = await db.GetMetricsAsync(
+            var data = await stateDb.GetMetricsAsync(
                 name ?? "rate_limit_pct",
                 minutes ?? 60,
                 cancellationToken).ConfigureAwait(false);
@@ -51,9 +60,11 @@ public static class DashboardServer
         });
 
         // GET /api/errors  → 最近の失敗ファイル（最大5件）
-        app.MapGet("/api/errors", async (CancellationToken cancellationToken) =>
+        app.MapGet("/api/errors", async (
+            ITransferStateDb stateDb,
+            CancellationToken cancellationToken) =>
         {
-            var summary = await db.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
+            var summary = await stateDb.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
             return Results.Ok(summary.RecentFailed);
         });
 

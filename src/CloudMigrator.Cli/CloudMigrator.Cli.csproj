@@ -1,5 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- TODO: CLI が Dashboard（ASP.NET Core）に依存しており、将来 dashboard サブコマンドを
+       独立した実行ファイルに分離する際に解消する。現状は単一バイナリの利便性を優先している。 -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\CloudMigrator.Core\CloudMigrator.Core.csproj" />
