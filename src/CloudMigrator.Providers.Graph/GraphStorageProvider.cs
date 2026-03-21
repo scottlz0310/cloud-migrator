@@ -276,6 +276,12 @@ public sealed class GraphStorageProvider : IStorageProvider
 
         var driveId = await GetOneDriveDriveIdAsync(cancellationToken).ConfigureAwait(false);
 
+        // OneDriveSourceFolder が設定されている場合は、Delta API が返すパスからそのプレフィックスを除去し
+        // 既存の ListOneDriveItemsAsync と同一の相対パスを生成する（FR-07 スキップリストとの整合性）
+        var normalizedFolderPrefix = string.IsNullOrWhiteSpace(_options.OneDriveSourceFolder)
+            ? string.Empty
+            : _options.OneDriveSourceFolder.Trim('/');
+
         if (cursor is not null)
         {
             // 2回目以降: cursor は @odata.nextLink または @odata.deltaLink の URL
@@ -284,7 +290,7 @@ public sealed class GraphStorageProvider : IStorageProvider
                 .WithUrl(cursor)
                 .GetAsDeltaGetResponseAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            return BuildDeltaPage(contResponse, driveId);
+            return BuildDeltaPage(contResponse, driveId, normalizedFolderPrefix);
         }
 
         // 初回: OneDriveSourceFolder が設定されている場合はそのフォルダ起点で delta を開始する。
@@ -326,12 +332,13 @@ public sealed class GraphStorageProvider : IStorageProvider
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        return BuildDeltaPage(initResponse, driveId);
+        return BuildDeltaPage(initResponse, driveId, normalizedFolderPrefix);
     }
 
-    private StoragePage BuildDeltaPage(
+    internal StoragePage BuildDeltaPage(
         Microsoft.Graph.Drives.Item.Items.Item.Delta.DeltaGetResponse? response,
-        string driveId)
+        string driveId,
+        string normalizedFolderPrefix = "")
     {
         if (response?.Value is null)
             return new StoragePage { Items = [], Cursor = null, HasMore = false };
@@ -354,6 +361,16 @@ public sealed class GraphStorageProvider : IStorageProvider
                 parentPath = rawPath.Substring(driveRootPrefix.Length).TrimStart('/');
                 // パスはパーセントエンコードされている場合があるためデコードする
                 parentPath = Uri.UnescapeDataString(parentPath);
+                // OneDriveSourceFolder 起点クロール時は、そのフォルダパスを相対パスの先頭から除去する
+                // 例: folderPrefix="Documents/Projects", parentPath="Documents/Projects/Sub1" → "Sub1"
+                if (!string.IsNullOrEmpty(normalizedFolderPrefix))
+                {
+                    if (parentPath.Equals(normalizedFolderPrefix, StringComparison.OrdinalIgnoreCase))
+                        parentPath = string.Empty;
+                    else if (parentPath.Length > normalizedFolderPrefix.Length + 1 &&
+                             parentPath.StartsWith(normalizedFolderPrefix + "/", StringComparison.OrdinalIgnoreCase))
+                        parentPath = parentPath.Substring(normalizedFolderPrefix.Length + 1);
+                }
             }
 
             var storageItem = DriveItemToStorageItem(driveItem, parentPath);
