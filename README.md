@@ -36,6 +36,7 @@ src/
   CloudMigrator.Providers.Dropbox/      Dropbox 実装
   CloudMigrator.Dashboard/              Webダッシュボード
   CloudMigrator.Observability/          構造化ログ
+  CloudMigrator.Testing/                テスト共通ユーティリティ
 tests/
   unit/ integration/ e2e/
 ```
@@ -43,8 +44,8 @@ tests/
 ## 前提条件
 
 - .NET 10 SDK
-- PowerShell 7 以上（`tools/Get-DropboxToken.ps1` を使う場合）
-- `configs/config.json` と環境変数
+- PowerShell 5.1 以上（Windows PowerShell 5.1 / PowerShell 7+。`tools/Get-DropboxToken.ps1` を使う場合）
+- セットアップCLI（`bootstrap` / `init`）で生成される `configs/config.json` と環境変数
 
 設定優先順位は以下です。
 
@@ -115,7 +116,7 @@ dotnet run --project src/CloudMigrator.Cli -- dashboard
   - `MIGRATOR__DROPBOX__CLIENTID`
   - `MIGRATOR__DROPBOX__CLIENTSECRET`
 
-サンプルは [sample.env](sample.env) と [configs/config.json](configs/config.json) を参照してください。
+サンプルは [sample.env](sample.env) を参照してください。`config.json` は `init` コマンドで生成できます。
 
 ## ビルド・テスト
 
