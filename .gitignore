@@ -59,6 +59,10 @@ obj/
 *.suo
 .vs/
 
+# dotnet ローカルツールキャッシュ（dotnet-tools.json のみ管理対象）
+.store/
+.husky-bin/
+
 # 実行時生成ファイル
 logs/
 .env

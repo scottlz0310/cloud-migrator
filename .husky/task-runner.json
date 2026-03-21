@@ -1,0 +1,10 @@
+{
+   "$schema": "https://alirezanet.github.io/Husky.Net/schema.json",
+   "tasks": [
+      {
+         "name": "dotnet-format",
+         "command": "dotnet",
+         "args": [ "format", "CloudMigrator.slnx", "--verify-no-changes" ]
+      }
+   ]
+}

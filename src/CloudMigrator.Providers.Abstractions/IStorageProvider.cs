@@ -35,4 +35,21 @@ public interface IStorageProvider
     /// デフォルト: <c>false</c>（Graph 等の従来実装への後方互換）。
     /// </summary>
     bool AutoCreateParentFolders => false;
+
+    /// <summary>
+    /// ページング列挙 API（カーソル / nextLink 対応）。
+    /// デフォルト実装は <see cref="ListItemsAsync"/> をラップして単一ページとして返す。
+    /// Dropbox 等はこのメソッドをオーバーライドしてネイティブページングを実装する。
+    /// </summary>
+    /// <param name="rootPath">クロール対象のルートパス</param>
+    /// <param name="cursor">前回ページの継続カーソル。null の場合は先頭から取得する。</param>
+    async Task<StoragePage> ListPagedAsync(
+        string rootPath,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        // cursor を無視して全件を単一ページで返すデフォルト実装（後方互換）
+        var items = await ListItemsAsync(rootPath, cancellationToken).ConfigureAwait(false);
+        return new StoragePage { Items = items, Cursor = null, HasMore = false };
+    }
 }

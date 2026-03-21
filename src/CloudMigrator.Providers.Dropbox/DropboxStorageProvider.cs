@@ -99,8 +99,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                 },
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-            when (ex.Message.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
+        catch (DropboxApiException ex)
+            when (ex.ResponseBody.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
         {
             // 転送先フォルダーがまだ存在しない場合は転送済み0件として扱う
             _logger.LogInformation(
@@ -205,6 +205,64 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
             await UploadChunkedAsync(destinationPath, localFilePath, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Dropbox アップロード完了: {DestPath}", destinationPath);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Dropbox のネイティブページング API（<c>files/list_folder</c> / <c>files/list_folder/continue</c>）を使用する。
+    /// <paramref name="cursor"/> が null の場合は先頭ページを取得し、以後は続きを取得する。
+    /// </remarks>
+    public async Task<StoragePage> ListPagedAsync(
+        string rootPath,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAccessTokenConfigured();
+
+        ListFolderResponse response;
+        if (cursor is null)
+        {
+            var crawlPath = ResolveCrawlPath(rootPath);
+            try
+            {
+                response = await PostDropboxApiAsync<ListFolderRequest, ListFolderResponse>(
+                    "files/list_folder",
+                    new ListFolderRequest
+                    {
+                        Path = crawlPath,
+                        Recursive = true,
+                        IncludeDeleted = false,
+                        IncludeHasExplicitSharedMembers = false,
+                        IncludeMountedFolders = true,
+                        IncludeNonDownloadableFiles = false,
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (DropboxApiException ex)
+                when (ex.ResponseBody.Contains("path/not_found", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation(
+                    "Dropbox パスが存在しません。空ページとして返します: {RootPath}", rootPath);
+                return new StoragePage { Items = [], Cursor = null, HasMore = false };
+            }
+        }
+        else
+        {
+            response = await PostDropboxApiAsync<ListFolderContinueRequest, ListFolderResponse>(
+                "files/list_folder/continue",
+                new ListFolderContinueRequest { Cursor = cursor },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var items = new List<StorageItem>();
+        AddFileEntries(response.Entries, items);
+
+        return new StoragePage
+        {
+            Items = items,
+            Cursor = response.Cursor,
+            HasMore = response.HasMore,
+        };
     }
 
     /// <inheritdoc/>
@@ -443,8 +501,23 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         CancellationToken ct)
     {
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        throw new InvalidOperationException(
-            $"Dropbox API 呼び出しに失敗しました: {endpoint} ({(int)response.StatusCode}) {body}");
+
+        TimeSpan? retryAfter = null;
+        if (response.Headers.RetryAfter?.Delta is { } delta)
+            retryAfter = delta;
+        else if (response.Headers.RetryAfter?.Date is { } date)
+        {
+            // 時計ずれ・過去日時で負値になる場合は null として扱う（防御的クランプ）
+            var diff = date - DateTimeOffset.UtcNow;
+            if (diff > TimeSpan.Zero)
+                retryAfter = diff;
+        }
+
+        throw new DropboxApiException(
+            $"Dropbox API 呼び出しに失敗しました: {endpoint} ({(int)response.StatusCode}) {body}",
+            response.StatusCode,
+            body,
+            retryAfter);
     }
 
     private static bool IsFolderAlreadyExistsConflict(string responseBody)
