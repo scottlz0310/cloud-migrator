@@ -229,7 +229,7 @@
 
 ---
 
-## 2026-03-08 開発履歴 3
+## 2026-03-08 開発履歴
 
 ### Added
 - `ConfigHashChecker`（`CloudMigrator.Core.Configuration`）- 設定変更を SHA-256 ハッシュで検知（FR-10）
@@ -252,7 +252,7 @@
 
 ---
 
-## 2026-03-02 開発履歴 1
+## 2026-03-02 開発履歴（Dropbox基盤）
 
 ### Added
 - `FileCrawlerCommand`（`CloudMigrator.Cli.Commands`）- `file-crawler` サブコマンド（FR-18）
@@ -276,7 +276,7 @@
 
 ---
 
-## 2026-03-02 開発履歴 2
+## 2026-03-02 開発履歴（運用コマンド）
 
 ### Added
 - `WatchdogCommand`（`CloudMigrator.Cli.Commands`）- `watchdog` サブコマンド（FR-16/FR-17）
@@ -307,7 +307,7 @@
 
 ---
 
-## 2026-03-01 開発履歴 4
+## 2026-03-01 開発履歴（転送エンジン）
 
 ### Added
 - `TransferSummary`（`CloudMigrator.Core.Transfer`）- 転送結果サマリーレコード（Success / Failed / Skipped / Elapsed）
@@ -330,7 +330,7 @@
 
 ---
 
-## 2026-03-01 開発履歴 5
+## 2026-03-01 開発履歴（クロール/スキップリスト）
 
 ### Added
 - `CrawlCache`（`CloudMigrator.Core.Storage`）- クロール結果を JSON ファイルへキャッシュ（FR-09）
@@ -354,7 +354,7 @@
 
 ---
 
-## 2026-03-01 開発履歴 6
+## 2026-03-01 開発履歴（Graphプロバイダー）
 
 ### Added
 - `GraphAuthenticator`（MSAL client credentials、`IAccessTokenProvider` 実装）
@@ -371,7 +371,7 @@
 
 ---
 
-## 2026-03-01 開発履歴 7
+## 2026-03-01 開発履歴（修正対応）
 
 ### Fixed
 - `StorageItem.SkipKey`: 空パス時に先頭スラッシュが混入する問題を修正
@@ -390,7 +390,7 @@
 
 ---
 
-## 2026-03-01 開発履歴 8
+## 2026-03-01 開発履歴（初期セットアップ拡張）
 
 ### Added
 - NuGet パッケージ追加（Microsoft.Graph, System.CommandLine, Serilog, FluentAssertions, Moq 等）
