@@ -39,6 +39,8 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     private int _ensureFolderCallCount;
     private int _totalTransferAttempts;
     private int _rateLimitHitCount;
+    private long _totalBytesTransferred;
+    private DateTimeOffset _pipelineStartTime;
 
     public DropboxMigrationPipeline(
         IStorageProvider sourceProvider,
@@ -62,6 +64,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         await _stateDb.InitializeAsync(ct).ConfigureAwait(false);
 
         var sw = Stopwatch.StartNew();
+        _pipelineStartTime = DateTimeOffset.UtcNow;
 
         var channel = Channel.CreateBounded<TransferJob>(new BoundedChannelOptions(ChannelCapacity)
         {
@@ -226,6 +229,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                     await _stateDb.MarkDoneAsync(job.Source.Path, job.Source.Name, itemCt)
                         .ConfigureAwait(false);
                     Interlocked.Increment(ref success);
+                    Interlocked.Add(ref _totalBytesTransferred, job.Source.SizeBytes ?? 0);
                     _logger.LogInformation("Dropbox 転送完了: {SkipKey}", job.Source.SkipKey);
                     controller?.NotifySuccess();
                 }
@@ -268,13 +272,24 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 }
                 finally
                 {
-                    // 100 回ごとに rate_limit_pct をダッシュボード向けに記録する
+                    // 100 回ごとに metricsテーブルへ転送状況を記録する（ダッシュボード向け）
                     if (totalNow % 100 == 0)
                     {
                         var pct = (double)Volatile.Read(ref _rateLimitHitCount) / totalNow * 100.0;
+                        var elapsedSeconds = (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds;
+                        var filesPerMin = elapsedSeconds > 0
+                            ? totalNow / elapsedSeconds * 60.0
+                            : 0.0;
+                        var bytesPerSec = elapsedSeconds > 0
+                            ? Volatile.Read(ref _totalBytesTransferred) / elapsedSeconds
+                            : 0.0;
                         try
                         {
                             await _stateDb.RecordMetricAsync("rate_limit_pct", pct, itemCt)
+                                .ConfigureAwait(false);
+                            await _stateDb.RecordMetricAsync("throughput_files_per_min", filesPerMin, itemCt)
+                                .ConfigureAwait(false);
+                            await _stateDb.RecordMetricAsync("throughput_bytes_per_sec", bytesPerSec, itemCt)
                                 .ConfigureAwait(false);
                         }
                         catch (Exception ex)
@@ -282,7 +297,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                             // メトリクス失敗はメイン処理に影響させないが、障害検知のためにログは出力する
                             _logger.LogWarning(
                                 ex,
-                                "rate_limit_pct メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
+                                "メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
                                 job.Source.SkipKey);
                         }
                     }
