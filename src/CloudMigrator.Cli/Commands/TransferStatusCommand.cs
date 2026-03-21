@@ -12,7 +12,10 @@ internal static class TransferStatusCommand
 {
     public static Command Build()
     {
-        var dbOpt = new Option<string?>("--db", "転送状態 DB ファイルパス（省略時: 設定ファイルの値を使用）");
+        var dbOpt = new Option<string?>("--db")
+        {
+            Description = "転送状態 DB ファイルパス（省略時: 設定ファイルの値を使用）",
+        };
         var cmd = new Command("status", "Dropbox 転送状態ダッシュボードを表示します");
         cmd.Add(dbOpt);
         cmd.SetAction(async (parseResult, ct) =>
