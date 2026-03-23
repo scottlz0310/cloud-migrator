@@ -372,9 +372,10 @@ public static class DashboardServer
               document.getElementById('c-avgsize').textContent =
                 s.done > 0 ? fmtBytes(Math.round(s.totalDoneSizeBytes / s.done)) : '—';
 
-              // 経過時間
-              if (s.firstUpdatedAt) {
-                const elapsedSec = (Date.now() - new Date(s.firstUpdatedAt).getTime()) / 1000;
+              // 経過時間（pipeline_started_at checkpoint 優先、なければ firstUpdatedAt を代用）
+              const startedAt = s.pipelineStartedAt ?? s.firstUpdatedAt;
+              if (startedAt) {
+                const elapsedSec = (Date.now() - new Date(startedAt).getTime()) / 1000;
                 document.getElementById('c-elapsed').textContent = fmtDuration(elapsedSec);
               }
 

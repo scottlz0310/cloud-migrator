@@ -24,7 +24,13 @@ public sealed record TransferDbSummary
     public long TotalDoneSizeBytes { get; init; }
 
     /// <summary>全レコードの retry_count 合計</summary>
-    public int TotalRetries { get; init; }
+    public long TotalRetries { get; init; }
+
+    /// <summary>
+    /// パイプライン初回起動時刻（checkpoints の pipeline_started_at から取得）。
+    /// 経過時間の安定した起点として使用する。null の場合は <see cref="FirstUpdatedAt"/> を代用する。
+    /// </summary>
+    public DateTimeOffset? PipelineStartedAt { get; init; }
 
     /// <summary>DB 内の最も古い updated_at</summary>
     public DateTimeOffset? FirstUpdatedAt { get; init; }

@@ -66,6 +66,11 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         var sw = Stopwatch.StartNew();
         _pipelineStartTime = DateTimeOffset.UtcNow;
 
+        // パイプライン開始時刻を初回のみ保存（リカバリ再起動時は上書きしない）
+        var existingStartedAt = await _stateDb.GetCheckpointAsync("pipeline_started_at", ct).ConfigureAwait(false);
+        if (existingStartedAt is null)
+            await _stateDb.SaveCheckpointAsync("pipeline_started_at", _pipelineStartTime.ToString("O"), ct).ConfigureAwait(false);
+
         var channel = Channel.CreateBounded<TransferJob>(new BoundedChannelOptions(ChannelCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
