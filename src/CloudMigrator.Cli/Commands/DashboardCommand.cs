@@ -38,7 +38,11 @@ internal static class DashboardCommand
             var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
                 ?? new MigratorOptions();
 
-            var dbPath = parseResult.GetValue(dbOption) ?? options.Paths.DropboxStateDb;
+            // destinationProvider に応じてデフォルト DB を切り替える（SharePoint: SP 用 DB、Dropbox: Dropbox 用 DB）
+            var defaultDbPath = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase)
+                ? options.Paths.DropboxStateDb
+                : options.Paths.SharePointStateDb;
+            var dbPath = parseResult.GetValue(dbOption) ?? defaultDbPath;
             var port = parseResult.GetValue(portOption);
             var noBrowser = parseResult.GetValue(noBrowserOption);
             var url = $"http://localhost:{port}";

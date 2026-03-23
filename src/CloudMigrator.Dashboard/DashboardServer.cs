@@ -59,6 +59,31 @@ public static class DashboardServer
             return Results.Ok(data);
         });
 
+        // GET /api/phase  → 現在のパイプラインフェーズ（SharePoint 3フェーズ対応）
+        app.MapGet("/api/phase", async (
+            ITransferStateDb stateDb,
+            CancellationToken cancellationToken) =>
+        {
+            var crawlComplete = await stateDb.GetCheckpointAsync("crawl_complete", cancellationToken).ConfigureAwait(false);
+            var folderCreationComplete = await stateDb.GetCheckpointAsync("folder_creation_complete", cancellationToken).ConfigureAwait(false);
+            var folderTotalStr = await stateDb.GetCheckpointAsync("folder_total", cancellationToken).ConfigureAwait(false);
+
+            var folderDoneMetrics = await stateDb.GetMetricsAsync("sp_folder_done", 120, cancellationToken).ConfigureAwait(false);
+            var folderDone = folderDoneMetrics.Count > 0 ? (int)folderDoneMetrics[^1].Value : 0;
+
+            string phase;
+            if (crawlComplete != "true")
+                phase = "crawling";
+            else if (folderCreationComplete != "true")
+                phase = "folder_creation";
+            else
+                phase = "transferring";
+
+            int? folderTotal = folderTotalStr is not null && int.TryParse(folderTotalStr, out var ft) ? ft : null;
+
+            return Results.Ok(new { phase, folderTotal, folderDone });
+        });
+
         // GET /api/errors  → 最近の失敗ファイル（最大5件）
         app.MapGet("/api/errors", async (
             ITransferStateDb stateDb,
@@ -90,6 +115,10 @@ public static class DashboardServer
             header { background: #1a1a2e; padding: 14px 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2a2a4a; }
             header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: .02em; }
             .badge { font-size: .7rem; background: #4f46e5; padding: 2px 8px; border-radius: 99px; color: #fff; }
+            .phase-badge { font-size: .7rem; padding: 2px 10px; border-radius: 99px; color: #fff; display: none; }
+            .phase-badge.crawling { background: #f59e0b; }
+            .phase-badge.folder_creation { background: #8b5cf6; }
+            .phase-badge.transferring { background: #22c55e; }
             .refresh-indicator { margin-left: auto; font-size: .7rem; color: #888; }
             main { max-width: 1200px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px; }
             .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
@@ -124,6 +153,7 @@ public static class DashboardServer
           <header>
             <h1>&#128640; CloudMigrator</h1>
             <span class="badge">Dashboard</span>
+            <span class="phase-badge" id="phaseBadge"></span>
             <span class="refresh-indicator" id="refreshTxt">次回更新まで 5s</span>
           </header>
           <main>
@@ -149,6 +179,12 @@ public static class DashboardServer
               <h2>完了率</h2>
               <div class="bar-bg"><div class="bar-fg" id="progressBar" style="width:0%"></div></div>
               <div class="bar-label" id="progressLabel">0 / 0 (0.0%)</div>
+            </section>
+
+            <section class="progress-wrap" id="folderProgressSection" style="display:none">
+              <h2>フォルダ作成進捗 <span id="folderPhaseLabel" style="font-weight:normal;color:#8b5cf6;margin-left:6px;"></span></h2>
+              <div class="bar-bg"><div class="bar-fg" id="folderProgressBar" style="width:0%;background:linear-gradient(90deg,#8b5cf6,#60a5fa)"></div></div>
+              <div class="bar-label" id="folderProgressLabel">0 / —</div>
             </section>
 
             <section class="charts">
@@ -431,6 +467,40 @@ public static class DashboardServer
               }
             }
 
+            const phaseLabels = {
+              'crawling':        'クロール中',
+              'folder_creation': 'フォルダ作成中',
+              'transferring':    '転送中',
+            };
+
+            async function refreshPhase() {
+              const res = await fetch('/api/phase');
+              if (!res.ok) return;
+              const p = await res.json();
+
+              // フェーズバッジ更新
+              const badge = document.getElementById('phaseBadge');
+              badge.className = 'phase-badge ' + p.phase;
+              badge.textContent = phaseLabels[p.phase] ?? p.phase;
+              badge.style.display = 'inline';
+
+              // フォルダ作成進捗セクション（folder_creation フェーズのみ表示）
+              const folderSection = document.getElementById('folderProgressSection');
+              if (p.phase === 'folder_creation' || (p.phase === 'transferring' && (p.folderTotal ?? 0) > 0)) {
+                folderSection.style.display = '';
+                const total = p.folderTotal ?? 0;
+                const done = p.folderDone ?? 0;
+                const pct = total > 0 ? (done / total * 100) : 0;
+                document.getElementById('folderProgressBar').style.width = pct.toFixed(1) + '%';
+                document.getElementById('folderProgressLabel').textContent =
+                  total > 0 ? `${fmt(done)} / ${fmt(total)} (${pct.toFixed(1)}%)` : `${fmt(done)} / —`;
+                document.getElementById('folderPhaseLabel').textContent =
+                  p.phase === 'folder_creation' ? '(実行中)' : '(完了)';
+              } else {
+                folderSection.style.display = 'none';
+              }
+            }
+
             async function refreshErrors() {
               const res = await fetch('/api/errors');
               if (!res.ok) return;
@@ -460,7 +530,7 @@ public static class DashboardServer
             }
 
             async function refresh() {
-              await Promise.allSettled([refreshStatus(), refreshMetrics(), refreshErrors()]);
+              await Promise.allSettled([refreshStatus(), refreshMetrics(), refreshErrors(), refreshPhase()]);
             }
 
             // カウントダウン表示

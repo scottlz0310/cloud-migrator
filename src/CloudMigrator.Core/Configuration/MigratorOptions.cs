@@ -80,6 +80,9 @@ public sealed class PathOptions
 
     /// <summary>Dropbox 移行の SQLite 状態 DB ファイルパス。</summary>
     public string DropboxStateDb { get; set; } = "logs/dropbox_transfer_state.db";
+
+    /// <summary>SharePoint 移行の SQLite 状態 DB ファイルパス。</summary>
+    public string SharePointStateDb { get; set; } = "logs/sharepoint_transfer_state.db";
 }
 
 /// <summary>
