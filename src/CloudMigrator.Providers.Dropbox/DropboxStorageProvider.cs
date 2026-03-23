@@ -570,7 +570,17 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
                 // 429: 外部コントローラー（AdaptiveConcurrencyController 等）へ通知する
                 if ((int)response.StatusCode == 429)
-                    _onRateLimit?.Invoke(response.Headers.RetryAfter?.Delta);
+                {
+                    // Retry-After: Delta 優先。なければ Date から現在時刻との差分を計算する
+                    TimeSpan? retryAfter = response.Headers.RetryAfter?.Delta;
+                    if (retryAfter is null && response.Headers.RetryAfter?.Date is { } retryAfterDate)
+                    {
+                        var diff = retryAfterDate - DateTimeOffset.UtcNow;
+                        retryAfter = diff < TimeSpan.Zero ? TimeSpan.Zero : diff;
+                    }
+
+                    _onRateLimit?.Invoke(retryAfter);
+                }
 
                 var delay = await GetRetryDelayAsync(response, attempt, ct).ConfigureAwait(false);
                 _logger.LogWarning(

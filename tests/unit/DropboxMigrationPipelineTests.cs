@@ -2,8 +2,10 @@ using System.Runtime.CompilerServices;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
+using CloudMigrator.Core.Transfer;
 using CloudMigrator.Providers.Abstractions;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -433,6 +435,54 @@ public class DropboxMigrationPipelineTests
             _mockDb.Verify(
                 db => db.SaveCheckpointAsync(DropboxMigrationPipeline.CrawlCompleteKey, "true", It.IsAny<CancellationToken>()),
                 Times.Once);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    // ── current_parallelism 即時記録（変化検出） ─────────────────────────────
+
+    [Fact]
+    public async Task RunAsync_WithAdaptiveController_RecordsCurrentParallelismOnFirstTransfer()
+    {
+        // 検証対象: current_parallelism 即時記録
+        // 目的: _lastRecordedParallelism=-1（初期値）から CurrentDegree=4 への「変化」が検出され、
+        //       RecordMetricAsync("current_parallelism", 4, ...) が呼ばれること
+        var item = MakeItem("docs", "a.txt");
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            SetupDbBase();
+            _mockDb.Setup(db => db.GetStatusAsync("docs", "a.txt", It.IsAny<CancellationToken>()))
+                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+                   .Returns(Task.CompletedTask);
+            _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(SingleItemPage(item));
+            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(tempFile);
+            SetupDestBase();
+
+            using var controller = new AdaptiveConcurrencyController(
+                initialDegree: 4, minDegree: 1, maxDegree: 4, successThreshold: 10,
+                Mock.Of<ILogger<AdaptiveConcurrencyController>>());
+
+            var pipeline = new DropboxMigrationPipeline(
+                _mockSource.Object, _mockDest.Object, _mockDb.Object, _options,
+                NullLogger<DropboxMigrationPipeline>.Instance,
+                concurrencyController: controller);
+
+            await pipeline.RunAsync(CancellationToken.None);
+
+            // _lastRecordedParallelism=-1 → CurrentDegree=4 への変化で即時記録される
+            _mockDb.Verify(
+                db => db.RecordMetricAsync(
+                    "current_parallelism",
+                    4.0,
+                    It.IsAny<CancellationToken>()),
+                Times.AtLeastOnce);
         }
         finally
         {

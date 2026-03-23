@@ -268,6 +268,88 @@ public class DropboxStorageProviderTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    // ─── onRateLimit コールバック ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task OnRateLimit_CalledOnce_When429WithDeltaRetryAfter()
+    {
+        // 検証対象: onRateLimit  目的: 429 (Retry-After: Delta) でコールバックが 1 回呼ばれ正しい値が渡ること
+        var handler = new StubHandler();
+        // 1 回目: 429 (Retry-After: 5秒)
+        handler.Enqueue(_ =>
+        {
+            var res = new HttpResponseMessage((HttpStatusCode)429);
+            res.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(5));
+            return res;
+        });
+        // 2 回目: 成功
+        handler.Enqueue(_ => JsonResponse("""{"metadata":{"name":"a.txt",".tag":"file"}}"""));
+
+        TimeSpan? capturedRetryAfter = TimeSpan.FromDays(1); // sentinel
+        var callCount = 0;
+        void OnRateLimit(TimeSpan? ra) { callCount++; capturedRetryAfter = ra; }
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            "valid-token",
+            new DropboxStorageOptions(),
+            httpClient,
+            maxRetry: 1,
+            onRateLimit: OnRateLimit);
+
+        var tmp = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tmp, "data");
+            await provider.UploadFromLocalAsync(tmp, 4, "/a.txt", CancellationToken.None);
+        }
+        finally { File.Delete(tmp); }
+
+        callCount.Should().Be(1);
+        capturedRetryAfter.Should().Be(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task OnRateLimit_CalledOnce_When429WithDateRetryAfter()
+    {
+        // 検証対象: onRateLimit  目的: 429 (Retry-After: Date) でコールバックが 1 回呼ばれ非負値が渡ること
+        var handler = new StubHandler();
+        // 1 回目: 429 (Retry-After: 3秒後の絶対日時)
+        handler.Enqueue(_ =>
+        {
+            var res = new HttpResponseMessage((HttpStatusCode)429);
+            res.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(
+                DateTimeOffset.UtcNow.AddSeconds(3));
+            return res;
+        });
+        // 2 回目: 成功
+        handler.Enqueue(_ => JsonResponse("""{"metadata":{"name":"a.txt",".tag":"file"}}"""));
+
+        TimeSpan? capturedRetryAfter = null;
+        void OnRateLimit(TimeSpan? ra) => capturedRetryAfter = ra;
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            "valid-token",
+            new DropboxStorageOptions(),
+            httpClient,
+            maxRetry: 1,
+            onRateLimit: OnRateLimit);
+
+        var tmp = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tmp, "data");
+            await provider.UploadFromLocalAsync(tmp, 4, "/a.txt", CancellationToken.None);
+        }
+        finally { File.Delete(tmp); }
+
+        capturedRetryAfter.Should().NotBeNull();
+        capturedRetryAfter!.Value.Should().BeGreaterThanOrEqualTo(TimeSpan.Zero);
+    }
+
     private static HttpResponseMessage JsonResponse(string json)
     {
         return new HttpResponseMessage(HttpStatusCode.OK)
