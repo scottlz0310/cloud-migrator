@@ -4,7 +4,7 @@ namespace CloudMigrator.Core.Migration;
 
 /// <summary>
 /// 移行パイプラインの共通契約。
-/// Dropbox（ストリーミング + SQLite 状態管理）と SharePoint（TransferEngine ラッパー）で実装する。
+/// Dropbox・SharePoint ともに SQLite 状態管理 + フェーズ構造で実装する。
 /// </summary>
 public interface IMigrationPipeline
 {
