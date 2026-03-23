@@ -23,6 +23,12 @@ public interface ITransferStateDb : IAsyncDisposable
     Task UpsertPendingAsync(StorageItem item, CancellationToken ct);
 
     /// <summary>
+    /// SharePoint Phase B クロール用: 新規アイテムを pending として UPSERT する。
+    /// done / permanent_failed の既存レコードは上書きしない（1 クエリで N+1 を回避）。
+    /// </summary>
+    Task UpsertPendingIfNotTerminalAsync(StorageItem item, CancellationToken ct);
+
+    /// <summary>
     /// 起動時クラッシュリカバリ: processing 状態のレコードを pending に戻す。
     /// 前回実行中にクラッシュしたアイテムを再キューイング可能な状態に戻す。
     /// </summary>

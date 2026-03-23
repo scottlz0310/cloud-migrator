@@ -20,11 +20,11 @@ namespace CloudMigrator.Core.Migration;
 /// </summary>
 public sealed class SharePointMigrationPipeline : IMigrationPipeline
 {
-    internal const string SpCursorKey = "sp_cursor";
-    internal const string CrawlCompleteKey = "crawl_complete";
-    internal const string CrawlTotalKey = "crawl_total";
-    internal const string FolderTotalKey = "folder_total";
-    internal const string FolderCreationCompleteKey = "folder_creation_complete";
+    public const string SpCursorKey = "sp_cursor";
+    public const string CrawlCompleteKey = "crawl_complete";
+    public const string CrawlTotalKey = "crawl_total";
+    public const string FolderTotalKey = "folder_total";
+    public const string FolderCreationCompleteKey = "folder_creation_complete";
     internal const string SourceRootPath = "onedrive";
     private const int ChannelCapacity = 1000;
 
@@ -155,12 +155,9 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
             foreach (var item in page.Items.Where(i => !i.IsFolder))
             {
                 ct.ThrowIfCancellationRequested();
-
-                var status = await _stateDb.GetStatusAsync(item.Path, item.Name, ct).ConfigureAwait(false);
-                // null = 未登録の新規アイテム → INSERT する
-                // pending/processing/failed/done/permanent_failed は既知のため INSERT しない
-                if (status is null)
-                    await _stateDb.UpsertPendingAsync(item, ct).ConfigureAwait(false);
+                // done / permanent_failed は上書きせず、新規・pending/processing/failed は pending にリセット
+                // GetStatusAsync を省いて 1 クエリで処理（N+1 回避）
+                await _stateDb.UpsertPendingIfNotTerminalAsync(item, ct).ConfigureAwait(false);
             }
 
             // ページ単位でカーソルをチェックポイント保存（中断再開に備える）
@@ -239,9 +236,10 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                 },
                 async (folderRelPath, folderCt) =>
                 {
-                    var destFolderPath = string.IsNullOrEmpty(_options.DestinationRoot)
+                    var normalizedRoot = _options.DestinationRoot?.Replace('\\', '/').Trim('/');
+                    var destFolderPath = string.IsNullOrEmpty(normalizedRoot)
                         ? folderRelPath
-                        : $"{_options.DestinationRoot.TrimEnd('/')}/{folderRelPath}";
+                        : $"{normalizedRoot}/{folderRelPath}";
 
                     // EnsureFolderAsync は 409 Conflict を無視する冪等実装のため並列・再実行で安全
                     await _destinationProvider.EnsureFolderAsync(destFolderPath, folderCt).ConfigureAwait(false);

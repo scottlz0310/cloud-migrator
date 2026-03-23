@@ -135,14 +135,13 @@ public class SharePointMigrationPipelineTests
         _mockDb.Setup(db => db.GetCheckpointAsync(SharePointMigrationPipeline.FolderCreationCompleteKey, It.IsAny<CancellationToken>())).ReturnsAsync("true");
         _mockDb.Setup(db => db.GetCheckpointAsync(It.IsNotIn("pipeline_started_at", SharePointMigrationPipeline.CrawlCompleteKey, SharePointMigrationPipeline.SpCursorKey, SharePointMigrationPipeline.FolderCreationCompleteKey), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         _mockDb.Setup(db => db.SaveCheckpointAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        _mockDb.Setup(db => db.UpsertPendingAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDb.Setup(db => db.UpsertPendingIfNotTerminalAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.MarkProcessingAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.MarkDoneAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.MarkFailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.GetSummaryAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new TransferDbSummary());
         _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.GetDistinctFolderPathsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>())).ReturnsAsync((TransferStatus?)null);
 
         _mockSource.Setup(s => s.ListPagedAsync(SharePointMigrationPipeline.SourceRootPath, null, It.IsAny<CancellationToken>()))
                    .ReturnsAsync(SingleItemPage(item, cursor: "cur-1"));
@@ -150,7 +149,7 @@ public class SharePointMigrationPipelineTests
         await CreatePipeline().RunAsync(CancellationToken.None);
 
         _mockSource.Verify(s => s.ListPagedAsync(SharePointMigrationPipeline.SourceRootPath, null, It.IsAny<CancellationToken>()), Times.Once);
-        _mockDb.Verify(db => db.UpsertPendingAsync(item, It.IsAny<CancellationToken>()), Times.Once);
+        _mockDb.Verify(db => db.UpsertPendingIfNotTerminalAsync(item, It.IsAny<CancellationToken>()), Times.Once);
         // カーソルがチェックポイントに保存される
         _mockDb.Verify(db => db.SaveCheckpointAsync(SharePointMigrationPipeline.SpCursorKey, "cur-1", It.IsAny<CancellationToken>()), Times.Once);
         // Phase B 完了フラグが保存される

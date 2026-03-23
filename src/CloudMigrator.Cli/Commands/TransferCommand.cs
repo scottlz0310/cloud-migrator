@@ -89,7 +89,7 @@ internal static class TransferCommand
             .ConfigureAwait(false);
     }
 
-    /// <summary>SharePoint 移行パイプライン（SQLite 状態管理 + 3フェーズ構造）を実行する。</summary>
+    /// <summary>SharePoint 移行パイプライン（SQLite 状態管理 + 4フェーズ構造 [Phase A〜D]）を実行する。</summary>
     private static async Task RunSharePointPipelineAsync(
         bool resetState,
         CliServices svc,
@@ -100,20 +100,17 @@ internal static class TransferCommand
         var spDbPath = opts.Paths.SharePointStateDb;
 
         // フルリビルド or 設定変更時は SQLite 状態 DB をリセット
+        // DB 本体が存在しない場合でも WAL/SHM サイドカーだけ残存することがあるため個別に削除する
         if (resetState)
         {
-            if (File.Exists(spDbPath))
-            {
-                File.Delete(spDbPath);
-
-                var walPath = spDbPath + "-wal";
-                if (File.Exists(walPath)) File.Delete(walPath);
-
-                var shmPath = spDbPath + "-shm";
-                if (File.Exists(shmPath)) File.Delete(shmPath);
-
+            var deleted = false;
+            if (File.Exists(spDbPath)) { File.Delete(spDbPath); deleted = true; }
+            var walPath = spDbPath + "-wal";
+            if (File.Exists(walPath)) { File.Delete(walPath); deleted = true; }
+            var shmPath = spDbPath + "-shm";
+            if (File.Exists(shmPath)) { File.Delete(shmPath); deleted = true; }
+            if (deleted)
                 logger.LogInformation("SharePoint 状態 DB をリセットしました: {Path}", spDbPath);
-            }
         }
         else if (!File.Exists(spDbPath) && File.Exists(opts.Paths.SkipList))
         {

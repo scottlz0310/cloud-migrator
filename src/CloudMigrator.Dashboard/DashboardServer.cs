@@ -1,3 +1,4 @@
+using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -64,9 +65,9 @@ public static class DashboardServer
             ITransferStateDb stateDb,
             CancellationToken cancellationToken) =>
         {
-            var crawlComplete = await stateDb.GetCheckpointAsync("crawl_complete", cancellationToken).ConfigureAwait(false);
-            var folderCreationComplete = await stateDb.GetCheckpointAsync("folder_creation_complete", cancellationToken).ConfigureAwait(false);
-            var folderTotalStr = await stateDb.GetCheckpointAsync("folder_total", cancellationToken).ConfigureAwait(false);
+            var crawlComplete = await stateDb.GetCheckpointAsync(SharePointMigrationPipeline.CrawlCompleteKey, cancellationToken).ConfigureAwait(false);
+            var folderCreationComplete = await stateDb.GetCheckpointAsync(SharePointMigrationPipeline.FolderCreationCompleteKey, cancellationToken).ConfigureAwait(false);
+            var folderTotalStr = await stateDb.GetCheckpointAsync(SharePointMigrationPipeline.FolderTotalKey, cancellationToken).ConfigureAwait(false);
 
             var folderDoneMetrics = await stateDb.GetMetricsAsync("sp_folder_done", 120, cancellationToken).ConfigureAwait(false);
             var folderDone = folderDoneMetrics.Count > 0 ? (int)folderDoneMetrics[^1].Value : 0;

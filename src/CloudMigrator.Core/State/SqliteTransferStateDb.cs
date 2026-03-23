@@ -113,6 +113,34 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     }
 
     /// <inheritdoc/>
+    public async Task UpsertPendingIfNotTerminalAsync(StorageItem item, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO transfer_records (path, name, source_id, size_bytes, modified, status, retry_count, error, updated_at)
+            VALUES (@path, @name, @sourceId, @size, @modified, 'pending', 0, NULL, @updatedAt)
+            ON CONFLICT(path, name) DO UPDATE SET
+                source_id   = excluded.source_id,
+                size_bytes  = excluded.size_bytes,
+                modified    = excluded.modified,
+                status      = 'pending',
+                retry_count = 0,
+                error       = NULL,
+                updated_at  = excluded.updated_at
+            WHERE transfer_records.status NOT IN ('done', 'permanent_failed');
+            """;
+        cmd.Parameters.AddWithValue("@path", item.Path);
+        cmd.Parameters.AddWithValue("@name", item.Name);
+        cmd.Parameters.AddWithValue("@sourceId", item.Id);
+        cmd.Parameters.AddWithValue("@size", (object?)item.SizeBytes ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@modified", (object?)item.LastModifiedUtc?.ToString("O") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public Task MarkProcessingAsync(string path, string name, CancellationToken ct)
         => UpdateStatusAsync(path, name, "processing", null, ct);
 
