@@ -1,5 +1,4 @@
 using System.CommandLine;
-using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Cli.Commands;
 
@@ -18,14 +17,11 @@ internal static class RebuildSkipListCommand
 
         cmd.SetAction((parseResult, ct) =>
         {
-            using var svc = CliServices.Build();
-            var logger = svc.LoggerFactory.CreateLogger("rebuild-skiplist");
-
-            logger.LogWarning(
-                "rebuild-skiplist コマンドは廃止されました。" +
+            Console.Error.WriteLine(
+                "[警告] rebuild-skiplist コマンドは廃止されました。" +
                 "SharePoint 移行は SQLite 状態管理に移行しており、skip_list は不要です。" +
                 "転送状態をリセットするには 'transfer --full-rebuild' を使用してください。");
-
+            Environment.ExitCode = 1;
             return Task.CompletedTask;
         });
 
