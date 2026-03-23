@@ -84,51 +84,72 @@ internal static class TransferCommand
             return;
         }
 
-        // 4. SharePoint: OneDrive クロール（キャッシュ優先）
-        var sourceItems = await svc.CrawlCache.LoadAsync(opts.Paths.OneDriveCache, ct).ConfigureAwait(false);
-        if (sourceItems.Count == 0)
+        // 4. SharePoint: SQLite パイプライン実行
+        await RunSharePointPipelineAsync(fullRebuild || hashChanged, svc, logger, opts, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>SharePoint 移行パイプライン（SQLite 状態管理 + 4フェーズ構造 [Phase A〜D]）を実行する。</summary>
+    private static async Task RunSharePointPipelineAsync(
+        bool resetState,
+        CliServices svc,
+        ILogger logger,
+        MigratorOptions opts,
+        CancellationToken ct)
+    {
+        var spDbPath = opts.Paths.SharePointStateDb;
+
+        // フルリビルド or 設定変更時は SQLite 状態 DB をリセット
+        // DB 本体が存在しない場合でも WAL/SHM サイドカーだけ残存することがあるため個別に削除する
+        if (resetState)
         {
-            logger.LogInformation("OneDrive をクロールします…");
-            sourceItems = await svc.StorageProvider.ListItemsAsync("onedrive", ct).ConfigureAwait(false);
-            await svc.CrawlCache.SaveAsync(opts.Paths.OneDriveCache, sourceItems, ct).ConfigureAwait(false);
+            var deleted = false;
+            if (File.Exists(spDbPath)) { File.Delete(spDbPath); deleted = true; }
+            var walPath = spDbPath + "-wal";
+            if (File.Exists(walPath)) { File.Delete(walPath); deleted = true; }
+            var shmPath = spDbPath + "-shm";
+            if (File.Exists(shmPath)) { File.Delete(shmPath); deleted = true; }
+            if (deleted)
+                logger.LogInformation("SharePoint 状態 DB をリセットしました: {Path}", spDbPath);
         }
-        else
+        else if (!File.Exists(spDbPath) && File.Exists(opts.Paths.SkipList))
         {
-            logger.LogInformation("OneDrive キャッシュを使用します: {Count} 件", sourceItems.Count);
+            // 初回起動時: 既存 skip_list を SQLite の done レコードとして移行する
+            logger.LogInformation("既存 skip_list を SQLite に移行します…");
+            await using var migDb = new SqliteTransferStateDb(spDbPath);
+            await migDb.InitializeAsync(ct).ConfigureAwait(false);
+            var skipList = await svc.SkipListManager.LoadAsync(ct).ConfigureAwait(false);
+            var migrated = 0;
+            foreach (var skipKey in skipList)
+            {
+                var lastSlash = skipKey.LastIndexOf('/');
+                var path = lastSlash >= 0 ? skipKey[..lastSlash] : string.Empty;
+                var name = lastSlash >= 0 ? skipKey[(lastSlash + 1)..] : skipKey;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    await migDb.InsertDoneIfNotExistsAsync(path, name, ct).ConfigureAwait(false);
+                    migrated++;
+                }
+            }
+            logger.LogInformation("skip_list から {Count} 件を SQLite に移行しました", migrated);
         }
 
-        // 5. SharePoint: skip_list がなければ SharePoint からリビルド（FR-13）
-        bool skipListMissing = !File.Exists(opts.Paths.SkipList);
-        if (skipListMissing || fullRebuild)
-        {
-            logger.LogInformation("SharePoint をクロールして skip_list を再構築します…");
-            await RebuildSkipListFromSharePointAsync(svc, logger, ct).ConfigureAwait(false);
-        }
+        logger.LogInformation("SharePoint 移行パイプラインを開始します…");
 
-        // 6. SharePoint: 転送実行（IMigrationPipeline 経由）
-        logger.LogInformation("転送を開始します: {Count} 件のソースアイテム（転送先: SharePoint）",
-            sourceItems.Count);
-
-        var engine = new TransferEngine(
-            svc.DestinationProvider,
-            svc.SkipListManager,
+        await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
+        var pipeline = new SharePointMigrationPipeline(
+            svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
+            svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
+            stateDb,
             opts,
-            svc.LoggerFactory.CreateLogger<TransferEngine>(),
-            svc.AdaptiveConcurrencyController,
-            svc.RateLimiter,
-            sourceProvider: svc.CrossProviderSource);
+            svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
+            svc.AdaptiveConcurrencyController);
 
-        var spPipeline = new SharePointMigrationPipeline(
-            engine,
-            sourceItems,
-            opts.DestinationRoot,
-            svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>());
-
-        var summary = await spPipeline.RunAsync(ct).ConfigureAwait(false);
+        var summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
 
         logger.LogInformation(
-            "転送完了: 成功 {Success} / 失敗 {Failed} / スキップ {Skipped} / 所要時間 {Elapsed:c}",
-            summary.Success, summary.Failed, summary.Skipped, summary.Elapsed);
+            "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
+            summary.Success, summary.Failed, summary.Elapsed);
 
         if (summary.Failed > 0)
             Environment.ExitCode = 1;

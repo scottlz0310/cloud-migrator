@@ -5,7 +5,8 @@ using Microsoft.Data.Sqlite;
 namespace CloudMigrator.Core.State;
 
 /// <summary>
-/// SQLite を使用した <see cref="ITransferStateDb"/> 実装（Dropbox 移行専用）。
+/// SQLite を使用した <see cref="ITransferStateDb"/> 実装。
+/// Dropbox・SharePoint どちらの移行パイプラインでも共用する。
 /// </summary>
 public sealed class SqliteTransferStateDb : ITransferStateDb
 {
@@ -101,6 +102,34 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 retry_count = 0,
                 error       = NULL,
                 updated_at  = excluded.updated_at;
+            """;
+        cmd.Parameters.AddWithValue("@path", item.Path);
+        cmd.Parameters.AddWithValue("@name", item.Name);
+        cmd.Parameters.AddWithValue("@sourceId", item.Id);
+        cmd.Parameters.AddWithValue("@size", (object?)item.SizeBytes ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@modified", (object?)item.LastModifiedUtc?.ToString("O") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task UpsertPendingIfNotTerminalAsync(StorageItem item, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO transfer_records (path, name, source_id, size_bytes, modified, status, retry_count, error, updated_at)
+            VALUES (@path, @name, @sourceId, @size, @modified, 'pending', 0, NULL, @updatedAt)
+            ON CONFLICT(path, name) DO UPDATE SET
+                source_id   = excluded.source_id,
+                size_bytes  = excluded.size_bytes,
+                modified    = excluded.modified,
+                status      = 'pending',
+                retry_count = 0,
+                error       = NULL,
+                updated_at  = excluded.updated_at
+            WHERE transfer_records.status NOT IN ('done', 'permanent_failed');
             """;
         cmd.Parameters.AddWithValue("@path", item.Path);
         cmd.Parameters.AddWithValue("@name", item.Name);
@@ -376,6 +405,57 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 Value: reader.GetDouble(2)));
         }
         return results;
+    }
+
+    /// <inheritdoc/>
+    public async Task InsertDoneIfNotExistsAsync(string path, string name, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO transfer_records (path, name, source_id, status, updated_at)
+            VALUES (@path, @name, '', 'done', @updatedAt)
+            ON CONFLICT(path, name) DO NOTHING;
+            """;
+        cmd.Parameters.AddWithValue("@path", path);
+        cmd.Parameters.AddWithValue("@name", name);
+        cmd.Parameters.AddWithValue("@updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task ResetProcessingAsync(CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE transfer_records
+            SET status='pending', updated_at=@updatedAt
+            WHERE status='processing';
+            """;
+        cmd.Parameters.AddWithValue("@updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<string>> GetDistinctFolderPathsAsync(CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT DISTINCT path
+            FROM transfer_records
+            WHERE path IS NOT NULL AND path != ''
+            ORDER BY path;
+            """;
+        var result = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            result.Add(reader.GetString(0));
+        return result;
     }
 
     internal static TransferStatus ParseStatus(string status) => status switch

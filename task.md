@@ -1,185 +1,185 @@
 # タスク管理
 
-詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)  
-設計計画: [docs/20260321-dropbox-optimization-plan.md](docs/20260321-dropbox-optimization-plan.md)  
-前フェーズ履歴: [task-archive-20260321.md](task-archive-20260321.md)
+詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
+前フェーズ履歴: [task-archive-20260323.md](task-archive-20260323.md)
 
-## 現在の状態: Graph Delta API ページング実装・バグ修正・PR #59 マージ済み
-
----
-
-## Dropbox最適化フェーズ
-
-### ステップ 1: 抽象インターフェース
-
-- [x] `IMigrationPipeline.cs` 作成（`src/CloudMigrator.Core/Migration/`）
-
-### ステップ 2: 状態レコード定義
-
-- [x] `TransferRecord.cs` 作成（`TransferStatus` enum 含む）（`src/CloudMigrator.Core/State/`）
-
-### ステップ 3: SQLite 抽象インターフェース
-
-- [x] `ITransferStateDb.cs` 作成（`src/CloudMigrator.Core/State/`）
-
-### ステップ 4: SQLite 実装
-
-- [x] `SqliteTransferStateDb.cs` 作成（nextLink チェックポイント含む）（`src/CloudMigrator.Core/State/`）
-- [x] `CloudMigrator.Core.csproj` に `Microsoft.Data.Sqlite` 追加
-
-### ステップ 5: Dropbox パイプライン
-
-- [x] `DropboxMigrationPipeline.cs` 作成（ストリーミング + フルパス転送 + DB 状態管理）（`src/CloudMigrator.Core/Migration/`）
-
-### ステップ 6: SharePoint ラッパー
-
-- [x] `SharePointMigrationPipeline.cs` 作成（既存 `TransferEngine` 委譲）（`src/CloudMigrator.Core/Migration/`）
-
-### ステップ 7: 設定モデル更新
-
-- [x] `MigratorOptions.cs` に `DropboxStateDb` パス追加（`PathOptions`）
-- [x] `configs/config.json` に `dropboxStateDb` キー追加
-
-### ステップ 8: CLI 接続
-
-- [x] `TransferCommand.cs` を `IMigrationPipeline` 解決・分岐に更新
-
-### ステップ 9: ユニットテスト
-
-- [x] `SqliteTransferStateDb` テスト（初期化・CRUD・チェックポイント）
-- [x] `DropboxMigrationPipeline` テスト（スキップ・pending→done・failed 再試行）
-
-### ステップ 10: 完了処理
-
-- [x] `dotnet build CloudMigrator.slnx` 確認（0 errors, 0 warnings）
-- [x] `dotnet test tests/unit/` 確認（233 件 PASS）
-- [x] `CHANGELOG.md` 更新
-- [x] `task.md` 完了チェックボックス更新
-- [x] コミット・PR 作成（PR #52 作成・マージ済み）
-
-### ステップ 11: 追加タスク実装（追加品質改善）
-
-- [x] `EnableEnsureFolder` フィーチャーフラグ化（`DropboxProviderOptions`, デフォルト: false）
-- [x] 観測性メトリクス追加（フォルダAPI使用量・転送試行数・429発生率の Interlocked カウンタ）
-- [x] 設計仕様ドキュメント（クラスコメント）追加
-- [x] `NotifyRateLimit` への Retry-After 値伝搬修正（`DropboxApiException.Data["Retry-After"]` 経由）
-- [x] `--full-rebuild` 時の WAL サイドカーファイル（`.db-wal`, `.db-shm`）削除対応
-- [x] Date 形式 Retry-After の負値クランプ（`diff > TimeSpan.Zero` ガード）
-- [x] ユニットテスト追加（Feature Flag ON/OFF、計 235 件 PASS）
-
-### ステップ 12: マニュアルテスト（E2E 検証）
-
-実施日: 2026-03-21  
-対象ブランチ: main (98d5ed2)
-
-- [x] TC-01: build → 0 errors, 0 warnings ✅
-- [x] TC-02: cli --help → transfer/rebuild-skiplist/watchdog 等確認 ✅
-- [x] TC-03: setup --help → bootstrap/doctor/init/verify 確認 ✅
-- [x] TC-04: doctor → error=0, warning=0 ✅
-- [x] TC-05: verify → Graph + Dropbox 全 API 接続 OK（トークン自動更新）✅
-- [x] TC-06: file-crawler onedrive → **24,481 件** クロール・キャッシュ保存 ✅
-- [x] TC-07: file-crawler dropbox → 0 件（転送前のため正常）✅
-- [x] TC-08: transfer（Dropbox E2E）→ ファイル転送開始・SQLite DB 作成・429 検出＋リトライ動作 ✅
-- [x] TC-09: transfer --full-rebuild → SQLite DB・WAL サイドカー削除（339,968B→4,096B）確認 ✅
-
-### ステップ 13: 再テスト + ダッシュボード機能検証
-
-実施日: 2026-03-21（ダッシュボード機能追加後）  
-対象ブランチ: main (500497e)
-
-- [x] TC-10: status（転送前）→「DB が見つかりません」メッセージ ✅ （logs/ 削除後）
-- [x] TC-11: transfer（Dropbox フルリセット後 E2E）→ **24,481 件 成功 / 失敗 0 / 所要時間 02:39:23** ✅
-- [x] TC-12: status（転送完了後）→ 100.0% / 24,481件 / 974.0 MB / 失敗 0件 ✅
-  - ダッシュボード表示確認（プログレスバー・ステータス別件数・完了バイト数）
-  - 転送中リアルタイム参照でも正常動作確認（70.7% → 80.3% → 83.0% → ... → 100.0%）
+## 現在の状態: SharePoint 版最適化フェーズ 実装中（PR #67）
 
 ---
 
-## ダッシュボード機能（status コマンド）
+## SharePoint 版最適化フェーズ
 
-### 変更ファイル
+### 背景と目標
 
-- [x] `TransferDbSummary` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）
-- [x] `ITransferStateDb.GetSummaryAsync` 追加
-- [x] `SqliteTransferStateDb.GetSummaryAsync` 実装（SQL 集計クエリ + 最近の失敗5件）
-- [x] `TransferStatusCommand.cs` 追加（`src/CloudMigrator.Cli/Commands/`）
-- [x] `Program.cs` に `status` コマンド登録
-- [x] `SqliteTransferStateDbTests` に GetSummaryAsync テスト 5 件追加（計 240 件 PASS）
+Dropbox 版の実装（PR #52〜#66）で SQLite 状態管理・ダッシュボード連携・AdaptiveConcurrencyController が確立された。
+SharePoint 版はそれらを持たず、以下の課題がある。
 
-### 使い方
+| 課題 | 現状 | 目標 |
+|------|------|------|
+| ファイル管理 | JSON skip_list + CrawlCache（JSON）| SQLite DB（`ITransferStateDb`）に移行 |
+| クロール方式 | 全件メモリロード（`ListItemsAsync`）| `ListPagedAsync` ページングで SQLite に逐次保存 |
+| フォルダ先行作成 | 全件ロード後に深さソート | **フォルダ作成フェーズ**として明示化・進捗をダッシュボードに表示 |
+| 中断リカバリ | skip_list 再クロールのみ | 4フェーズそれぞれにチェックポイントを持ち再開可能 |
+| ダッシュボード | 未対応 | クロール・フォルダ作成・転送の各フェーズ進捗を表示 |
+| エラー管理 | ログのみ | SQLite に失敗ファイル・リトライ回数を記録 |
 
-```bash
-dotnet run --project src/CloudMigrator.Cli -- status --db logs/dropbox_transfer_state.db
-# --db 省略時は configs/config.json の設定値（Paths.DropboxStateDb）を使用
+---
+
+### SharePoint パイプライン設計（4フェーズ構造）
+
+SharePoint は `AutoCreateParentFolders == false` であり、フォルダを深さ順に先行作成しないとアップロードがエラーになる。
+深さソートには全フォルダ一覧が必要なため、**クロール完了後にフォルダ作成フェーズを実行**する構造となる。
+Dropbox 版のような完全なストリーミング（クロール中に並行転送）は取れない。
+
 ```
+Phase A: リカバリ
+  processing → pending リセット（クラッシュリカバリ）
+
+Phase B: クロール（ページング）
+  ListPagedAsync でページごとに DB へ UpsertPendingIfNotTerminalAsync（N+1 回避）
+  カーソルをチェックポイント保存（中断再開対応）
+  ┌─ ダッシュボード: sp_crawl_pages（累積ページ数）を RecordMetric
+  └─ 完了時: crawl_total / crawl_complete チェックポイント保存
+
+Phase C: フォルダ先行作成
+  DB からフォルダパス一覧を取得 → 全祖先展開（HashSet） → 深さ順ソート → 同一深さを並列 EnsureFolderAsync
+  ┌─ ダッシュボード: sp_folder_done（作成済み件数）を RecordMetric
+  └─ 完了時: folder_creation_complete チェックポイント保存
+
+Phase D: ファイル転送（Consumer）
+  DB の pending/processing/failed レコードを並列転送
+  ┌─ AdaptiveConcurrencyController で動的並列度制御
+  ├─ 100 件ごと / 並列度変化時に current_parallelism を RecordMetric
+  ├─ 100 件ごとに throughput_files_per_min / throughput_bytes_per_sec / rate_limit_pct を RecordMetric
+  └─ pipeline_started_at チェックポイント（初回のみ）
+```
+
+**チェックポイント一覧（SQLite checkpoints テーブル）**
+
+| キー | 意味 | 再開時の挙動 |
+|------|------|-------------|
+| `pipeline_started_at` | パイプライン初回開始時刻 | 存在すれば上書きしない |
+| `sp_cursor` | クロールの nextLink | Phase B 再開位置 |
+| `crawl_total` | クロール確定総数（ファイル＋フォルダ） | Phase B 完了後に保存 |
+| `crawl_complete` | クロール完了フラグ | `"true"` なら Phase B スキップ |
+| `folder_total` | 作成対象フォルダ数 | Phase C 開始時に保存（進捗バー用） |
+| `folder_creation_complete` | フォルダ作成完了フラグ | `"true"` なら Phase C スキップ |
+
+> **Phase D の失敗アイテム再試行について**
+> Phase D 中に失敗したアイテムは `failed` 状態で DB に残る。次回実行時の Phase A でリカバリされる（Dropbox 版と同じ設計）。
+> 同一実行内での即時再試行は行わない（複雑性コストが高く、Dropbox 版で実績のあるアプローチで十分）。
+
+**ダッシュボード追加メトリクス（SQLite metrics テーブル）**
+
+| メトリクス名 | タイミング | 意味 |
+|---|---|---|
+| `sp_crawl_pages` | Phase B 各ページ | 発見ページ数の推移 |
+| `sp_folder_done` | Phase C 各フォルダ作成後 | フォルダ作成進捗 |
+| `throughput_files_per_min` | Phase D 100件ごと | 転送スループット |
+| `throughput_bytes_per_sec` | Phase D 100件ごと | 転送バイトレート |
+| `rate_limit_pct` | Phase D 100件ごと | 429 発生率 |
+| `current_parallelism` | Phase D 変化時・100件ごと | 現在の並列度 |
+
+---
+
+### ステップ 1: 設定モデル更新
+
+- [x] `PathOptions` に `SharePointStateDb` パスを追加（`src/CloudMigrator.Core/Configuration/MigratorOptions.cs`）
+- [x] `configs/config.json` に `sharePointStateDb` キー追加（デフォルト: `logs/sharepoint_transfer_state.db`）
+
+---
+
+### ステップ 2: SharePoint 専用パイプライン作成
+
+現在の `SharePointMigrationPipeline`（`TransferEngine` ラッパー）を廃止し、全面再実装する。
+
+- [x] `SharePointMigrationPipeline.cs` を 4フェーズ構造で再実装
+  - **Phase A**: `ResetProcessingAsync` で processing → pending リセット（クラッシュリカバリ）
+  - **Phase B**: `ListPagedAsync` でページごとに `UpsertPendingIfNotTerminalAsync`（N+1 回避）
+    - カーソルをチェックポイント保存（中断再開対応）
+    - 各ページ処理後に `sp_crawl_pages` を `RecordMetricAsync`
+    - `crawl_complete == "true"` のチェックポイントがあればスキップ（再実行対応）
+  - **Phase C**: DB から `DISTINCT` フォルダパス抽出 → `HashSet` で全祖先展開 → 深さ順ソート → 同一深さを並列 `EnsureFolderAsync`
+    - Phase C 開始時に `folder_total` チェックポイント保存（ダッシュボードの進捗バー用）
+    - 作成都度 `sp_folder_done` を `RecordMetricAsync`
+    - `folder_creation_complete == "true"` があればスキップ（再実行対応）
+  - **Phase D**: `GetPendingStreamAsync` → bounded Channel（容量 1000）→ 並列転送（Dropbox 版 Consumer と同構造）
+    - `AdaptiveConcurrencyController` 動的並列度制御
+    - 100 件ごと / 並列度変化時に metrics 記録
+    - `pipeline_started_at` チェックポイント（初回のみ）
+- [x] `ITransferStateDb` に `ResetProcessingAsync`・`UpsertPendingIfNotTerminalAsync`・`InsertDoneIfNotExistsAsync`・`GetDistinctFolderPathsAsync` を追加
+- [x] `GraphStorageProvider.EnsureFolderAsync` が 409 Conflict を正しく無視することを確認済み
+- [x] `TransferEngine` への依存を除去（`SharePointMigrationPipeline` が直接 `IStorageProvider` を使う）
+
+---
+
+### ステップ 3: ダッシュボード フェーズ表示対応
+
+SharePoint 版の4フェーズ進捗をダッシュボードに表示するため、API と UI を拡張する。
+
+- [x] `/api/phase` エンドポイント追加（`crawl_complete`・`folder_creation_complete` チェックポイントでフェーズ判定）
+  - `crawl_complete != "true"` → `phase: "crawling"`
+  - `crawl_complete == "true"` かつ `folder_creation_complete != "true"` → `phase: "folder_creation"`
+  - `folder_creation_complete == "true"` → `phase: "transferring"`
+- [x] ダッシュボード UI にフェーズバッジ（クロール中=黄 / フォルダ作成中=紫 / 転送中=緑）を追加
+- [x] `sp_folder_done` を使ったフォルダ作成進捗バー（`folder_total` チェックポイントとの比較）
+- [x] `DashboardCommand` のデフォルト DB を `destinationProvider` に応じて切り替え（SP: `SharePointStateDb`、Dropbox: `DropboxStateDb`）
+- [ ] `sp_crawl_pages` を使ったクロール進捗表示（ページ数 or 件数）— 将来対応
+
+---
+
+### ステップ 4: skip_list → SQLite 移行対応
+
+- [x] 初回起動時（DB が存在しない場合）に既存 skip_list から SQLite へのマイグレーション
+  - skip_list の各エントリを `done` ステータスのレコードとして INSERT
+- [x] `TransferCommand.RunCoreAsync` の SharePoint ブランチを新パイプライン呼び出しに変更
+  - `SqliteTransferStateDb` を生成して `SharePointMigrationPipeline` に渡す
+  - `fullRebuild` / `hashChanged` 時に DB をリセット（WAL/SHM サイドカーも個別削除）
+- [ ] `CrawlCache`（JSON）・`RebuildSkipListFromSharePointAsync` を SharePoint フローから除去（ステップ 5 で対応）
+
+---
+
+### ステップ 5: 不要コードの整理
+
+- [ ] `SharePointMigrationPipeline.cs`（旧 TransferEngine ラッパー）が完全に置き換わったことを確認
+- [ ] `TransferEngine.cs` が Dropbox 以外から参照されなくなった場合、廃止を検討
+  - ただし `TokenBucketRateLimiter` モード等を持つため段階的廃止で可
+- [ ] `CrawlCache.cs` が SharePoint フローで不要になった場合は参照除去
+
+---
+
+### ステップ 6: ユニットテスト
+
+- [x] `SharePointMigrationPipelineTests.cs` 作成（19テスト追加）
+  - Phase A: `ResetProcessingAsync` が呼ばれる
+  - Phase B クロール → `UpsertPendingIfNotTerminalAsync` とカーソル保存が実行される
+  - Phase B スキップ（`crawl_complete == "true"` の場合）
+  - Phase B: フォルダアイテムはスキップされる
+  - Phase C フォルダ先行作成 → 深さ順に `EnsureFolderAsync` が呼ばれる・`folder_total` チェックポイントが保存される
+  - Phase C: 重複パスの一意化
+  - Phase C スキップ（`folder_creation_complete == "true"` の場合）
+  - Phase D 転送成功 → `MarkDoneAsync` が呼ばれる
+  - Phase D 転送失敗 → `MarkFailedAsync` が呼ばれる
+  - 100 件転送で throughput メトリクスが記録される
+  - `current_parallelism` 即時記録（controller あり）
+
+---
+
+### ステップ 7: E2E 検証
+
+- [ ] TC-01: `dotnet build` → 0 errors, 0 warnings
+- [ ] TC-02: `dotnet test` → 全テスト PASS
+- [ ] TC-03: `transfer`（SharePoint モード）→ SQLite DB 作成・4フェーズ実行確認
+- [ ] TC-04: `transfer --full-rebuild` → DB・WAL/SHM サイドカー削除確認
+- [ ] TC-05: `transfer`（Phase B 途中でCtrl+C → 再実行）→ カーソルから再開・フォルダ重複作成なし
+- [ ] TC-06: `transfer`（Phase C 途中でCtrl+C → 再実行）→ `folder_creation_complete` チェックポイントで Phase C スキップ
+- [ ] TC-07: `dashboard` → SharePoint DB でクロール/フォルダ作成/転送フェーズバッジが正しく切り替わる
 
 ---
 
 ## 将来フェーズ（今回スコープ外）
 
-- SharePoint 版 TransferEngine 最適化（ストリーミング化・SQLite 化）
-- サイズ・日時によるスキップ判定強化
-- 本番切替計画・段階カットオーバー
-- 運用手順書（セットアップ/日次/障害対応/ロールバック）
-
----
-
-## Web ダッシュボード（dashboard コマンド）
-
-### 実装済みファイル
-
-- [x] `MetricPoint` レコード追加（`src/CloudMigrator.Core/State/TransferSummary.cs`）
-- [x] `ITransferStateDb.RecordMetricAsync` / `GetMetricsAsync` 追加
-- [x] `SqliteTransferStateDb`: `metrics` テーブル + 両メソッド実装
-- [x] `DropboxMigrationPipeline`: 100 回ごとに `rate_limit_pct` を metrics 記録
-- [x] `CloudMigrator.Dashboard` プロジェクト追加（Minimal API + Chart.js）
-- [x] `DashboardCommand.cs` 追加（`--db`, `--port`, `--no-browser`）
-- [x] `Program.cs` に `dashboard` コマンド登録
-- [x] `CloudMigrator.slnx` 更新
-
-### 使い方
-
-```bash
-dotnet run --project src/CloudMigrator.Cli -- dashboard
-dotnet run --project src/CloudMigrator.Cli -- dashboard --db logs/dropbox_transfer_state.db --port 8080
-dotnet run --project src/CloudMigrator.Cli -- dashboard --no-browser
-```
-
-### API エンドポイント
-
-| エンドポイント | 説明 |
-|---|---|
-| `GET /` | Chart.js ダッシュボード UI |
-| `GET /api/status` | ステータス別件数・完了率・バイト数 |
-| `GET /api/metrics?name=rate_limit_pct&minutes=60` | 時系列メトリクス |
-| `GET /api/errors` | 最近の失敗ファイル（最大5件） |
-
-### PR #55 完了
-
-- [x] CI 全ジョブ SUCCESS（ubuntu / macOS / windows / Quality Gate）
-- [x] Copilot レビュー9件すべて対応・解決済み
-- [x] squash マージ: `2d680e0`（2026-03-21）
-- [x] main ローカル同期済み
-
----
-
-## Phase B: throughput メトリクス追加（スループット可視化）
-
-### 変更ファイル
-
-- [x] `DropboxMigrationPipeline.cs`: `_totalBytesTransferred` / `_pipelineStartTime` 追加
-- [x] `DropboxMigrationPipeline.cs`: 成功転送ごとにバイト積算、100 回ごとに `throughput_files_per_min` / `throughput_bytes_per_sec` を `RecordMetricAsync` で記録
-- [x] `DashboardServer.cs`: 「スループット（ファイル/分）」「スループット（バイト/秒）」グラフ追加（Chart.js）
-- [x] `DashboardServer.cs`: `refreshMetrics()` を 3 メトリクス並列取得に拡張
-- [x] `DropboxMigrationPipelineTests.cs`: `RunAsync_SuccessfulTransfer_AccumulatesBytesTransferred` 追加（計 246 件 PASS）
-
-### 使い方
-
-```bash
-# 転送実行中 or 実行後にダッシュボードを開くと throughput グラフが表示される
-dotnet run --project src/CloudMigrator.Cli -- dashboard
-# /api/metrics?name=throughput_files_per_min&minutes=60
-# /api/metrics?name=throughput_bytes_per_sec&minutes=60
-```
-
-
+- ダッシュボードからの転送計画立案（並列数・スループット目標の設定 UI）
+- サイズ・更新日時によるスキップ判定強化（上書き判定）
+- 本番切替計画・段階カットオーバー手順書
+- 運用手順書（セットアップ / 日次 / 障害対応 / ロールバック）

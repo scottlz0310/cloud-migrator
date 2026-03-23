@@ -3,7 +3,7 @@ using CloudMigrator.Providers.Abstractions;
 namespace CloudMigrator.Core.State;
 
 /// <summary>
-/// Dropbox 移行の転送状態管理 DB 契約。
+/// 転送状態管理 DB 契約。Dropbox・SharePoint どちらの移行パイプラインでも使用する。
 /// </summary>
 public interface ITransferStateDb : IAsyncDisposable
 {
@@ -21,6 +21,18 @@ public interface ITransferStateDb : IAsyncDisposable
     /// 既存レコードは retry_count=0 にリセットして pending に戻す。
     /// </summary>
     Task UpsertPendingAsync(StorageItem item, CancellationToken ct);
+
+    /// <summary>
+    /// SharePoint Phase B クロール用: 新規アイテムを pending として UPSERT する。
+    /// done / permanent_failed の既存レコードは上書きしない（1 クエリで N+1 を回避）。
+    /// </summary>
+    Task UpsertPendingIfNotTerminalAsync(StorageItem item, CancellationToken ct);
+
+    /// <summary>
+    /// 起動時クラッシュリカバリ: processing 状態のレコードを pending に戻す。
+    /// 前回実行中にクラッシュしたアイテムを再キューイング可能な状態に戻す。
+    /// </summary>
+    Task ResetProcessingAsync(CancellationToken ct);
 
     /// <summary>status を processing に変更する（アップロード開始前に呼び出す）。</summary>
     Task MarkProcessingAsync(string path, string name, CancellationToken ct);
@@ -63,4 +75,16 @@ public interface ITransferStateDb : IAsyncDisposable
     /// メトリクステーブルが空の場合は空リストを返す。
     /// </summary>
     Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(string name, int recentMinutes, CancellationToken ct);
+
+    /// <summary>
+    /// skip_list マイグレーション用: path/name を done ステータスで INSERT する。
+    /// レコードが既存の場合は何もしない（ON CONFLICT DO NOTHING）。
+    /// </summary>
+    Task InsertDoneIfNotExistsAsync(string path, string name, CancellationToken ct);
+
+    /// <summary>
+    /// DB 内の全ファイルレコードの path カラムの DISTINCT 一覧を返す。
+    /// SharePoint 版 Phase C（フォルダ先行作成）でフォルダ階層を導出するために使用する。
+    /// </summary>
+    Task<IReadOnlyList<string>> GetDistinctFolderPathsAsync(CancellationToken ct);
 }
