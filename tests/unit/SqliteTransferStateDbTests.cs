@@ -344,6 +344,29 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         summary.RecentFailed.All(f => f.Error != null).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task GetSummaryAsync_TotalRetries_SumsRetryCount()
+    {
+        // 検証対象: GetSummaryAsync  目的: 全レコードの retry_count が TotalRetries に合算される
+        await _db.InitializeAsync(CancellationToken.None);
+
+        // a.txt: 1 回失敗 → retry_count = 1
+        await _db.UpsertPendingAsync(MakeItem("p", "a.txt", "id1"), CancellationToken.None);
+        await _db.MarkFailedAsync("p", "a.txt", "err", CancellationToken.None);
+
+        // b.txt: 2 回失敗 → retry_count = 2
+        await _db.UpsertPendingAsync(MakeItem("p", "b.txt", "id2"), CancellationToken.None);
+        await _db.MarkFailedAsync("p", "b.txt", "err", CancellationToken.None);
+        await _db.MarkFailedAsync("p", "b.txt", "err", CancellationToken.None);
+
+        // c.txt: リトライなし → retry_count = 0
+        await _db.UpsertPendingAsync(MakeItem("p", "c.txt", "id3"), CancellationToken.None);
+
+        var summary = await _db.GetSummaryAsync(CancellationToken.None);
+
+        summary.TotalRetries.Should().Be(3L); // a.txt(1) + b.txt(2) + c.txt(0)
+    }
+
     // ── RecordMetricAsync / GetMetricsAsync ──────────────────────────────────
 
     [Fact]

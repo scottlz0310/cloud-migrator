@@ -115,6 +115,9 @@ public static class DashboardServer
             .error-item:last-child { border-bottom: none; }
             .error-item .path { color: #aaa; }
             .no-errors { font-size: .8rem; color: #555; }
+            .card.parallel .value { color: #fb923c; }
+            .card.retries .value { color: #f59e0b; }
+            .card.text-sm .value { font-size: 1.4rem; }
           </style>
         </head>
         <body>
@@ -131,6 +134,15 @@ public static class DashboardServer
               <div class="card failed"><div class="label">失敗</div><div class="value" id="c-failed">—</div></div>
               <div class="card"><div class="label">合計 <span id="crawl-badge" style="display:none;font-size:.65rem;background:#f59e0b;color:#1a1a2e;border-radius:4px;padding:1px 5px;vertical-align:middle;">クロール中</span></div><div class="value" id="c-total">—</div></div>
               <div class="card"><div class="label">転送済みバイト</div><div class="value" id="c-bytes">—</div></div>
+            </section>
+
+            <section class="cards">
+              <div class="card parallel"><div class="label">現在の並列数</div><div class="value" id="c-parallelism">—</div></div>
+              <div class="card text-sm"><div class="label">経過時間</div><div class="value" id="c-elapsed">—</div></div>
+              <div class="card text-sm"><div class="label">推定残り時間</div><div class="value" id="c-eta">—</div></div>
+              <div class="card"><div class="label">平均ファイルサイズ</div><div class="value" id="c-avgsize">—</div></div>
+              <div class="card retries"><div class="label">リトライ総数</div><div class="value" id="c-retries">—</div></div>
+              <div class="card"><div class="label">エラー率</div><div class="value" id="c-errrate">—</div></div>
             </section>
 
             <section class="progress-wrap">
@@ -156,6 +168,10 @@ public static class DashboardServer
                 <h2>スループット（バイト/秒）</h2>
                 <canvas id="bytesChart"></canvas>
               </div>
+              <div class="chart-box">
+                <h2>並列数推移</h2>
+                <canvas id="parallelChart"></canvas>
+              </div>
             </section>
 
             <section class="errors">
@@ -167,6 +183,17 @@ public static class DashboardServer
           <script>
             const POLL_INTERVAL = 5000; // ms
             const MAX_HISTORY = 60;     // 直近 5 分分（5s × 60）
+
+            let latestFilesPerMin = 0;  // 最新スループット（ETA 計算用）
+
+            function fmtDuration(sec) {
+              sec = Math.round(sec);
+              if (sec < 60) return sec + '秒';
+              if (sec < 3600) return Math.floor(sec / 60) + 'm' + String(sec % 60).padStart(2, '0') + 's';
+              const h = Math.floor(sec / 3600);
+              const m = Math.floor((sec % 3600) / 60);
+              return h + 'h' + String(m).padStart(2, '0') + 'm';
+            }
 
             // Chart.js 共通オプション
             Chart.defaults.color = '#aaa';
@@ -269,6 +296,29 @@ public static class DashboardServer
               }
             });
 
+            const parallelChart = new Chart(document.getElementById('parallelChart'), {
+              type: 'line',
+              data: {
+                labels: [],
+                datasets: [{
+                  label: '並列数',
+                  data: [],
+                  borderColor: '#fb923c',
+                  backgroundColor: 'rgba(251,146,60,.1)',
+                  fill: true,
+                  tension: 0.3,
+                  pointRadius: 2,
+                }]
+              },
+              options: {
+                animation: false,
+                scales: {
+                  x: { ticks: { maxTicksLimit: 8 } },
+                  y: { beginAtZero: true, ticks: { stepSize: 1, callback: v => Number.isInteger(v) ? v + ' 並列' : '' } }
+                }
+              }
+            });
+
             function fmtBytes(b) {
               if (b === 0) return '0 B';
               const units = ['B','KB','MB','GB','TB'];
@@ -308,13 +358,42 @@ public static class DashboardServer
               doneLabels.push(now);
               if (doneHistory.length > MAX_HISTORY) { doneHistory.shift(); doneLabels.shift(); }
               doneChart.update();
+
+              // リトライ総数
+              document.getElementById('c-retries').textContent = fmt(s.totalRetries ?? 0);
+
+              // エラー率
+              const errRate = s.total > 0 ? (s.failed + s.permanentFailed) / s.total * 100 : 0;
+              const errEl = document.getElementById('c-errrate');
+              errEl.textContent = errRate.toFixed(1) + '%';
+              errEl.style.color = errRate > 0 ? '#ef4444' : '#22c55e';
+
+              // 平均ファイルサイズ
+              document.getElementById('c-avgsize').textContent =
+                s.done > 0 ? fmtBytes(Math.round(s.totalDoneSizeBytes / s.done)) : '—';
+
+              // 経過時間（pipeline_started_at checkpoint 優先、なければ firstUpdatedAt を代用）
+              const startedAt = s.pipelineStartedAt ?? s.firstUpdatedAt;
+              if (startedAt) {
+                const elapsedSec = (Date.now() - new Date(startedAt).getTime()) / 1000;
+                document.getElementById('c-elapsed').textContent = fmtDuration(elapsedSec);
+              }
+
+              // 推定残り時間（ETA）
+              const remaining = s.pending + s.processing + s.failed;
+              if (latestFilesPerMin > 0 && remaining > 0) {
+                document.getElementById('c-eta').textContent = fmtDuration(remaining / latestFilesPerMin * 60);
+              } else {
+                document.getElementById('c-eta').textContent = remaining === 0 ? '完了' : '—';
+              }
             }
 
             async function refreshMetrics() {
-              const [rlRes, filesRes, bytesRes] = await Promise.all([
+              const [rlRes, filesRes, bytesRes, parallelRes] = await Promise.all([
                 fetch('/api/metrics?name=rate_limit_pct&minutes=60'),
                 fetch('/api/metrics?name=throughput_files_per_min&minutes=60'),
                 fetch('/api/metrics?name=throughput_bytes_per_sec&minutes=60'),
+                fetch('/api/metrics?name=current_parallelism&minutes=60'),
               ]);
               if (rlRes.ok) {
                 const data = await rlRes.json();
@@ -330,6 +409,7 @@ public static class DashboardServer
                   filesChart.data.labels = data.map(p => fmtTime(p.timestamp));
                   filesChart.data.datasets[0].data = data.map(p => p.value);
                   filesChart.update();
+                  latestFilesPerMin = data[data.length - 1].value;
                 }
               }
               if (bytesRes.ok) {
@@ -338,6 +418,15 @@ public static class DashboardServer
                   bytesChart.data.labels = data.map(p => fmtTime(p.timestamp));
                   bytesChart.data.datasets[0].data = data.map(p => p.value);
                   bytesChart.update();
+                }
+              }
+              if (parallelRes.ok) {
+                const data = await parallelRes.json();
+                if (data.length) {
+                  document.getElementById('c-parallelism').textContent = Math.round(data[data.length - 1].value);
+                  parallelChart.data.labels = data.map(p => fmtTime(p.timestamp));
+                  parallelChart.data.datasets[0].data = data.map(p => p.value);
+                  parallelChart.update();
                 }
               }
             }

@@ -222,12 +222,14 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 SUM(CASE WHEN status='permanent_failed' THEN 1 ELSE 0 END),
                 SUM(CASE WHEN status='done' THEN COALESCE(size_bytes, 0) ELSE 0 END),
                 MIN(updated_at),
-                MAX(updated_at)
+                MAX(updated_at),
+                SUM(retry_count)
             FROM transfer_records;
             """;
 
         int pending = 0, processing = 0, done = 0, failed = 0, permanentFailed = 0;
         long doneSizeBytes = 0;
+        long totalRetries = 0;
         DateTimeOffset? firstUpdatedAt = null, lastUpdatedAt = null;
 
         await using (var reader = await countCmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
@@ -242,6 +244,7 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 doneSizeBytes = reader.IsDBNull(5) ? 0L : reader.GetInt64(5);
                 firstUpdatedAt = reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6));
                 lastUpdatedAt = reader.IsDBNull(7) ? null : DateTimeOffset.Parse(reader.GetString(7));
+                totalRetries = reader.IsDBNull(8) ? 0L : reader.GetInt64(8);
             }
         }
 
@@ -271,12 +274,13 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
         await using var crawlCmd = conn.CreateCommand();
         crawlCmd.CommandText = """
             SELECT key, value FROM checkpoints
-            WHERE key IN ('crawl_complete', 'crawl_total')
+            WHERE key IN ('crawl_complete', 'crawl_total', 'pipeline_started_at')
             """;
         // 備考: 旧バージョンで作成された DB や空 DB では crawl_complete チェックポイントが存在しない。
         // その場合でもダッシュボードが常に「クロール中」とならないよう、未記録時の既定値を true とする。
         var crawlComplete = true;
         int? crawlTotal = null;
+        DateTimeOffset? pipelineStartedAt = null;
         await using (var reader = await crawlCmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -285,6 +289,7 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 var v = reader.GetString(1);
                 if (k == "crawl_complete") crawlComplete = v == "true";
                 if (k == "crawl_total" && int.TryParse(v, out var n)) crawlTotal = n;
+                if (k == "pipeline_started_at" && DateTimeOffset.TryParse(v, out var started)) pipelineStartedAt = started;
             }
         }
 
@@ -296,8 +301,10 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
             Failed = failed,
             PermanentFailed = permanentFailed,
             TotalDoneSizeBytes = doneSizeBytes,
+            TotalRetries = totalRetries,
             FirstUpdatedAt = firstUpdatedAt,
             LastUpdatedAt = lastUpdatedAt,
+            PipelineStartedAt = pipelineStartedAt,
             RecentFailed = recentFailed,
             CrawlComplete = crawlComplete,
             CrawlTotal = crawlTotal,
