@@ -41,6 +41,8 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     private int _rateLimitHitCount;
     private long _totalBytesTransferred;
     private DateTimeOffset _pipelineStartTime;
+    // 並列度変化検出用（前回記録値。変化があれば即時メトリクス書き込み）
+    private int _lastRecordedParallelism = -1;
 
     public DropboxMigrationPipeline(
         IStorageProvider sourceProvider,
@@ -291,6 +293,24 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 }
                 finally
                 {
+                    // 並列度が変化した場合は即時記録（100 件サンプリングでは変化を取りこぼすため）
+                    if (controller is not null)
+                    {
+                        var currentDegree = controller.CurrentDegree;
+                        if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
+                        {
+                            try
+                            {
+                                await _stateDb.RecordMetricAsync(
+                                    "current_parallelism", (double)currentDegree, itemCt).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "current_parallelism の即時記録に失敗しました。");
+                            }
+                        }
+                    }
+
                     // 100 回ごとに metricsテーブルへ転送状況を記録する（ダッシュボード向け）
                     if (totalNow % 100 == 0)
                     {
