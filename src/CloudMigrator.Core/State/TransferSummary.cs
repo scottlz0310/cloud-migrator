@@ -23,6 +23,9 @@ public sealed record TransferDbSummary
     /// <summary>done レコードの合計バイト数</summary>
     public long TotalDoneSizeBytes { get; init; }
 
+    /// <summary>全レコードの retry_count 合計</summary>
+    public int TotalRetries { get; init; }
+
     /// <summary>DB 内の最も古い updated_at</summary>
     public DateTimeOffset? FirstUpdatedAt { get; init; }
 

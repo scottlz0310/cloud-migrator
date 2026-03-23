@@ -305,6 +305,10 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                                 .ConfigureAwait(false);
                             await _stateDb.RecordMetricAsync("throughput_bytes_per_sec", bytesPerSec, itemCt)
                                 .ConfigureAwait(false);
+                            await _stateDb.RecordMetricAsync(
+                                "current_parallelism",
+                                (double)(controller?.CurrentDegree ?? _options.MaxParallelTransfers),
+                                itemCt).ConfigureAwait(false);
                         }
                         catch (Exception ex)
                         {

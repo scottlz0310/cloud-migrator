@@ -222,12 +222,14 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 SUM(CASE WHEN status='permanent_failed' THEN 1 ELSE 0 END),
                 SUM(CASE WHEN status='done' THEN COALESCE(size_bytes, 0) ELSE 0 END),
                 MIN(updated_at),
-                MAX(updated_at)
+                MAX(updated_at),
+                SUM(retry_count)
             FROM transfer_records;
             """;
 
         int pending = 0, processing = 0, done = 0, failed = 0, permanentFailed = 0;
         long doneSizeBytes = 0;
+        int totalRetries = 0;
         DateTimeOffset? firstUpdatedAt = null, lastUpdatedAt = null;
 
         await using (var reader = await countCmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
@@ -242,6 +244,7 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 doneSizeBytes = reader.IsDBNull(5) ? 0L : reader.GetInt64(5);
                 firstUpdatedAt = reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6));
                 lastUpdatedAt = reader.IsDBNull(7) ? null : DateTimeOffset.Parse(reader.GetString(7));
+                totalRetries = reader.IsDBNull(8) ? 0 : (int)reader.GetInt64(8);
             }
         }
 
@@ -296,6 +299,7 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
             Failed = failed,
             PermanentFailed = permanentFailed,
             TotalDoneSizeBytes = doneSizeBytes,
+            TotalRetries = totalRetries,
             FirstUpdatedAt = firstUpdatedAt,
             LastUpdatedAt = lastUpdatedAt,
             RecentFailed = recentFailed,
