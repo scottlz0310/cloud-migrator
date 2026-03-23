@@ -206,7 +206,8 @@ internal sealed class CliServices : IDisposable
             disposeHttpClient: true,
             refreshToken: AppConfiguration.GetDropboxRefreshToken(),
             clientId: AppConfiguration.GetDropboxClientId(),
-            clientSecret: AppConfiguration.GetDropboxClientSecret());
+            clientSecret: AppConfiguration.GetDropboxClientSecret(),
+            onRateLimit: onRateLimit);
 
         var crawlCache = new CrawlCache(loggerFactory.CreateLogger<CrawlCache>());
         var skipListManager = new SkipListManager(

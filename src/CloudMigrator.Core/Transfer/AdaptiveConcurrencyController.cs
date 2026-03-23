@@ -23,6 +23,9 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     private int _absorbedActual;      // 実際にセマフォから吸収済みのスロット数
     private int _consecutiveSuccesses;
 
+    // レート制限通知の累計回数（Interlocked でスレッドセーフに更新）
+    private long _rateLimitCount;
+
     private readonly CancellationTokenSource _disposeCts = new();
 
     /// <summary>
@@ -70,6 +73,13 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <summary>並列度を 1 回復するために必要な連続成功回数。</summary>
     public int SuccessThreshold { get; }
 
+    /// <summary>
+    /// レート制限（429/503）の累計通知回数。
+    /// <see cref="NotifyRateLimit"/> が呼ばれるたびにインクリメントされる。
+    /// 内部リトライで成功した 429 も計上されるため、ダッシュボードの実態に近い値を示す。
+    /// </summary>
+    public long RateLimitCount => Interlocked.Read(ref _rateLimitCount);
+
     // ─────────────────────────────────────────────────────────────
     // スロット管理（TransferEngine から呼び出す）
     // ─────────────────────────────────────────────────────────────
@@ -93,6 +103,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <param name="retryAfter">サーバーから返された Retry-After 値（null の場合は不明）</param>
     public void NotifyRateLimit(TimeSpan? retryAfter)
     {
+        Interlocked.Increment(ref _rateLimitCount);
+
         bool shouldAbsorb;
         int prevDegree, newDegree;
         lock (_syncRoot)

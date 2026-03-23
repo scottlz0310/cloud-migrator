@@ -29,6 +29,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     private readonly int _maxRetry;
     private readonly int _simpleUploadLimitBytes;
     private readonly int _uploadChunkSizeBytes;
+    private readonly Action<TimeSpan?>? _onRateLimit;
 
     public string ProviderId => "dropbox";
 
@@ -47,7 +48,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         bool disposeHttpClient = false,
         string? refreshToken = null,
         string? clientId = null,
-        string? clientSecret = null)
+        string? clientSecret = null,
+        Action<TimeSpan?>? onRateLimit = null)
     {
         _logger = logger;
         _accessToken = accessToken;
@@ -60,6 +62,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         _maxRetry = Math.Max(0, maxRetry);
         _simpleUploadLimitBytes = Math.Max(1, _options.SimpleUploadLimitMb) * 1024 * 1024;
         _uploadChunkSizeBytes = Math.Max(1, _options.UploadChunkSizeMb) * 1024 * 1024;
+        _onRateLimit = onRateLimit;
     }
 
     public void Dispose()
@@ -564,6 +567,20 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
                 if (!ShouldRetry(response.StatusCode) || attempt >= _maxRetry)
                     return response;
+
+                // 429: 外部コントローラー（AdaptiveConcurrencyController 等）へ通知する
+                if ((int)response.StatusCode == 429)
+                {
+                    // Retry-After: Delta 優先。なければ Date から現在時刻との差分を計算する
+                    TimeSpan? retryAfter = response.Headers.RetryAfter?.Delta;
+                    if (retryAfter is null && response.Headers.RetryAfter?.Date is { } retryAfterDate)
+                    {
+                        var diff = retryAfterDate - DateTimeOffset.UtcNow;
+                        retryAfter = diff < TimeSpan.Zero ? TimeSpan.Zero : diff;
+                    }
+
+                    _onRateLimit?.Invoke(retryAfter);
+                }
 
                 var delay = await GetRetryDelayAsync(response, attempt, ct).ConfigureAwait(false);
                 _logger.LogWarning(

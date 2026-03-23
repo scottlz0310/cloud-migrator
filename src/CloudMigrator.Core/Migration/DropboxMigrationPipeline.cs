@@ -41,6 +41,8 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     private int _rateLimitHitCount;
     private long _totalBytesTransferred;
     private DateTimeOffset _pipelineStartTime;
+    // 並列度変化検出用（前回記録値。変化があれば即時メトリクス書き込み）
+    private int _lastRecordedParallelism = -1;
 
     public DropboxMigrationPipeline(
         IStorageProvider sourceProvider,
@@ -102,13 +104,16 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
 
         sw.Stop();
 
+        var totalRlCount = _concurrencyController is not null
+            ? _concurrencyController.RateLimitCount
+            : (long)_rateLimitHitCount;
         var rateLimitRate = _totalTransferAttempts > 0
-            ? (double)_rateLimitHitCount / _totalTransferAttempts * 100.0
+            ? (double)totalRlCount / _totalTransferAttempts * 100.0
             : 0.0;
         _logger.LogInformation(
             "Dropbox 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c} | フォルダAPI {EnsureFolder} 回 / 転送試行 {Total} 回 / 429 {RateLimit} 回 ({RateLimitRate:F1}%)",
             success, failed, sw.Elapsed,
-            _ensureFolderCallCount, _totalTransferAttempts, _rateLimitHitCount, rateLimitRate);
+            _ensureFolderCallCount, _totalTransferAttempts, totalRlCount, rateLimitRate);
 
         return new TransferSummary
         {
@@ -291,10 +296,33 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 }
                 finally
                 {
+                    // 並列度が変化した場合は即時記録（100 件サンプリングでは変化を取りこぼすため）
+                    if (controller is not null)
+                    {
+                        var currentDegree = controller.CurrentDegree;
+                        if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
+                        {
+                            try
+                            {
+                                await _stateDb.RecordMetricAsync(
+                                    "current_parallelism", (double)currentDegree, itemCt).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "current_parallelism の即時記録に失敗しました。");
+                            }
+                        }
+                    }
+
                     // 100 回ごとに metricsテーブルへ転送状況を記録する（ダッシュボード向け）
                     if (totalNow % 100 == 0)
                     {
-                        var pct = (double)Volatile.Read(ref _rateLimitHitCount) / totalNow * 100.0;
+                        // controller 経由のカウントは内部リトライ成功した 429 も含む（精度が高い）
+                        // controller が null の場合は catch ブロックで集計した例外レベルの数のみにフォールバック
+                        var rlCount = controller is not null
+                            ? controller.RateLimitCount
+                            : (long)Volatile.Read(ref _rateLimitHitCount);
+                        var pct = rlCount > 0 ? (double)rlCount / totalNow * 100.0 : 0.0;
                         var elapsedSeconds = (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds;
                         var filesPerMin = elapsedSeconds > 0
                             ? totalNow / elapsedSeconds * 60.0
