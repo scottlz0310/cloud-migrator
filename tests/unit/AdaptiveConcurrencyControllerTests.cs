@@ -217,6 +217,37 @@ public sealed class AdaptiveConcurrencyControllerTests
         acquireTask.IsCompletedSuccessfully.Should().BeTrue();
     }
 
+    // ─── RateLimitCount ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void RateLimitCount_StartsAtZero()
+    {
+        // 検証対象: RateLimitCount  目的: 初期値が 0 であること
+        var controller = CreateController();
+        controller.RateLimitCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void RateLimitCount_IncrementsOnEachNotifyRateLimit()
+    {
+        // 検証対象: RateLimitCount  目的: NotifyRateLimit 呼び出しのたびにカウントが増加すること
+        var controller = CreateController(initial: 4, min: 1, max: 4);
+        controller.NotifyRateLimit(null);
+        controller.NotifyRateLimit(null);
+        controller.NotifyRateLimit(null);
+        controller.RateLimitCount.Should().Be(3);
+    }
+
+    [Fact]
+    public void RateLimitCount_IncrementsEvenAtMinDegree()
+    {
+        // 検証対象: RateLimitCount  目的: 並列度が MinDegree の場合もカウントされること（並列度は減らないがカウントは増える）
+        var controller = CreateController(initial: 1, min: 1, max: 4);
+        controller.NotifyRateLimit(null); // min なので CurrentDegree は変わらない
+        controller.RateLimitCount.Should().Be(1);
+        controller.CurrentDegree.Should().Be(1);
+    }
+
     // ─── Dispose ─────────────────────────────────────────────────────────────
 
     [Fact]
