@@ -1,12 +1,11 @@
 using System.CommandLine;
-using CloudMigrator.Core.Configuration;
-using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Cli.Commands;
 
 /// <summary>
-/// rebuild-skiplist サブコマンド。
-/// SharePoint を再クロールして skip_list を再構築するだけで転送は行わない（FR-11）。
+/// rebuild-skiplist サブコマンド（廃止済み）。
+/// SharePoint は SQLite 状態管理（4フェーズパイプライン）に移行したため、このコマンドは不要です。
+/// 転送状態をリセットしてフルリビルドするには <c>transfer --full-rebuild</c> を使用してください。
 /// </summary>
 internal static class RebuildSkipListCommand
 {
@@ -14,45 +13,18 @@ internal static class RebuildSkipListCommand
     {
         var cmd = new Command(
             "rebuild-skiplist",
-            "SharePoint を再クロールして skip_list を再構築します（転送なし）");
+            "[廃止済み] SharePoint skip_list を再構築します。transfer --full-rebuild を使用してください。");
 
-        cmd.SetAction(async (parseResult, ct) =>
+        cmd.SetAction((parseResult, ct) =>
         {
-            await RunAsync(ct).ConfigureAwait(false);
+            Console.Error.WriteLine(
+                "[警告] rebuild-skiplist コマンドは廃止されました。" +
+                "SharePoint 移行は SQLite 状態管理に移行しており、skip_list は不要です。" +
+                "転送状態をリセットするには 'transfer --full-rebuild' を使用してください。");
+            Environment.ExitCode = 1;
+            return Task.CompletedTask;
         });
 
         return cmd;
-    }
-
-    private static async Task RunAsync(CancellationToken ct)
-    {
-        using var svc = CliServices.Build();
-        var logger = svc.LoggerFactory.CreateLogger("rebuild-skiplist");
-        var opts = svc.Options;
-
-        // 設定ハッシュ確認（FR-10）
-        var hash = ConfigHashChecker.ComputeHash(opts);
-        bool hashChanged = await ConfigHashChecker.HasChangedAsync(opts.Paths.ConfigHash, hash, ct)
-            .ConfigureAwait(false);
-
-        if (hashChanged)
-        {
-            logger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
-            ConfigHashChecker.ClearAll(opts.Paths, logger);
-            await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, hash, ct).ConfigureAwait(false);
-        }
-        else
-        {
-            // 設定ハッシュに変更がない場合でも skip_list をクリアして再構築
-            ConfigHashChecker.ClearSkipList(opts.Paths, logger);
-        }
-
-        // skip_list を SharePoint から再構築
-
-        logger.LogInformation("skip_list を再構築します…");
-
-        await TransferCommand.RebuildSkipListFromSharePointAsync(svc, logger, ct).ConfigureAwait(false);
-
-        logger.LogInformation("rebuild-skiplist 完了");
     }
 }

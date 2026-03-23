@@ -204,55 +204,6 @@ internal static class TransferCommand
             Environment.ExitCode = 1;
     }
 
-    internal static async Task RebuildSkipListFromSharePointAsync(
-        CliServices svc, ILogger logger, CancellationToken ct)
-    {
-        var spItems = await svc.StorageProvider.ListItemsAsync("sharepoint", ct).ConfigureAwait(false);
-        await svc.CrawlCache.SaveAsync(svc.Options.Paths.SharePointCache, spItems, ct).ConfigureAwait(false);
-
-        // DestinationRoot が設定されている場合は、その配下のみを対象にし、
-        // SkipKey から DestinationRoot プレフィックスを除去してソース側と同じキー体系で保存する。
-        var destinationRoot = svc.Options.DestinationRoot;
-        var hasDestinationRoot = !string.IsNullOrWhiteSpace(destinationRoot);
-        if (hasDestinationRoot)
-            destinationRoot = destinationRoot.Trim().Replace('\\', '/').Trim('/');
-
-        var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in spItems.Where(i => !i.IsFolder))
-        {
-            var skipKey = item.SkipKey;
-
-            if (hasDestinationRoot)
-            {
-                if (!skipKey.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (skipKey.Length == destinationRoot.Length)
-                    continue;
-
-                if (skipKey.Length > destinationRoot.Length &&
-                    (skipKey[destinationRoot.Length] == '/' || skipKey[destinationRoot.Length] == '\\'))
-                {
-                    skipKey = skipKey.Substring(destinationRoot.Length + 1);
-                }
-                else
-                {
-                    continue;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(skipKey))
-                continue;
-
-            skipKeys.Add(skipKey);
-        }
-
-        if (skipKeys.Count > 0)
-            await svc.SkipListManager.SaveAsync(skipKeys, ct).ConfigureAwait(false);
-
-        logger.LogInformation("skip_list を再構築しました: {Count} 件追加", skipKeys.Count);
-    }
-
     /// <summary>
     /// Dropbox をクロールして skip_list を再構築する（転送先 Dropbox 用、FR-13 Dropbox 版）。
     /// DestinationRoot プレフィックスを除去してソース側と同じキー体系に正規化する。
