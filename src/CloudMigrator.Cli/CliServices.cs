@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Net;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Storage;
 using CloudMigrator.Core.Transfer;
@@ -117,15 +118,17 @@ internal sealed class CliServices : IDisposable
         foreach (var (profileName, profile) in options.AdaptiveConcurrency)
         {
             if (!profile.Enabled) continue;
+            var useDropboxAdaptiveMode = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
             controllers[profileName] = new AdaptiveConcurrencyController(
-                initialDegree: options.MaxParallelTransfers,
+                initialDegree: useDropboxAdaptiveMode ? Math.Min(2, options.MaxParallelTransfers) : options.MaxParallelTransfers,
                 minDegree: profile.MinDegree,
                 maxDegree: options.MaxParallelTransfers,
                 successThreshold: profile.SuccessThresholdToIncrease,
                 logger: loggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
                 increaseStep: profile.IncreaseStep,
                 decreaseStep: profile.DecreaseStep,
-                decreaseTriggerCount: profile.DecreaseTriggerCount);
+                decreaseTriggerCount: profile.DecreaseTriggerCount,
+                halveOnRateLimit: useDropboxAdaptiveMode);
         }
 
         if (controllers.Count > 0)
@@ -219,9 +222,19 @@ internal sealed class CliServices : IDisposable
             SimpleUploadLimitMb = options.Dropbox.SimpleUploadLimitMb,
             UploadChunkSizeMb = options.Dropbox.UploadChunkSizeMb,
         };
-        var dropboxHttpClient = new HttpClient
+        var dropboxHandler = new SocketsHttpHandler
+        {
+            MaxConnectionsPerServer = 100,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+            EnableMultipleHttp2Connections = true,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+        };
+        var dropboxHttpClient = new HttpClient(dropboxHandler, disposeHandler: true)
         {
             Timeout = TimeSpan.FromSeconds(Math.Max(1, options.TimeoutSec)),
+            DefaultRequestVersion = HttpVersion.Version20,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher,
         };
         var dropboxProvider = new DropboxStorageProvider(
             loggerFactory.CreateLogger<DropboxStorageProvider>(),

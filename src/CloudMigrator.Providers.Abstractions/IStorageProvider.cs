@@ -19,9 +19,55 @@ public interface IStorageProvider
     Task<string> DownloadToTempAsync(StorageItem item, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 指定アイテムを読み取りストリームとして取得する。
+    /// 既定実装は一時ファイルへダウンロードしてから、そのファイルを自動削除付きストリームとして開く。
+    /// </summary>
+    async Task<Stream> DownloadStreamAsync(StorageItem item, CancellationToken cancellationToken = default)
+    {
+        var tempPath = await DownloadToTempAsync(item, cancellationToken).ConfigureAwait(false);
+        return await TempFileBackedReadStream.CreateAsync(tempPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// ローカル一時ファイルを転送先にアップロードする（クロスプロバイダー転送用）。
     /// </summary>
     Task UploadFromLocalAsync(string localFilePath, long fileSizeBytes, string destinationFullPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 読み取りストリームを転送先にアップロードする。
+    /// 既定実装は一時ファイルへ退避して <see cref="UploadFromLocalAsync"/> を呼ぶ。
+    /// </summary>
+    async Task UploadFromStreamAsync(
+        Stream sourceStream,
+        long fileSizeBytes,
+        string destinationFullPath,
+        CancellationToken cancellationToken = default)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        try
+        {
+            await using (var tempStream = new FileStream(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                81920,
+                useAsync: true))
+            {
+                await sourceStream.CopyToAsync(tempStream, cancellationToken).ConfigureAwait(false);
+            }
+
+            await UploadFromLocalAsync(
+                tempPath,
+                fileSizeBytes,
+                destinationFullPath,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try { File.Delete(tempPath); } catch { /* ベストエフォート */ }
+        }
+    }
 
     /// <summary>ファイルをアップロードする（サイズに応じてチャンク切替は実装側が行う）</summary>
     Task UploadFileAsync(TransferJob job, CancellationToken cancellationToken = default);

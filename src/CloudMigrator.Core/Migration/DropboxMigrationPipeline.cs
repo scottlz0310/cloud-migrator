@@ -40,6 +40,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     private int _totalTransferAttempts;
     private int _rateLimitHitCount;
     private long _totalBytesTransferred;
+    private int _completedTransfers;
     private DateTimeOffset _pipelineStartTime;
     // 並列度変化検出用（前回記録値。変化があれば即時メトリクス書き込み）
     private int _lastRecordedParallelism = -1;
@@ -258,136 +259,17 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         var controller = _concurrencyController;
         var maxDegree = controller?.MaxDegree ?? _options.MaxParallelTransfers;
 
-        await Parallel.ForEachAsync(
-            reader.ReadAllAsync(ct),
-            new ParallelOptions
-            {
-                MaxDegreeOfParallelism = maxDegree,
-                CancellationToken = ct,
-            },
-            async (job, itemCt) =>
-            {
-                // 動的並列度制御のゲート（AdaptiveConcurrencyController が有効な場合）
-                if (controller is not null)
-                    await controller.AcquireAsync(itemCt).ConfigureAwait(false);
+        var workers = Enumerable.Range(0, maxDegree)
+            .Select(workerId => WorkerLoopAsync(workerId, reader, controller, () => Interlocked.Increment(ref success), () => Interlocked.Increment(ref failed), ct))
+            .ToArray();
 
-                var totalNow = Interlocked.Increment(ref _totalTransferAttempts);
-
-                try
-                {
-                    await TransferItemAsync(job, itemCt).ConfigureAwait(false);
-                    await _stateDb.MarkDoneAsync(job.Source.Path, job.Source.Name, itemCt)
-                        .ConfigureAwait(false);
-                    Interlocked.Increment(ref success);
-                    Interlocked.Add(ref _totalBytesTransferred, job.Source.SizeBytes ?? 0);
-                    _logger.LogInformation("Dropbox 転送完了: {SkipKey}", job.Source.SkipKey);
-                    controller?.NotifySuccess();
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Dropbox 転送失敗: {SkipKey}", job.Source.SkipKey);
-                    await _stateDb.MarkFailedAsync(job.Source.Path, job.Source.Name, ex.Message, itemCt)
-                        .ConfigureAwait(false);
-                    Interlocked.Increment(ref failed);
-
-                    // 429 / rate limit 検出 → 動的並列度を減少
-                    // DropboxApiException : HttpRequestException なので StatusCode で型安全に判定できる
-                    var isRateLimit =
-                        ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests }
-                        || ex.Message.Contains("too_many", StringComparison.OrdinalIgnoreCase)
-                        || ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase);
-                    if (isRateLimit)
-                    {
-                        Interlocked.Increment(ref _rateLimitHitCount);
-
-                        // プロバイダ層で解析済みの Retry-After を HttpRequestException.Data 経由で受け取る
-                        // （Core 層は Providers.Dropbox を直接参照できないため Data ディクショナリを使用）
-                        TimeSpan? retryAfter = null;
-                        if (ex is HttpRequestException httpEx && httpEx.Data.Contains("Retry-After"))
-                        {
-                            retryAfter = httpEx.Data["Retry-After"] switch
-                            {
-                                TimeSpan ts => ts,
-                                string s when TimeSpan.TryParse(s, out var parsed) => parsed,
-                                _ => null,
-                            };
-                        }
-
-                        controller?.NotifyRateLimit(retryAfter);
-                    }
-                }
-                finally
-                {
-                    // 並列度が変化した場合は即時記録（100 件サンプリングでは変化を取りこぼすため）
-                    if (controller is not null)
-                    {
-                        var currentDegree = controller.CurrentDegree;
-                        if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
-                        {
-                            try
-                            {
-                                await _stateDb.RecordMetricAsync(
-                                    "current_parallelism", (double)currentDegree, itemCt).ConfigureAwait(false);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "current_parallelism の即時記録に失敗しました。");
-                            }
-                        }
-                    }
-
-                    // 100 回ごとに metricsテーブルへ転送状況を記録する（ダッシュボード向け）
-                    if (totalNow % 100 == 0)
-                    {
-                        // controller 経由のカウントは内部リトライ成功した 429 も含む（精度が高い）
-                        // controller が null の場合は catch ブロックで集計した例外レベルの数のみにフォールバック
-                        var rlCount = controller is not null
-                            ? controller.RateLimitCount
-                            : (long)Volatile.Read(ref _rateLimitHitCount);
-                        var pct = rlCount > 0 ? (double)rlCount / totalNow * 100.0 : 0.0;
-                        var elapsedSeconds = (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds;
-                        var filesPerMin = elapsedSeconds > 0
-                            ? totalNow / elapsedSeconds * 60.0
-                            : 0.0;
-                        var bytesPerSec = elapsedSeconds > 0
-                            ? Volatile.Read(ref _totalBytesTransferred) / elapsedSeconds
-                            : 0.0;
-                        try
-                        {
-                            await _stateDb.RecordMetricAsync("rate_limit_pct", pct, itemCt)
-                                .ConfigureAwait(false);
-                            await _stateDb.RecordMetricAsync("throughput_files_per_min", filesPerMin, itemCt)
-                                .ConfigureAwait(false);
-                            await _stateDb.RecordMetricAsync("throughput_bytes_per_sec", bytesPerSec, itemCt)
-                                .ConfigureAwait(false);
-                            await _stateDb.RecordMetricAsync(
-                                "current_parallelism",
-                                (double)(controller?.CurrentDegree ?? _options.MaxParallelTransfers),
-                                itemCt).ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            // メトリクス失敗はメイン処理に影響させないが、障害検知のためにログは出力する
-                            _logger.LogWarning(
-                                ex,
-                                "メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
-                                job.Source.SkipKey);
-                        }
-                    }
-
-                    controller?.Release();
-                }
-            }).ConfigureAwait(false);
+        await Task.WhenAll(workers).ConfigureAwait(false);
 
         return (success, failed);
     }
 
     /// <summary>1 ファイルをクロスプロバイダー転送する（OneDrive ダウンロード → Dropbox アップロード）。</summary>
-    private async Task TransferItemAsync(TransferJob job, CancellationToken ct)
+    private async Task<FileTransferTelemetry> TransferItemAsync(TransferJob job, CancellationToken ct)
     {
         await _stateDb.MarkProcessingAsync(job.Source.Path, job.Source.Name, ct).ConfigureAwait(false);
 
@@ -404,19 +286,135 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
             throw new InvalidOperationException(
                 $"SizeBytes が未設定のため転送できません: {job.Source.SkipKey}");
 
-        var tempPath = await _sourceProvider.DownloadToTempAsync(job.Source, ct).ConfigureAwait(false);
+        var retryBefore = (_destinationProvider as IRetryAwareStorageProvider)?.TotalRetryCount ?? 0;
+        var downloadSw = Stopwatch.StartNew();
+        await using var sourceStream = await _sourceProvider.DownloadStreamAsync(job.Source, ct).ConfigureAwait(false);
+        downloadSw.Stop();
+
+        var uploadSw = Stopwatch.StartNew();
+        await _destinationProvider.UploadFromStreamAsync(
+            sourceStream,
+            job.Source.SizeBytes.Value,
+            job.DestinationFullPath,
+            ct).ConfigureAwait(false);
+        uploadSw.Stop();
+
+        var retryAfter = (_destinationProvider as IRetryAwareStorageProvider)?.TotalRetryCount ?? retryBefore;
+        return new FileTransferTelemetry(downloadSw.Elapsed, uploadSw.Elapsed, retryAfter - retryBefore);
+    }
+
+    private async Task WorkerLoopAsync(
+        int workerId,
+        ChannelReader<TransferJob> reader,
+        AdaptiveConcurrencyController? controller,
+        Action onSuccess,
+        Action onFailure,
+        CancellationToken ct)
+    {
+        await foreach (var job in reader.ReadAllAsync(ct).ConfigureAwait(false))
+        {
+            if (controller is not null)
+                await controller.AcquireAsync(ct).ConfigureAwait(false);
+
+            var totalNow = Interlocked.Increment(ref _totalTransferAttempts);
+
+            try
+            {
+                var telemetry = await TransferItemAsync(job, ct).ConfigureAwait(false);
+                await _stateDb.MarkDoneAsync(job.Source.Path, job.Source.Name, ct).ConfigureAwait(false);
+                Interlocked.Increment(ref _completedTransfers);
+                Interlocked.Add(ref _totalBytesTransferred, job.Source.SizeBytes ?? 0);
+                onSuccess();
+                controller?.NotifySuccess();
+
+                var elapsedSeconds = Math.Max(0.001, (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds);
+                var filesPerSec = Volatile.Read(ref _completedTransfers) / elapsedSeconds;
+                _logger.LogInformation(
+                    "Dropbox 転送完了: worker={WorkerId} file={SkipKey} downloadMs={DownloadMs} uploadMs={UploadMs} retries={RetryCount} filesPerSec={FilesPerSec:F2} concurrency={Concurrency} rateLimits={RateLimitCount}",
+                    workerId,
+                    job.Source.SkipKey,
+                    (int)telemetry.DownloadElapsed.TotalMilliseconds,
+                    (int)telemetry.UploadElapsed.TotalMilliseconds,
+                    telemetry.RetryCount,
+                    filesPerSec,
+                    controller?.CurrentDegree ?? _options.MaxParallelTransfers,
+                    controller?.RateLimitCount ?? Volatile.Read(ref _rateLimitHitCount));
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Dropbox 転送失敗: {SkipKey}", job.Source.SkipKey);
+                await _stateDb.MarkFailedAsync(job.Source.Path, job.Source.Name, ex.Message, ct)
+                    .ConfigureAwait(false);
+                onFailure();
+
+                var isRateLimit =
+                    ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests }
+                    || ex.Message.Contains("too_many", StringComparison.OrdinalIgnoreCase)
+                    || ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase);
+                if (isRateLimit)
+                    Interlocked.Increment(ref _rateLimitHitCount);
+            }
+            finally
+            {
+                await RecordMetricsAsync(job.Source.SkipKey, totalNow, controller, ct).ConfigureAwait(false);
+                controller?.Release();
+            }
+        }
+    }
+
+    private async Task RecordMetricsAsync(
+        string skipKey,
+        int totalNow,
+        AdaptiveConcurrencyController? controller,
+        CancellationToken ct)
+    {
+        if (controller is not null)
+        {
+            var currentDegree = controller.CurrentDegree;
+            if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
+            {
+                try
+                {
+                    await _stateDb.RecordMetricAsync("current_parallelism", (double)currentDegree, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "current_parallelism の即時記録に失敗しました。");
+                }
+            }
+        }
+
+        if (totalNow % 100 != 0)
+            return;
+
+        var rlCount = controller is not null
+            ? controller.RateLimitCount
+            : (long)Volatile.Read(ref _rateLimitHitCount);
+        var pct = rlCount > 0 ? (double)rlCount / totalNow * 100.0 : 0.0;
+        var elapsedSeconds = (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds;
+        var filesPerMin = elapsedSeconds > 0 ? totalNow / elapsedSeconds * 60.0 : 0.0;
+        var bytesPerSec = elapsedSeconds > 0 ? Volatile.Read(ref _totalBytesTransferred) / elapsedSeconds : 0.0;
+
         try
         {
-            await _destinationProvider.UploadFromLocalAsync(
-                tempPath,
-                job.Source.SizeBytes.Value,
-                job.DestinationFullPath,
+            await _stateDb.RecordMetricAsync("rate_limit_pct", pct, ct).ConfigureAwait(false);
+            await _stateDb.RecordMetricAsync("throughput_files_per_min", filesPerMin, ct).ConfigureAwait(false);
+            await _stateDb.RecordMetricAsync("throughput_bytes_per_sec", bytesPerSec, ct).ConfigureAwait(false);
+            await _stateDb.RecordMetricAsync(
+                "current_parallelism",
+                (double)(controller?.CurrentDegree ?? _options.MaxParallelTransfers),
                 ct).ConfigureAwait(false);
         }
-        finally
+        catch (Exception ex)
         {
-            try { File.Delete(tempPath); }
-            catch (Exception ex) { _logger.LogWarning(ex, "テンポラリファイルの削除に失敗: {Path}", tempPath); }
+            _logger.LogWarning(
+                ex,
+                "メトリクス記録に失敗しました（SkipKey: {SkipKey}）。メイン処理は継続します。",
+                skipKey);
         }
     }
 
@@ -433,4 +431,9 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
             },
             DestinationRoot = _options.DestinationRoot,
         };
+
+    private sealed record FileTransferTelemetry(
+        TimeSpan DownloadElapsed,
+        TimeSpan UploadElapsed,
+        long RetryCount);
 }

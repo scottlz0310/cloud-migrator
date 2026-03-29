@@ -51,6 +51,9 @@ public class DropboxMigrationPipelineTests
     private static StorageItem MakeItem(string path, string name, string id = "od-1", long size = 512) =>
         new() { Id = id, Name = name, Path = path, SizeBytes = size, IsFolder = false };
 
+    private static Stream MakeDownloadStream(string content = "test") =>
+        new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+
     private static TransferRecord RecordFrom(StorageItem item) =>
         new TransferRecord
         {
@@ -83,7 +86,7 @@ public class DropboxMigrationPipelineTests
     private void SetupDestBase()
     {
         _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        _mockDest.Setup(d => d.UploadFromLocalAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDest.Setup(d => d.UploadFromStreamAsync(It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
     }
 
     // ── RunAsync: 空の DB / 空の source ──────────────────────────────────
@@ -122,8 +125,8 @@ public class DropboxMigrationPipelineTests
 
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
 
             SetupDestBase();
 
@@ -163,7 +166,7 @@ public class DropboxMigrationPipelineTests
         summary.Success.Should().Be(0);
         summary.Failed.Should().Be(0);
         _mockDb.Verify(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()), Times.Once);
-        _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockSource.Verify(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ── Phase B: pending/processing/failed はスキップ（Phase D の GetPendingStreamAsync でキューイングされる）──
@@ -216,16 +219,16 @@ public class DropboxMigrationPipelineTests
             // Phase B は空ページ返却
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                        .ReturnsAsync(EmptyPage());
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
 
             SetupDestBase();
 
             var summary = await CreatePipeline().RunAsync(CancellationToken.None);
 
             summary.Success.Should().Be(1);
-            // SourceId が StorageItem.Id として DownloadToTempAsync に渡されることを検証
-            _mockSource.Verify(s => s.DownloadToTempAsync(
+            // SourceId が StorageItem.Id として DownloadStreamAsync に渡されることを検証
+            _mockSource.Verify(s => s.DownloadStreamAsync(
                 It.Is<StorageItem>(i => i.Id == "od-recovery-id"),
                 It.IsAny<CancellationToken>()), Times.Once);
         }
@@ -240,7 +243,7 @@ public class DropboxMigrationPipelineTests
     [Fact]
     public async Task RunAsync_DownloadThrows_CallsMarkFailedAndReturnsFailed1()
     {
-        // 検証対象: ConsumeAsync エラーハンドラ  目的: DownloadToTempAsync の例外で MarkFailedAsync が呼ばれる
+        // 検証対象: ConsumeAsync エラーハンドラ  目的: DownloadStreamAsync の例外で MarkFailedAsync が呼ばれる
         var item = MakeItem("data", "bad.bin", "od-bad");
 
         SetupDbBase();
@@ -251,7 +254,7 @@ public class DropboxMigrationPipelineTests
 
         _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                    .ReturnsAsync(SingleItemPage(item));
-        _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+        _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
                    .ThrowsAsync(new IOException("ダウンロードネットワークエラー"));
 
         SetupDestBase();
@@ -267,7 +270,7 @@ public class DropboxMigrationPipelineTests
     [Fact]
     public async Task RunAsync_UploadThrows_CallsMarkFailedAndReturnsFailed1()
     {
-        // 検証対象: ConsumeAsync エラーハンドラ  目的: UploadFromLocalAsync の例外で MarkFailedAsync が呼ばれる
+        // 検証対象: ConsumeAsync エラーハンドラ  目的: UploadFromStreamAsync の例外で MarkFailedAsync が呼ばれる
         var item = MakeItem("data", "upload-fail.bin", "od-uf");
         var tempFile = Path.GetTempFileName();
         try
@@ -280,11 +283,11 @@ public class DropboxMigrationPipelineTests
 
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
 
             _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-            _mockDest.Setup(d => d.UploadFromLocalAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            _mockDest.Setup(d => d.UploadFromStreamAsync(It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                      .ThrowsAsync(new HttpRequestException("500 サーバーエラー"));
 
             var summary = await CreatePipeline().RunAsync(CancellationToken.None);
@@ -339,7 +342,7 @@ public class DropboxMigrationPipelineTests
 
         summary.Success.Should().Be(0);
         _mockDb.Verify(db => db.InsertPendingIfNewAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
-        _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockSource.Verify(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ── EnsureFolder Feature Flag ─────────────────────────────────────────
@@ -359,8 +362,8 @@ public class DropboxMigrationPipelineTests
                    .Returns(FromRecords([RecordFrom(item)]));
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
             SetupDestBase();
 
             // EnableEnsureFolder はデフォルト false
@@ -390,8 +393,8 @@ public class DropboxMigrationPipelineTests
                    .Returns(FromRecords([RecordFrom(item)]));
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
             SetupDestBase();
 
             var options = new MigratorOptions
@@ -443,8 +446,8 @@ public class DropboxMigrationPipelineTests
                    .ReturnsAsync(new TransferDbSummary { Pending = 0, Done = 1 });
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
             SetupDestBase();
 
             await CreatePipeline().RunAsync(CancellationToken.None);
@@ -490,8 +493,8 @@ public class DropboxMigrationPipelineTests
                    .Returns(Task.CompletedTask);
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
             SetupDestBase();
 
             using var controller = new AdaptiveConcurrencyController(
@@ -540,8 +543,8 @@ public class DropboxMigrationPipelineTests
             var page = new StoragePage { Items = items, HasMore = false, Cursor = null };
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(page);
-            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
-                       .ReturnsAsync(tempFile);
+            _mockSource.Setup(s => s.DownloadStreamAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
             SetupDestBase();
 
             var summary = await CreatePipeline().RunAsync(CancellationToken.None);

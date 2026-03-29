@@ -378,19 +378,11 @@ public sealed class TransferEngine
         if (job.Source.SizeBytes is null)
             throw new InvalidOperationException($"SizeBytes が未設定のため転送できません: {job.Source.SkipKey}");
 
-        var tempPath = await _sourceProvider.DownloadToTempAsync(job.Source, ct).ConfigureAwait(false);
-        try
-        {
-            await _destProvider.UploadFromLocalAsync(
-                tempPath,
-                job.Source.SizeBytes.Value,
-                job.DestinationFullPath,
-                ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            try { File.Delete(tempPath); }
-            catch (Exception ex) { _logger.LogWarning(ex, "テンポラリファイルの削除に失敗: {Path}", tempPath); }
-        }
+        await using var sourceStream = await _sourceProvider.DownloadStreamAsync(job.Source, ct).ConfigureAwait(false);
+        await _destProvider.UploadFromStreamAsync(
+            sourceStream,
+            job.Source.SizeBytes.Value,
+            job.DestinationFullPath,
+            ct).ConfigureAwait(false);
     }
 }

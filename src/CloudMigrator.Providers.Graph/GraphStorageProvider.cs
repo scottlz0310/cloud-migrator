@@ -424,15 +424,10 @@ public sealed class GraphStorageProvider : IStorageProvider
         if (string.IsNullOrEmpty(_options.OneDriveUserId))
             throw new InvalidOperationException("OneDriveUserId が未設定のため OneDrive からダウンロードできません。");
 
-        var oneDriveId = await GetOneDriveDriveIdAsync(cancellationToken).ConfigureAwait(false);
         var tempPath = Path.GetTempFileName();
         try
         {
-            await using var stream = await _client.Drives[oneDriveId].Items[item.Id].Content
-                .GetAsync(cancellationToken: cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"ダウンロードストリームが null です: {item.SkipKey}");
-
+            await using var stream = await DownloadStreamAsync(item, cancellationToken).ConfigureAwait(false);
             await using var tempFile = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
             await stream.CopyToAsync(tempFile, cancellationToken).ConfigureAwait(false);
 
@@ -444,6 +439,19 @@ public sealed class GraphStorageProvider : IStorageProvider
             try { File.Delete(tempPath); } catch { /* ベストエフォート */ }
             throw;
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Stream> DownloadStreamAsync(StorageItem item, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(_options.OneDriveUserId))
+            throw new InvalidOperationException("OneDriveUserId が未設定のため OneDrive からダウンロードできません。");
+
+        var oneDriveId = await GetOneDriveDriveIdAsync(cancellationToken).ConfigureAwait(false);
+        return await _client.Drives[oneDriveId].Items[item.Id].Content
+            .GetAsync(cancellationToken: cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"ダウンロードストリームが null です: {item.SkipKey}");
     }
 
     /// <inheritdoc/>
