@@ -7,7 +7,31 @@
 
 ## [Unreleased]
 
-今後の開発予定用。現在は開発中の機能なし。
+### Added
+- **`transfer` コマンド: 失敗時の再試行確認プロンプト**
+  - 転送完了後に失敗ファイルが残っている場合、対話端末では「X件の転送に失敗しています。再試行しますか？ [y/N]」を表示
+  - `y` を入力すると同一パイプラインを再実行（Phase A で `permanent_failed` リセットが走るため確実に再試行）
+  - 標準入力がリダイレクトされている場合（cron 等）はプロンプトを表示せずログ警告のみ出力
+- **`transfer --auto-retry <N>` オプション追加**
+  - 失敗ファイルを最大 N 回まで自動再試行する（対話プロンプトなし）
+  - 非対話環境・自動化スクリプトでの再試行に使用。例: `transfer --auto-retry 3`
+- **`ITransferStateDb.ResetPermanentFailedAsync` 追加**
+  - `permanent_failed` 状態のレコードを `failed` にリセットして再試行可能にする
+  - SharePoint / Dropbox 両パイプラインの Phase A で呼び出し、リセット件数をログ出力
+
+### Fixed
+- **`permanent_failed` ファイルの永久放置を修正**（`SqliteTransferStateDb` / 両パイプライン）
+  - 3 回失敗した（`permanent_failed`）ファイルが以後の実行で完全に無視される問題を修正
+  - 次回実行の Phase A で `failed` に戻すことで、すべての失敗ファイルが次回必ず再試行されるようになった
+- **`ControllerProxy.Active` のメモリ可視性保証**（`CliServices.cs`）
+  - 複数スレッドから読み書きされる `Active` フィールドに `volatile` を追加
+- **`GetController` の XML コメント不一致を修正**（`CliServices.cs`）
+  - 「プロファイルが存在しない場合は null」→「"default" プロファイルへフォールバック、それも存在しない場合のみ null」に正確化
+- **`NotifyRateLimit` の 429 ストーム時タスク増殖を修正**（`AdaptiveConcurrencyController.cs`）
+  - `for` ループで `step` 個の fire-and-forget タスクを起動していた処理を、1 つのバックグラウンドタスク内でループする `AbsorbSlotsAsync(step)` に統合
+- **`MinDegree` 到達時の `_pendingDecreases` 蓄積を修正**（`AdaptiveConcurrencyController.cs`）
+  - `_current == MinDegree` 時にカウンターが増え続け、回復直後の最初の通知で即減速が発火する問題を修正
+  - `_current > _min` のときのみ `_pendingDecreases` をインクリメントするよう変更
 
 ---
 

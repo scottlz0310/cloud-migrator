@@ -44,14 +44,31 @@ dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedri
 
 ### transfer
 
-OneDrive → SharePoint 転送を実行します。
+OneDrive → SharePoint（または Dropbox）転送を実行します。
 
 ```bash
 dotnet run --project src/CloudMigrator.Cli -- transfer
 dotnet run --project src/CloudMigrator.Cli -- transfer --full-rebuild
+dotnet run --project src/CloudMigrator.Cli -- transfer --auto-retry 3
+dotnet run --project src/CloudMigrator.Cli -- transfer --auto-retry 5 --full-rebuild
 ```
 
-- `--full-rebuild`: キャッシュと `skip_list` をクリアして再構築後に転送
+| オプション | 説明 |
+|---|---|
+| `--full-rebuild` | キャッシュと `skip_list` をクリアして再構築後に転送 |
+| `--auto-retry <N>` | 失敗ファイルを最大 N 回まで自動再試行する（デフォルト: 0 = 無効）。非対話環境（cron 等）での再試行に使用 |
+
+#### 失敗時の挙動
+
+転送完了後に失敗ファイルが残っている場合、実行環境によって以下の動作になります。
+
+| 実行環境 | 挙動 |
+|---|---|
+| 対話端末（`--auto-retry` 未指定） | 「X件の転送に失敗しています。再試行しますか？ [y/N]」を表示。`y` で再試行、`N`/Enter で終了 |
+| 非対話（cron 等）（`--auto-retry` 未指定） | ログ警告を出力して終了。失敗ファイルは**次回実行時に自動的に再試行**される |
+| `--auto-retry N` 指定（N > 0） | プロンプトなしで最大 N 回まで自動再試行する。失敗が残った状態で N 回使い切った場合は終了コード 1 で終了 |
+
+> **注意**: 失敗ファイルは次回の `transfer` 実行で必ず再試行されます（永続的に放置されません）。
 
 ### rebuild-skiplist
 
@@ -416,17 +433,24 @@ dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedri
 dotnet run --project src/CloudMigrator.Cli -- transfer
 ```
 
-### 5.3 転送の再開（中断後）
+### 5.3 転送の再開・再試行
 
-転送が途中で止まった場合、スキップリスト（`logs/skip_list.json`）に転送済みファイルが記録されているため、再実行するだけで差分のみ転送されます。
+転送が途中で止まった場合や失敗ファイルが残っている場合は、再実行するだけで差分のみ転送されます。
 
 ```bash
-# 増分転送（スキップリストを活かして未転送ファイルのみ処理）
+# 増分転送（未転送ファイル・前回失敗ファイルを自動処理）
 dotnet run --project src/CloudMigrator.Cli -- transfer
+
+# 失敗ファイルを最大 5 回まで自動再試行してから終了（cron 等の非対話環境向け）
+dotnet run --project src/CloudMigrator.Cli -- transfer --auto-retry 5
 
 # 長時間実行が見込まれる場合は watchdog を使ってフリーズ時に自動再起動
 dotnet run --project src/CloudMigrator.Cli -- watchdog
 ```
+
+**失敗ファイルの扱い**
+
+失敗ファイルは SQLite 状態 DB に記録されます。失敗が 3 回を超えると `permanent_failed` 状態になりますが、次回の `transfer` 実行時の Phase A で自動的にリセットされ、再試行対象に戻ります。永続的に放置されることはありません。
 
 ### 5.4 キャッシュ・スキップリストの削除
 
