@@ -134,7 +134,10 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         lock (_syncRoot)
         {
             _consecutiveSuccesses = 0;
-            _pendingDecreases++;
+
+            // MinDegree 到達時はカウンターを増やさない（回復後の最初の通知で即減速しないようにする）
+            if (_current > _min)
+                _pendingDecreases++;
 
             if (_pendingDecreases >= _decreaseTriggerCount && _current > _min)
             {
@@ -154,9 +157,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             prevDegree, newDegree, _max,
             retryAfter.HasValue ? retryAfter.Value.TotalSeconds.ToString("F0") : "なし");
 
-        // 削減した分だけスロットを非同期に吸収する（fire-and-forget）
-        for (int i = 0; i < step; i++)
-            _ = AbsorbSlotAsync();
+        // 削減した分だけスロットを非同期に吸収する（1 つのバックグラウンドループで順次処理）
+        _ = AbsorbSlotsAsync(step);
     }
 
     /// <summary>
@@ -198,21 +200,25 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     // ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// セマフォスロットを 1 つ吸収する（解放しない）。
-    /// 次にスロットが解放されたタイミングで取得し、循環から除外する。
+    /// セマフォスロットを <paramref name="count"/> 個まとめて吸収する（解放しない）。
+    /// 1 つのバックグラウンドタスクで順次処理することで、429 ストーム時のタスク増殖を防止する。
     /// </summary>
-    private async Task AbsorbSlotAsync()
+    private async Task AbsorbSlotsAsync(int count)
     {
-        try
+        for (int i = 0; i < count; i++)
         {
-            await _semaphore.WaitAsync(_disposeCts.Token).ConfigureAwait(false);
-            lock (_syncRoot) { _absorbedActual++; }
-        }
-        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
-        {
-            // Dispose 時のキャンセル（OperationCanceledException）または
-            // セマフォ破棄後の呼び出し（ObjectDisposedException）のいずれも無視する。
-            // _current は既にデクリメント済みだが、Dispose 後は使用しないため補正不要。
+            try
+            {
+                await _semaphore.WaitAsync(_disposeCts.Token).ConfigureAwait(false);
+                lock (_syncRoot) { _absorbedActual++; }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+            {
+                // Dispose 時のキャンセル（OperationCanceledException）または
+                // セマフォ破棄後の呼び出し（ObjectDisposedException）のいずれも無視する。
+                // _current は既にデクリメント済みだが、Dispose 後は使用しないため補正不要。
+                return;
+            }
         }
     }
 

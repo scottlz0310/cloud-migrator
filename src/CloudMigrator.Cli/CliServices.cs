@@ -32,7 +32,9 @@ internal sealed class CliServices : IDisposable
     private readonly ControllerProxy _controllerProxy;
 
     /// <summary>
-    /// 指定プロバイダーのコントローラーを取得する。プロファイルが存在しない場合は null。
+    /// 指定プロバイダーのコントローラーを取得する。
+    /// <paramref name="providerName"/> に一致するプロファイルが存在しない場合は "default" プロファイルへフォールバックし、
+    /// それも存在しない場合のみ null を返す。
     /// </summary>
     public AdaptiveConcurrencyController? GetController(string providerName) =>
         _controllers.TryGetValue(providerName, out var c) ? c :
@@ -287,6 +289,6 @@ internal sealed class CliServices : IDisposable
     /// <summary>onRateLimit ラムダからアクティブなコントローラーへの間接参照。</summary>
     private sealed class ControllerProxy
     {
-        internal AdaptiveConcurrencyController? Active;
+        internal volatile AdaptiveConcurrencyController? Active;
     }
 }
