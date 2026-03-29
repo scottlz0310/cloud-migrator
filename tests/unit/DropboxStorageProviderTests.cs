@@ -350,6 +350,35 @@ public class DropboxStorageProviderTests
         capturedRetryAfter!.Value.Should().BeGreaterThanOrEqualTo(TimeSpan.Zero);
     }
 
+    [Fact]
+    public async Task UploadFromLocalAsync_SimpleUpload_RetryReusesBufferedPayload()
+    {
+        // 検証対象: UploadSimpleAsync  目的: 429 リトライ時も同じサイズのボディで再送できること
+        var handler = new StubHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        handler.Enqueue(_ => JsonResponse("""{"metadata":{"name":"a.txt",".tag":"file"}}"""));
+
+        using var httpClient = new HttpClient(handler);
+        var provider = new DropboxStorageProvider(
+            NullLogger<DropboxStorageProvider>.Instance,
+            "valid-token",
+            new DropboxStorageOptions(),
+            httpClient,
+            maxRetry: 1);
+
+        var tmp = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tmp, "data");
+            await provider.UploadFromLocalAsync(tmp, 4, "/a.txt", CancellationToken.None);
+        }
+        finally { File.Delete(tmp); }
+
+        handler.CapturedRequests.Should().HaveCount(2);
+        handler.CapturedRequests[0].ContentLength.Should().Be(4);
+        handler.CapturedRequests[1].ContentLength.Should().Be(4);
+    }
+
     private static HttpResponseMessage JsonResponse(string json)
     {
         return new HttpResponseMessage(HttpStatusCode.OK)
@@ -372,7 +401,10 @@ public class DropboxStorageProviderTests
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
             request.Headers.TryGetValues("Dropbox-API-Arg", out var values);
-            CapturedRequests.Add(new CapturedRequest(path, values?.FirstOrDefault()));
+            var contentLength = request.Content is null
+                ? (long?)null
+                : request.Content.ReadAsByteArrayAsync(cancellationToken).GetAwaiter().GetResult().LongLength;
+            CapturedRequests.Add(new CapturedRequest(path, values?.FirstOrDefault(), contentLength));
 
             if (_responses.Count == 0)
                 throw new InvalidOperationException("テストレスポンスが不足しています。");
@@ -388,5 +420,5 @@ public class DropboxStorageProviderTests
         }
     }
 
-    private sealed record CapturedRequest(string Path, string? DropboxApiArg);
+    private sealed record CapturedRequest(string Path, string? DropboxApiArg, long? ContentLength);
 }

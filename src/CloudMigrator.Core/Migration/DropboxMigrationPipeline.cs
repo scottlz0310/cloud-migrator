@@ -287,20 +287,22 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 $"SizeBytes が未設定のため転送できません: {job.Source.SkipKey}");
 
         var retryBefore = (_destinationProvider as IRetryAwareStorageProvider)?.TotalRetryCount ?? 0;
-        var downloadSw = Stopwatch.StartNew();
-        await using var sourceStream = await _sourceProvider.DownloadStreamAsync(job.Source, ct).ConfigureAwait(false);
-        downloadSw.Stop();
+        await using var rawSourceStream = await _sourceProvider.DownloadStreamAsync(job.Source, ct).ConfigureAwait(false);
+        await using var measuredSourceStream = new MeasuredReadStream(rawSourceStream);
 
-        var uploadSw = Stopwatch.StartNew();
+        var uploadWallSw = Stopwatch.StartNew();
         await _destinationProvider.UploadFromStreamAsync(
-            sourceStream,
+            measuredSourceStream,
             job.Source.SizeBytes.Value,
             job.DestinationFullPath,
             ct).ConfigureAwait(false);
-        uploadSw.Stop();
+        uploadWallSw.Stop();
 
         var retryAfter = (_destinationProvider as IRetryAwareStorageProvider)?.TotalRetryCount ?? retryBefore;
-        return new FileTransferTelemetry(downloadSw.Elapsed, uploadSw.Elapsed, retryAfter - retryBefore);
+        return new FileTransferTelemetry(
+            measuredSourceStream.TotalReadElapsed,
+            uploadWallSw.Elapsed,
+            retryAfter - retryBefore);
     }
 
     private async Task WorkerLoopAsync(
@@ -330,11 +332,11 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 var elapsedSeconds = Math.Max(0.001, (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds);
                 var filesPerSec = Volatile.Read(ref _completedTransfers) / elapsedSeconds;
                 _logger.LogInformation(
-                    "Dropbox 転送完了: worker={WorkerId} file={SkipKey} downloadMs={DownloadMs} uploadMs={UploadMs} retries={RetryCount} filesPerSec={FilesPerSec:F2} concurrency={Concurrency} rateLimits={RateLimitCount}",
+                    "Dropbox 転送完了: worker={WorkerId} file={SkipKey} downloadReadMs={DownloadReadMs} uploadWallMs={UploadWallMs} retries={RetryCount} filesPerSec={FilesPerSec:F2} concurrency={Concurrency} rateLimits={RateLimitCount}",
                     workerId,
                     job.Source.SkipKey,
-                    (int)telemetry.DownloadElapsed.TotalMilliseconds,
-                    (int)telemetry.UploadElapsed.TotalMilliseconds,
+                    (int)telemetry.DownloadReadElapsed.TotalMilliseconds,
+                    (int)telemetry.UploadWallElapsed.TotalMilliseconds,
                     telemetry.RetryCount,
                     filesPerSec,
                     controller?.CurrentDegree ?? _options.MaxParallelTransfers,
@@ -433,7 +435,126 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         };
 
     private sealed record FileTransferTelemetry(
-        TimeSpan DownloadElapsed,
-        TimeSpan UploadElapsed,
+        TimeSpan DownloadReadElapsed,
+        TimeSpan UploadWallElapsed,
         long RetryCount);
+
+    private sealed class MeasuredReadStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly Stopwatch _readStopwatch = new();
+
+        public MeasuredReadStream(Stream inner)
+        {
+            _inner = inner;
+        }
+
+        public TimeSpan TotalReadElapsed => _readStopwatch.Elapsed;
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            _inner.FlushAsync(cancellationToken);
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            _readStopwatch.Start();
+            try
+            {
+                return _inner.Read(buffer, offset, count);
+            }
+            finally
+            {
+                _readStopwatch.Stop();
+            }
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            _readStopwatch.Start();
+            try
+            {
+                return _inner.Read(buffer);
+            }
+            finally
+            {
+                _readStopwatch.Stop();
+            }
+        }
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            _readStopwatch.Start();
+            return FinishReadAsync(_inner.ReadAsync(buffer, offset, count, cancellationToken));
+        }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            _readStopwatch.Start();
+            return FinishReadValueAsync(_inner.ReadAsync(buffer, cancellationToken));
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            _inner.Seek(offset, origin);
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override void Write(ReadOnlySpan<byte> buffer) =>
+            throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _inner.Dispose();
+            base.Dispose(disposing);
+        }
+
+        public override ValueTask DisposeAsync() =>
+            _inner.DisposeAsync();
+
+        private async Task<int> FinishReadAsync(Task<int> readTask)
+        {
+            try
+            {
+                return await readTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                _readStopwatch.Stop();
+            }
+        }
+
+        private async ValueTask<int> FinishReadValueAsync(ValueTask<int> readTask)
+        {
+            try
+            {
+                return await readTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                _readStopwatch.Stop();
+            }
+        }
+    }
 }

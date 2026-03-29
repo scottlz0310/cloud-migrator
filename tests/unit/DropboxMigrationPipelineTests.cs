@@ -51,9 +51,6 @@ public class DropboxMigrationPipelineTests
     private static StorageItem MakeItem(string path, string name, string id = "od-1", long size = 512) =>
         new() { Id = id, Name = name, Path = path, SizeBytes = size, IsFolder = false };
 
-    private static Stream MakeDownloadStream(string content = "test") =>
-        new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
-
     private static TransferRecord RecordFrom(StorageItem item) =>
         new TransferRecord
         {
