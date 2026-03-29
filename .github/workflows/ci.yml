@@ -61,7 +61,7 @@ jobs:
 
       - name: Codecov へカバレッジ送信
         if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ steps.coverage.outputs.path }}
