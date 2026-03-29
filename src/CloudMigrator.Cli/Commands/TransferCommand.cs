@@ -36,6 +36,12 @@ internal static class TransferCommand
         {
             bool fullRebuild = parseResult.GetValue(fullRebuildOpt);
             int autoRetry = parseResult.GetValue(autoRetryOpt);
+            if (autoRetry < 0)
+            {
+                Console.Error.WriteLine("エラー: --auto-retry には 0 以上の整数を指定してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
             await RunAsync(fullRebuild, autoRetry, ct).ConfigureAwait(false);
         });
 
@@ -146,18 +152,21 @@ internal static class TransferCommand
 
         svc.ActivateController("sharepoint");
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
-        var pipeline = new SharePointMigrationPipeline(
-            svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
-            svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
-            stateDb,
-            opts,
-            svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
-            svc.GetController("sharepoint"));
 
+        // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
+        // stateDb は SQLite 状態を保持するため使い回す
         TransferSummary summary;
         var autoRetryRemaining = autoRetry;
         while (true)
         {
+            var pipeline = new SharePointMigrationPipeline(
+                svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
+                svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
+                stateDb,
+                opts,
+                svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
+                svc.GetController("sharepoint"));
+
             summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
             logger.LogInformation(
                 "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
@@ -206,18 +215,21 @@ internal static class TransferCommand
 
         svc.ActivateController("dropbox");
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
-        var pipeline = new DropboxMigrationPipeline(
-            svc.StorageProvider,          // OneDrive ソース（GraphStorageProvider）
-            svc.DropboxProvider,          // Dropbox 転送先
-            stateDb,
-            opts,
-            svc.LoggerFactory.CreateLogger<DropboxMigrationPipeline>(),
-            svc.GetController("dropbox"));
 
+        // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
+        // stateDb は SQLite 状態を保持するため使い回す
         TransferSummary summary;
         var autoRetryRemaining = autoRetry;
         while (true)
         {
+            var pipeline = new DropboxMigrationPipeline(
+                svc.StorageProvider,          // OneDrive ソース（GraphStorageProvider）
+                svc.DropboxProvider,          // Dropbox 転送先
+                stateDb,
+                opts,
+                svc.LoggerFactory.CreateLogger<DropboxMigrationPipeline>(),
+                svc.GetController("dropbox"));
+
             summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
             logger.LogInformation(
                 "Dropbox 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
