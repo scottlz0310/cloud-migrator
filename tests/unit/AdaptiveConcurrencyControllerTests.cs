@@ -140,6 +140,19 @@ public sealed class AdaptiveConcurrencyControllerTests
     }
 
     [Fact]
+    public void NotifySuccess_IncreasesCurrentDegree_FromInitialHeadroomWithoutAbsorption()
+    {
+        // 検証対象: NotifySuccess  目的: initialDegree < maxDegree のソフトスタート時も成功で増加できること
+        var controller = CreateController(initial: 2, min: 1, max: 4, threshold: 2);
+
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(2); // 閾値未達
+
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(3); // 未吸収ヘッドルームを使って増加
+    }
+
+    [Fact]
     public async Task NotifySuccess_IncreasesCurrentDegree_AfterAbsorptionAndThreshold()
     {
         // 検証対象: NotifySuccess  目的: 吸収済みスロットがある状態で閾値回数成功すると並列度が回復すること

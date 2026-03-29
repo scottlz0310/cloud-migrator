@@ -168,7 +168,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>
     /// 転送成功を通知する。
-    /// 連続成功数が <see cref="SuccessThreshold"/> に達し、吸収済みスロットが存在する場合に
+    /// 連続成功数が <see cref="SuccessThreshold"/> に達した場合、
+    /// ソフトスタート時の未使用ヘッドルームまたは吸収済みスロットを使って
     /// 並列度を <see cref="IncreaseStep"/> 回復する。
     /// </summary>
     public void NotifySuccess()
@@ -177,15 +178,13 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         lock (_syncRoot)
         {
             _consecutiveSuccesses++;
-            if (_consecutiveSuccesses >= SuccessThreshold
-                && _current < _max
-                && _absorbedActual > 0)
+            if (_consecutiveSuccesses >= SuccessThreshold && _current < _max)
             {
                 _consecutiveSuccesses = 0;
-                step = Math.Min(_increaseStep, Math.Min(_max - _current, _absorbedActual));
+                step = Math.Min(_increaseStep, _max - _current);
                 prevDegree = _current;
                 _current += step;
-                _absorbedActual -= step;
+                _absorbedActual -= Math.Min(step, _absorbedActual);
                 newDegree = _current;
             }
         }
