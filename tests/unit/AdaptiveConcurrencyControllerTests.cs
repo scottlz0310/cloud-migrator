@@ -173,6 +173,31 @@ public sealed class AdaptiveConcurrencyControllerTests
     }
 
     [Fact]
+    public async Task NotifySuccess_DoesNotThrowOrIncrease_WhenDecreaseAbsorptionIsStillPending()
+    {
+        // 検証対象: NotifySuccess  目的: 減速直後で吸収未完了の間は回復せず、SemaphoreFullException も起こさないこと
+        var controller = CreateController(initial: 4, min: 1, max: 4, threshold: 1);
+
+        await controller.AcquireAsync(CancellationToken.None);
+        await controller.AcquireAsync(CancellationToken.None);
+        await controller.AcquireAsync(CancellationToken.None);
+        await controller.AcquireAsync(CancellationToken.None);
+
+        controller.NotifyRateLimit(null); // 4 -> 3, ただし吸収は in-flight のため未完了
+        controller.NotifySuccess();
+
+        controller.CurrentDegree.Should().Be(3);
+
+        controller.Release();
+        controller.Release();
+        controller.Release();
+        controller.Release();
+
+        var absorbed = await WaitUntilAsync(() => controller.AbsorbedSlotCount == 1, timeoutMs: 1000);
+        absorbed.Should().BeTrue("解放後にバックグラウンド吸収が完了するはず");
+    }
+
+    [Fact]
     public async Task NotifySuccess_ResetsConsecutiveCounter_AfterIncrease()
     {
         // 検証対象: NotifySuccess  目的: 回復後に連続成功カウンターがリセットされること
