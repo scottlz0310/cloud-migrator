@@ -51,6 +51,17 @@ public class DropboxMigrationPipelineTests
     private static StorageItem MakeItem(string path, string name, string id = "od-1", long size = 512) =>
         new() { Id = id, Name = name, Path = path, SizeBytes = size, IsFolder = false };
 
+    private static TransferRecord RecordFrom(StorageItem item) =>
+        new TransferRecord
+        {
+            SourceId = item.Id,
+            Path = item.Path,
+            Name = item.Name,
+            SizeBytes = item.SizeBytes,
+            Status = TransferStatus.Pending,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
     // ── 共通セットアップ ──────────────────────────────────────────────────
 
     private void SetupDbBase()
@@ -94,7 +105,7 @@ public class DropboxMigrationPipelineTests
     [Fact]
     public async Task RunAsync_NewItemFromPhaseB_TransfersSuccessfullyAndReturnsSuccess1()
     {
-        // 検証対象: Phase B クロール  目的: status=null の新規アイテムが転送され success=1 になる
+        // 検証対象: Phase B クロール  目的: status=null の新規アイテムが SQLite に登録され、Phase D で転送されて success=1 になる
         var item = MakeItem("docs", "report.pdf", "od-abc");
         var tempFile = Path.GetTempFileName();
         try
@@ -102,6 +113,9 @@ public class DropboxMigrationPipelineTests
             SetupDbBase();
             _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
                    .ReturnsAsync((TransferStatus?)null);
+            // Phase D: GetPendingStreamAsync が Phase B で登録されたアイテムを返す
+            _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
+                   .Returns(FromRecords([RecordFrom(item)]));
 
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
@@ -149,7 +163,7 @@ public class DropboxMigrationPipelineTests
         _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    // ── Phase B: pending/processing/failed はスキップ（Phase A でキュー済み）──
+    // ── Phase B: pending/processing/failed はスキップ（Phase D の GetPendingStreamAsync でキューイングされる）──
 
     [Theory]
     [InlineData(TransferStatus.Pending)]
@@ -228,6 +242,8 @@ public class DropboxMigrationPipelineTests
         SetupDbBase();
         _mockDb.Setup(db => db.GetStatusAsync("data", "bad.bin", It.IsAny<CancellationToken>()))
                .ReturnsAsync((TransferStatus?)null);
+        _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
+               .Returns(FromRecords([RecordFrom(item)]));
 
         _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                    .ReturnsAsync(SingleItemPage(item));
@@ -255,6 +271,8 @@ public class DropboxMigrationPipelineTests
             SetupDbBase();
             _mockDb.Setup(db => db.GetStatusAsync("data", "upload-fail.bin", It.IsAny<CancellationToken>()))
                    .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
+                   .Returns(FromRecords([RecordFrom(item)]));
 
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
@@ -333,6 +351,8 @@ public class DropboxMigrationPipelineTests
             SetupDbBase();
             _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
                    .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
+                   .Returns(FromRecords([RecordFrom(item)]));
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
             _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
@@ -362,6 +382,8 @@ public class DropboxMigrationPipelineTests
             SetupDbBase();
             _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
                    .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
+                   .Returns(FromRecords([RecordFrom(item)]));
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(SingleItemPage(item));
             _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
@@ -458,6 +480,8 @@ public class DropboxMigrationPipelineTests
             SetupDbBase();
             _mockDb.Setup(db => db.GetStatusAsync("docs", "a.txt", It.IsAny<CancellationToken>()))
                    .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
+                   .Returns(FromRecords([RecordFrom(item)]));
             _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
                    .Returns(Task.CompletedTask);
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
@@ -504,6 +528,9 @@ public class DropboxMigrationPipelineTests
             SetupDbBase();
             _mockDb.Setup(db => db.GetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                    .ReturnsAsync((TransferStatus?)null);
+            // Phase D: GetPendingStreamAsync が 100 件の全アイテムを返す
+            _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
+                   .Returns(FromRecords(items.Select(RecordFrom)));
             _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
                    .Returns(Task.CompletedTask);
             var page = new StoragePage { Items = items, HasMore = false, Cursor = null };
