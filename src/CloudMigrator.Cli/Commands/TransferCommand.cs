@@ -23,25 +23,39 @@ internal static class TransferCommand
         {
             Description = "キャッシュと skip_list をクリアしてフル再実行します (FR-12)",
         };
+        var autoRetryOpt = new Option<int>("--auto-retry")
+        {
+            Description = "失敗ファイルを自動的に再試行する最大回数。0=無効（デフォルト）。" +
+                          "非対話環境（cron 等）ではこのオプションで再試行回数を制御してください。",
+            DefaultValueFactory = _ => 0,
+        };
         cmd.Add(fullRebuildOpt);
+        cmd.Add(autoRetryOpt);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
             bool fullRebuild = parseResult.GetValue(fullRebuildOpt);
-            await RunAsync(fullRebuild, ct).ConfigureAwait(false);
+            int autoRetry = parseResult.GetValue(autoRetryOpt);
+            if (autoRetry < 0)
+            {
+                Console.Error.WriteLine("エラー: --auto-retry には 0 以上の整数を指定してください。");
+                Environment.ExitCode = 1;
+                return;
+            }
+            await RunAsync(fullRebuild, autoRetry, ct).ConfigureAwait(false);
         });
 
         return cmd;
     }
 
-    private static async Task RunAsync(bool fullRebuild, CancellationToken ct)
+    private static async Task RunAsync(bool fullRebuild, int autoRetry, CancellationToken ct)
     {
         using var svc = CliServices.Build();
         var logger = svc.LoggerFactory.CreateLogger("transfer");
         var opts = svc.Options;
         try
         {
-            await RunCoreAsync(fullRebuild, ct, svc, logger, opts).ConfigureAwait(false);
+            await RunCoreAsync(fullRebuild, autoRetry, ct, svc, logger, opts).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -51,11 +65,10 @@ internal static class TransferCommand
     }
 
     private static async Task RunCoreAsync(
-        bool fullRebuild, CancellationToken ct,
+        bool fullRebuild, int autoRetry, CancellationToken ct,
         CliServices svc, Microsoft.Extensions.Logging.ILogger logger,
         CloudMigrator.Core.Configuration.MigratorOptions opts)
     {
-
         // 1. 設定ハッシュ確認（FR-10）
         var hash = ConfigHashChecker.ComputeHash(opts);
         bool hashChanged = await ConfigHashChecker.HasChangedAsync(opts.Paths.ConfigHash, hash, ct)
@@ -79,19 +92,20 @@ internal static class TransferCommand
         var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
         if (isDropbox)
         {
-            await RunDropboxPipelineAsync(fullRebuild || hashChanged, svc, logger, opts, ct)
+            await RunDropboxPipelineAsync(fullRebuild || hashChanged, autoRetry, svc, logger, opts, ct)
                 .ConfigureAwait(false);
             return;
         }
 
         // 4. SharePoint: SQLite パイプライン実行
-        await RunSharePointPipelineAsync(fullRebuild || hashChanged, svc, logger, opts, ct)
+        await RunSharePointPipelineAsync(fullRebuild || hashChanged, autoRetry, svc, logger, opts, ct)
             .ConfigureAwait(false);
     }
 
     /// <summary>SharePoint 移行パイプライン（SQLite 状態管理 + 4フェーズ構造 [Phase A〜D]）を実行する。</summary>
     private static async Task RunSharePointPipelineAsync(
         bool resetState,
+        int autoRetry,
         CliServices svc,
         ILogger logger,
         MigratorOptions opts,
@@ -138,19 +152,31 @@ internal static class TransferCommand
 
         svc.ActivateController("sharepoint");
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
-        var pipeline = new SharePointMigrationPipeline(
-            svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
-            svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
-            stateDb,
-            opts,
-            svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
-            svc.GetController("sharepoint"));
 
-        var summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
+        // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
+        // stateDb は SQLite 状態を保持するため使い回す
+        TransferSummary summary;
+        var autoRetryRemaining = autoRetry;
+        while (true)
+        {
+            var pipeline = new SharePointMigrationPipeline(
+                svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
+                svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
+                stateDb,
+                opts,
+                svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
+                svc.GetController("sharepoint"));
 
-        logger.LogInformation(
-            "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
-            summary.Success, summary.Failed, summary.Elapsed);
+            summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
+            logger.LogInformation(
+                "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
+                summary.Success, summary.Failed, summary.Elapsed);
+
+            if (summary.Failed == 0 || !ShouldRetry(summary.Failed, ref autoRetryRemaining, logger))
+                break;
+
+            logger.LogInformation("失敗ファイルを再試行します…");
+        }
 
         if (summary.Failed > 0)
             Environment.ExitCode = 1;
@@ -159,6 +185,7 @@ internal static class TransferCommand
     /// <summary>Dropbox 移行パイプラインを実行する。</summary>
     private static async Task RunDropboxPipelineAsync(
         bool resetState,
+        int autoRetry,
         CliServices svc,
         ILogger logger,
         MigratorOptions opts,
@@ -188,22 +215,65 @@ internal static class TransferCommand
 
         svc.ActivateController("dropbox");
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
-        var pipeline = new DropboxMigrationPipeline(
-            svc.StorageProvider,          // OneDrive ソース（GraphStorageProvider）
-            svc.DropboxProvider,          // Dropbox 転送先
-            stateDb,
-            opts,
-            svc.LoggerFactory.CreateLogger<DropboxMigrationPipeline>(),
-            svc.GetController("dropbox"));
 
-        var summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
+        // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
+        // stateDb は SQLite 状態を保持するため使い回す
+        TransferSummary summary;
+        var autoRetryRemaining = autoRetry;
+        while (true)
+        {
+            var pipeline = new DropboxMigrationPipeline(
+                svc.StorageProvider,          // OneDrive ソース（GraphStorageProvider）
+                svc.DropboxProvider,          // Dropbox 転送先
+                stateDb,
+                opts,
+                svc.LoggerFactory.CreateLogger<DropboxMigrationPipeline>(),
+                svc.GetController("dropbox"));
 
-        logger.LogInformation(
-            "Dropbox 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
-            summary.Success, summary.Failed, summary.Elapsed);
+            summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
+            logger.LogInformation(
+                "Dropbox 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
+                summary.Success, summary.Failed, summary.Elapsed);
+
+            if (summary.Failed == 0 || !ShouldRetry(summary.Failed, ref autoRetryRemaining, logger))
+                break;
+
+            logger.LogInformation("失敗ファイルを再試行します…");
+        }
 
         if (summary.Failed > 0)
             Environment.ExitCode = 1;
+    }
+
+    /// <summary>
+    /// 転送失敗があるとき、再試行するかどうかを判断する。
+    /// <list type="bullet">
+    ///   <item><paramref name="autoRetryRemaining"/> が残っている場合は自動で再試行する（デクリメントして true を返す）。</item>
+    ///   <item>対話端末では「再試行しますか？」を表示し、ユーザーの入力で判断する。</item>
+    ///   <item>標準入力がリダイレクトされている（cron 等）かつ自動再試行残数もない場合は false を返す。</item>
+    /// </list>
+    /// </summary>
+    private static bool ShouldRetry(int failedCount, ref int autoRetryRemaining, ILogger logger)
+    {
+        if (autoRetryRemaining > 0)
+        {
+            autoRetryRemaining--;
+            logger.LogInformation(
+                "{Failed} 件の転送が失敗しました。自動再試行します（残り {Remaining} 回）。",
+                failedCount, autoRetryRemaining);
+            return true;
+        }
+
+        if (Console.IsInputRedirected)
+        {
+            logger.LogWarning(
+                "{Failed} 件の転送が失敗しました。次回実行時に再試行されます。", failedCount);
+            return false;
+        }
+
+        Console.Write($"\n{failedCount} 件の転送に失敗しています。再試行しますか？ [y/N]: ");
+        var input = Console.ReadLine()?.Trim() ?? string.Empty;
+        return input.Equals("y", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

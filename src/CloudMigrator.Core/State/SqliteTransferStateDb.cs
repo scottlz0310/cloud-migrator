@@ -440,6 +440,21 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     }
 
     /// <inheritdoc/>
+    public async Task<int> ResetPermanentFailedAsync(CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE transfer_records
+            SET status='failed', updated_at=@updatedAt
+            WHERE status='permanent_failed';
+            """;
+        cmd.Parameters.AddWithValue("@updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<string>> GetDistinctFolderPathsAsync(CancellationToken ct)
     {
         await using var conn = new SqliteConnection(_connectionString);
