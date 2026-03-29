@@ -34,6 +34,13 @@ public interface ITransferStateDb : IAsyncDisposable
     /// </summary>
     Task ResetProcessingAsync(CancellationToken ct);
 
+    /// <summary>
+    /// 起動時リカバリ: permanent_failed 状態のレコードを failed に戻す。
+    /// 前回実行でリトライ上限に達したファイルを今回の実行で再試行できるようにする。
+    /// </summary>
+    /// <returns>リセットしたレコード数。</returns>
+    Task<int> ResetPermanentFailedAsync(CancellationToken ct);
+
     /// <summary>status を processing に変更する（アップロード開始前に呼び出す）。</summary>
     Task MarkProcessingAsync(string path, string name, CancellationToken ct);
 

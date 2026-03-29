@@ -73,6 +73,9 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
 
         // ── Phase A: クラッシュリカバリ ────────────────────────────────────────────
         await _stateDb.ResetProcessingAsync(ct).ConfigureAwait(false);
+        var resetCount = await _stateDb.ResetPermanentFailedAsync(ct).ConfigureAwait(false);
+        if (resetCount > 0)
+            _logger.LogInformation("Phase A: 前回リトライ上限到達ファイル {Count} 件を再試行対象に戻します", resetCount);
         _logger.LogInformation("Phase A: クラッシュリカバリ完了（processing → pending リセット）");
 
         // ── Phase B: クロール ───────────────────────────────────────────────────────

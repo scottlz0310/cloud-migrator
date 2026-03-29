@@ -70,6 +70,7 @@ public class SharePointMigrationPipelineTests
     {
         _mockDb.Setup(db => db.InitializeAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.ResetProcessingAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDb.Setup(db => db.ResetPermanentFailedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
         _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(NoRecords());
         _mockDb.Setup(db => db.GetCheckpointAsync("pipeline_started_at", It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         _mockDb.Setup(db => db.GetCheckpointAsync(SharePointMigrationPipeline.CrawlCompleteKey, It.IsAny<CancellationToken>())).ReturnsAsync("true");
