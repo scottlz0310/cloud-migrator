@@ -42,8 +42,20 @@ public sealed class MigratorOptions
     // --- Watchdog 設定 ---
     public WatchdogOptions Watchdog { get; set; } = new();
 
-    // --- 動的並列度制御設定 ---
-    public AdaptiveConcurrencyOptions AdaptiveConcurrency { get; set; } = new();
+    // --- 動的並列度制御設定（プロファイル辞書）---
+    // キー: プロバイダー名（"sharepoint", "dropbox"）または "default"。
+    // GetAdaptiveConcurrency(providerName) でプロバイダー名解決 → "default" フォールバック。
+    public Dictionary<string, AdaptiveConcurrencyOptions> AdaptiveConcurrency { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase) { ["default"] = new() };
+
+    /// <summary>
+    /// プロバイダー名に対応する <see cref="AdaptiveConcurrencyOptions"/> を返す。
+    /// 一致するプロファイルがなければ "default" プロファイルを返す。どちらもなければデフォルト値を返す。
+    /// </summary>
+    public AdaptiveConcurrencyOptions GetAdaptiveConcurrency(string providerName) =>
+        AdaptiveConcurrency.TryGetValue(providerName, out var opts) ? opts :
+        AdaptiveConcurrency.TryGetValue("default", out var def) ? def :
+        new AdaptiveConcurrencyOptions();
 
     // --- Token Bucket レートリミッター設定 ---
     public RateLimiterOptions RateLimiter { get; set; } = new();
@@ -143,22 +155,27 @@ public sealed class DropboxProviderOptions
 }
 
 /// <summary>
-/// Graph API レート制限に応じた動的並列度制御の設定（FR-14 拡張）。
+/// Graph API レート制限に応じた動的並列度制御の設定（プロファイルごとに指定）。
 /// </summary>
 public sealed class AdaptiveConcurrencyOptions
 {
     /// <summary>動的並列度制御を有効にするかどうか。デフォルト false（既存の固定並列度方式を維持）</summary>
     public bool Enabled { get; set; } = false;
 
-    /// <summary>
-    /// 並列度の下限。レート制限が続いてもこの値より下がらない。デフォルト 1
-    /// </summary>
+    /// <summary>並列度の下限。レート制限が続いてもこの値より下がらない。デフォルト 1</summary>
     public int MinDegree { get; set; } = 1;
 
-    /// <summary>
-    /// 並列度を 1 回復させるために必要な連続成功回数。デフォルト 10
-    /// </summary>
+    /// <summary>並列度を回復させるために必要な連続成功回数（増速の条件）。デフォルト 10</summary>
     public int SuccessThresholdToIncrease { get; set; } = 10;
+
+    /// <summary>1 回の回復で増加する並列度の幅（増速のスピード）。デフォルト 1</summary>
+    public int IncreaseStep { get; set; } = 1;
+
+    /// <summary>1 回の減速イベントで減少する並列度の幅（減速のスピード）。デフォルト 1</summary>
+    public int DecreaseStep { get; set; } = 1;
+
+    /// <summary>減速を発火するために必要な 429/503 の累積回数（減速の条件）。デフォルト 1</summary>
+    public int DecreaseTriggerCount { get; set; } = 1;
 }
 
 /// <summary>

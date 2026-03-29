@@ -15,6 +15,9 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     private readonly SemaphoreSlim _semaphore;
     private readonly int _min;
     private readonly int _max;
+    private readonly int _increaseStep;
+    private readonly int _decreaseStep;
+    private readonly int _decreaseTriggerCount;
     private readonly ILogger<AdaptiveConcurrencyController> _logger;
 
     // lock(_syncRoot) で保護するフィールド
@@ -22,6 +25,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     private int _current;
     private int _absorbedActual;      // 実際にセマフォから吸収済みのスロット数
     private int _consecutiveSuccesses;
+    private int _pendingDecreases;    // 減速トリガーカウンター
 
     // レート制限通知の累計回数（Interlocked でスレッドセーフに更新）
     private long _rateLimitCount;
@@ -34,23 +38,35 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <param name="initialDegree">開始時の並列度（<paramref name="maxDegree"/> と同じ値を推奨）</param>
     /// <param name="minDegree">並列度の下限</param>
     /// <param name="maxDegree">並列度の上限</param>
-    /// <param name="successThreshold">並列度を 1 回復するために必要な連続成功回数</param>
+    /// <param name="successThreshold">並列度を回復するために必要な連続成功回数</param>
     /// <param name="logger">ロガー</param>
+    /// <param name="increaseStep">1 回の回復で増加する並列度の幅。デフォルト 1</param>
+    /// <param name="decreaseStep">1 回の減速イベントで減少する並列度の幅。デフォルト 1</param>
+    /// <param name="decreaseTriggerCount">減速を発火するために必要な 429/503 の累積回数。デフォルト 1</param>
     public AdaptiveConcurrencyController(
         int initialDegree,
         int minDegree,
         int maxDegree,
         int successThreshold,
-        ILogger<AdaptiveConcurrencyController> logger)
+        ILogger<AdaptiveConcurrencyController> logger,
+        int increaseStep = 1,
+        int decreaseStep = 1,
+        int decreaseTriggerCount = 1)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(minDegree, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxDegree, minDegree);
         ArgumentOutOfRangeException.ThrowIfLessThan(successThreshold, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(increaseStep, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(decreaseStep, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(decreaseTriggerCount, 1);
 
         _min = minDegree;
         _max = maxDegree;
         _current = Math.Clamp(initialDegree, minDegree, maxDegree);
         SuccessThreshold = successThreshold;
+        _increaseStep = increaseStep;
+        _decreaseStep = decreaseStep;
+        _decreaseTriggerCount = decreaseTriggerCount;
         _logger = logger;
 
         // 初期並列度でセマフォを作成（maxDegree が上限）
@@ -70,8 +86,17 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <summary>並列度の下限。</summary>
     public int MinDegree => _min;
 
-    /// <summary>並列度を 1 回復するために必要な連続成功回数。</summary>
+    /// <summary>並列度を回復するために必要な連続成功回数。</summary>
     public int SuccessThreshold { get; }
+
+    /// <summary>1 回の回復で増加する並列度の幅。</summary>
+    public int IncreaseStep => _increaseStep;
+
+    /// <summary>1 回の減速イベントで減少する並列度の幅。</summary>
+    public int DecreaseStep => _decreaseStep;
+
+    /// <summary>減速を発火するために必要な 429/503 の累積回数。</summary>
+    public int DecreaseTriggerCount => _decreaseTriggerCount;
 
     /// <summary>
     /// レート制限（429/503）の累計通知回数。
@@ -97,27 +122,31 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>
     /// レート制限（429/503）を通知する。
-    /// 現在の並列度が <see cref="MinDegree"/> より大きければ 1 削減し、
-    /// 非同期にセマフォスロットを 1 つ吸収する。
+    /// <see cref="DecreaseTriggerCount"/> 回累積した時点で並列度を <see cref="DecreaseStep"/> 削減し、
+    /// 非同期にセマフォスロットを吸収する。
     /// </summary>
     /// <param name="retryAfter">サーバーから返された Retry-After 値（null の場合は不明）</param>
     public void NotifyRateLimit(TimeSpan? retryAfter)
     {
         Interlocked.Increment(ref _rateLimitCount);
 
-        bool shouldAbsorb;
-        int prevDegree, newDegree;
+        int prevDegree = -1, newDegree = -1, step = 0;
         lock (_syncRoot)
         {
             _consecutiveSuccesses = 0;
-            prevDegree = _current;
-            shouldAbsorb = _current > _min;
-            if (shouldAbsorb)
-                _current--;
-            newDegree = _current;
+            _pendingDecreases++;
+
+            if (_pendingDecreases >= _decreaseTriggerCount && _current > _min)
+            {
+                _pendingDecreases = 0;
+                step = Math.Min(_decreaseStep, _current - _min);
+                prevDegree = _current;
+                _current -= step;
+                newDegree = _current;
+            }
         }
 
-        if (!shouldAbsorb)
+        if (step == 0)
             return;
 
         _logger.LogWarning(
@@ -125,19 +154,19 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             prevDegree, newDegree, _max,
             retryAfter.HasValue ? retryAfter.Value.TotalSeconds.ToString("F0") : "なし");
 
-        // 次に解放されるスロットを非同期に吸収する（fire-and-forget）
-        _ = AbsorbSlotAsync();
+        // 削減した分だけスロットを非同期に吸収する（fire-and-forget）
+        for (int i = 0; i < step; i++)
+            _ = AbsorbSlotAsync();
     }
 
     /// <summary>
     /// 転送成功を通知する。
     /// 連続成功数が <see cref="SuccessThreshold"/> に達し、吸収済みスロットが存在する場合に
-    /// 並列度を 1 回復する。
+    /// 並列度を <see cref="IncreaseStep"/> 回復する。
     /// </summary>
     public void NotifySuccess()
     {
-        bool doRelease = false;
-        int prevDegree = -1, newDegree = -1;
+        int prevDegree = -1, newDegree = -1, step = 0;
         lock (_syncRoot)
         {
             _consecutiveSuccesses++;
@@ -146,18 +175,19 @@ public sealed class AdaptiveConcurrencyController : IDisposable
                 && _absorbedActual > 0)
             {
                 _consecutiveSuccesses = 0;
+                step = Math.Min(_increaseStep, Math.Min(_max - _current, _absorbedActual));
                 prevDegree = _current;
-                _current++;
-                _absorbedActual--;
-                doRelease = true;
+                _current += step;
+                _absorbedActual -= step;
                 newDegree = _current;
             }
         }
 
-        if (!doRelease)
+        if (step == 0)
             return;
 
-        _semaphore.Release(); // 吸収済みスロットを 1 つ循環に戻す
+        for (int i = 0; i < step; i++)
+            _semaphore.Release(); // 吸収済みスロットを循環に戻す
         _logger.LogInformation(
             "連続成功 {Threshold} 回達成。並列度を {Prev} → {Current}/{Max} に回復します",
             SuccessThreshold, prevDegree, newDegree, _max);

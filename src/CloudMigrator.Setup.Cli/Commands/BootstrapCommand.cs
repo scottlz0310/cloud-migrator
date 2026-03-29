@@ -200,7 +200,7 @@ internal static class BootstrapCommand
             : Math.Max(1, cfgOptions.MaxParallelTransfers);
         var adaptiveConcurrencyEnabled = console.PromptBool(
             "レート制限に応じた動的並列度制御（AdaptiveConcurrency）を有効にしますか？",
-            defaultValue: cfgOptions.AdaptiveConcurrency.Enabled);
+            defaultValue: cfgOptions.GetAdaptiveConcurrency("default").Enabled);
         console.WriteLine();
 
         // Dropbox 転送先設定（--destination dropbox の場合のみ）

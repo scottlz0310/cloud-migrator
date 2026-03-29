@@ -26,10 +26,24 @@ internal sealed class CliServices : IDisposable
     public SkipListManager SkipListManager { get; }
     private readonly string? _rateStatePath;
 
+    // プロファイル名 → コントローラーの辞書
+    private readonly Dictionary<string, AdaptiveConcurrencyController> _controllers;
+    // onRateLimit ラムダが参照するプロキシ（アクティブなコントローラーへの間接参照）
+    private readonly ControllerProxy _controllerProxy;
+
     /// <summary>
-    /// 動的並列度コントローラー。<see cref="MigratorOptions.AdaptiveConcurrency"/> が無効な場合は null。
+    /// 指定プロバイダーのコントローラーを取得する。プロファイルが存在しない場合は null。
     /// </summary>
-    public AdaptiveConcurrencyController? AdaptiveConcurrencyController { get; }
+    public AdaptiveConcurrencyController? GetController(string providerName) =>
+        _controllers.TryGetValue(providerName, out var c) ? c :
+        _controllers.TryGetValue("default", out var def) ? def : null;
+
+    /// <summary>
+    /// 指定プロバイダーのコントローラーをアクティブにする。
+    /// onRateLimit ラムダがこのコントローラーに通知を転送するようになる。
+    /// </summary>
+    public void ActivateController(string providerName) =>
+        _controllerProxy.Active = GetController(providerName);
 
     /// <summary>
     /// Token Bucket レートリミッター。<see cref="RateLimiterOptions.Enabled"/> が false の場合は null。
@@ -62,7 +76,8 @@ internal sealed class CliServices : IDisposable
         DropboxStorageProvider dropboxProvider,
         CrawlCache crawlCache,
         SkipListManager skipListManager,
-        AdaptiveConcurrencyController? adaptiveConcurrencyController,
+        Dictionary<string, AdaptiveConcurrencyController> controllers,
+        ControllerProxy controllerProxy,
         TokenBucketRateLimiter? rateLimiter,
         string? rateStatePath)
     {
@@ -72,7 +87,8 @@ internal sealed class CliServices : IDisposable
         DropboxProvider = dropboxProvider;
         CrawlCache = crawlCache;
         SkipListManager = skipListManager;
-        AdaptiveConcurrencyController = adaptiveConcurrencyController;
+        _controllers = controllers;
+        _controllerProxy = controllerProxy;
         RateLimiter = rateLimiter;
         _rateStatePath = rateStatePath;
     }
@@ -91,19 +107,27 @@ internal sealed class CliServices : IDisposable
             options.Graph.TenantId,
             clientSecret);
 
-        // 動的並列度制御コントローラーを生成（設定で有効な場合）
-        AdaptiveConcurrencyController? adaptiveController = null;
+        // プロファイル別に動的並列度制御コントローラーを生成
+        var controllers = new Dictionary<string, AdaptiveConcurrencyController>(StringComparer.OrdinalIgnoreCase);
+        var controllerProxy = new ControllerProxy();
         Action<TimeSpan?>? onRateLimit = null;
-        if (options.AdaptiveConcurrency.Enabled)
+
+        foreach (var (profileName, profile) in options.AdaptiveConcurrency)
         {
-            adaptiveController = new AdaptiveConcurrencyController(
+            if (!profile.Enabled) continue;
+            controllers[profileName] = new AdaptiveConcurrencyController(
                 initialDegree: options.MaxParallelTransfers,
-                minDegree: options.AdaptiveConcurrency.MinDegree,
+                minDegree: profile.MinDegree,
                 maxDegree: options.MaxParallelTransfers,
-                successThreshold: options.AdaptiveConcurrency.SuccessThresholdToIncrease,
-                logger: loggerFactory.CreateLogger<AdaptiveConcurrencyController>());
-            onRateLimit = adaptiveController.NotifyRateLimit;
+                successThreshold: profile.SuccessThresholdToIncrease,
+                logger: loggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
+                increaseStep: profile.IncreaseStep,
+                decreaseStep: profile.DecreaseStep,
+                decreaseTriggerCount: profile.DecreaseTriggerCount);
         }
+
+        if (controllers.Count > 0)
+            onRateLimit = retryAfter => controllerProxy.Active?.NotifyRateLimit(retryAfter);
 
         // Token Bucket レートリミッターを生成（設定で有効な場合）
         TokenBucketRateLimiter? rateLimiter = null;
@@ -152,8 +176,8 @@ internal sealed class CliServices : IDisposable
             onRateLimit = retryAfter => { prev?.Invoke(retryAfter); rateLimiter.NotifyRateLimit(retryAfter); };
         }
 
-        // 両方有効の場合は警告（TransferEngine では AdaptiveConcurrency が優先され RateLimiter は無視される）
-        if (adaptiveController is not null && rateLimiter is not null)
+        // 両方有効の場合は警告（AdaptiveConcurrency が優先され RateLimiter は無視される）
+        if (controllers.Count > 0 && rateLimiter is not null)
         {
             loggerFactory.CreateLogger<CliServices>().LogWarning(
                 "AdaptiveConcurrency と RateLimiter が同時に有効です。AdaptiveConcurrency が優先されます（RateLimiter は無視されます）。" +
@@ -221,7 +245,8 @@ internal sealed class CliServices : IDisposable
             dropboxProvider,
             crawlCache,
             skipListManager,
-            adaptiveController,
+            controllers,
+            controllerProxy,
             rateLimiter,
             rateStatePath);
     }
@@ -254,8 +279,14 @@ internal sealed class CliServices : IDisposable
             }
         }
         RateLimiter?.Dispose();
-        AdaptiveConcurrencyController?.Dispose();
+        foreach (var c in _controllers.Values) c.Dispose();
         DropboxProvider.Dispose();
         LoggerFactory.Dispose();
+    }
+
+    /// <summary>onRateLimit ラムダからアクティブなコントローラーへの間接参照。</summary>
+    private sealed class ControllerProxy
+    {
+        internal AdaptiveConcurrencyController? Active;
     }
 }

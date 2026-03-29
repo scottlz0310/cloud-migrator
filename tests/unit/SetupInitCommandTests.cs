@@ -299,6 +299,7 @@ public sealed class SetupInitCommandTests : IDisposable
         doc.RootElement
             .GetProperty("migrator")
             .GetProperty("adaptiveConcurrency")
+            .GetProperty("default")
             .GetProperty("enabled")
             .GetBoolean()
             .Should().BeTrue();
@@ -315,7 +316,7 @@ public sealed class SetupInitCommandTests : IDisposable
         using var doc = System.Text.Json.JsonDocument.Parse(result);
         var migrator = doc.RootElement.GetProperty("migrator");
         migrator.GetProperty("maxParallelTransfers").GetInt32().Should().Be(6);
-        migrator.GetProperty("adaptiveConcurrency").GetProperty("enabled").GetBoolean().Should().BeTrue();
+        migrator.GetProperty("adaptiveConcurrency").GetProperty("default").GetProperty("enabled").GetBoolean().Should().BeTrue();
     }
 
     // ===== ApplyDropboxValuesToConfigTemplate =====

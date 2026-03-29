@@ -248,6 +248,111 @@ public sealed class AdaptiveConcurrencyControllerTests
         controller.CurrentDegree.Should().Be(1);
     }
 
+    // ─── decreaseTriggerCount ────────────────────────────────────────────────
+
+    [Fact]
+    public void NotifyRateLimit_WithDecreaseTriggerCount2_DecreasesOnlyOnSecondNotify()
+    {
+        // 検証対象: decreaseTriggerCount  目的: 2 回目の NotifyRateLimit で初めて並列度が下がること
+        var controller = new AdaptiveConcurrencyController(
+            4, 1, 4, 10,
+            Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
+            decreaseTriggerCount: 2);
+
+        controller.NotifyRateLimit(null); // 1 回目: まだ下がらない
+        controller.CurrentDegree.Should().Be(4);
+
+        controller.NotifyRateLimit(null); // 2 回目: 減速
+        controller.CurrentDegree.Should().Be(3);
+    }
+
+    [Fact]
+    public void NotifyRateLimit_WithDecreaseTriggerCount2_ResetsTriggerCounterAfterDecrease()
+    {
+        // 検証対象: decreaseTriggerCount  目的: 減速発火後にカウンターがリセットされ、さらに 2 回必要になること
+        var controller = new AdaptiveConcurrencyController(
+            4, 1, 4, 10,
+            Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
+            decreaseTriggerCount: 2);
+
+        controller.NotifyRateLimit(null);
+        controller.NotifyRateLimit(null); // 1 回目の減速: 4→3
+        controller.CurrentDegree.Should().Be(3);
+
+        controller.NotifyRateLimit(null); // カウンター 1: まだ下がらない
+        controller.CurrentDegree.Should().Be(3);
+
+        controller.NotifyRateLimit(null); // カウンター 2: 2 回目の減速: 3→2
+        controller.CurrentDegree.Should().Be(2);
+    }
+
+    // ─── decreaseStep ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void NotifyRateLimit_WithDecreaseStep2_DecreasesByTwo()
+    {
+        // 検証対象: decreaseStep  目的: 1 回のイベントで並列度が 2 下がること
+        var controller = new AdaptiveConcurrencyController(
+            4, 1, 4, 10,
+            Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
+            decreaseStep: 2);
+
+        controller.NotifyRateLimit(null);
+        controller.CurrentDegree.Should().Be(2);
+    }
+
+    [Fact]
+    public void NotifyRateLimit_WithDecreaseStep_ClampsAtMinDegree()
+    {
+        // 検証対象: decreaseStep  目的: step が大きくても MinDegree を下回らないこと
+        var controller = new AdaptiveConcurrencyController(
+            2, 1, 4, 10,
+            Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
+            decreaseStep: 5);
+
+        controller.NotifyRateLimit(null);
+        controller.CurrentDegree.Should().Be(1); // 2-5 → clamp → 1
+    }
+
+    // ─── increaseStep ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task NotifySuccess_WithIncreaseStep2_IncreasesByTwo()
+    {
+        // 検証対象: increaseStep  目的: 閾値達成時に並列度が 2 上がること
+        var controller = new AdaptiveConcurrencyController(
+            4, 1, 4, 2,
+            Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
+            increaseStep: 2);
+
+        // rate limit ×2 → degree 2, absorbed = 2
+        controller.NotifyRateLimit(null);
+        controller.NotifyRateLimit(null);
+        await WaitUntilAsync(() => controller.AbsorbedSlotCount >= 2, timeoutMs: 1000);
+
+        // 閾値 2 回成功で +2 回復
+        controller.NotifySuccess();
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task NotifySuccess_WithIncreaseStep_ClampsAtMaxDegree()
+    {
+        // 検証対象: increaseStep  目的: step が大きくても MaxDegree を超えないこと
+        var controller = new AdaptiveConcurrencyController(
+            4, 1, 4, 2,
+            Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
+            increaseStep: 5);
+
+        controller.NotifyRateLimit(null); // degree 3
+        await WaitUntilAsync(() => controller.AbsorbedSlotCount >= 1, timeoutMs: 1000);
+
+        controller.NotifySuccess();
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(4); // 3+5 → clamp → 4
+    }
+
     // ─── Dispose ─────────────────────────────────────────────────────────────
 
     [Fact]
