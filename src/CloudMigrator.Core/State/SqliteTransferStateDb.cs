@@ -440,6 +440,20 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     }
 
     /// <inheritdoc/>
+    public async Task ResetAllAsync(CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM transfer_records;
+            DELETE FROM checkpoints;
+            DELETE FROM metrics;
+            """;
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task<int> ResetPermanentFailedAsync(CancellationToken ct)
     {
         await using var conn = new SqliteConnection(_connectionString);

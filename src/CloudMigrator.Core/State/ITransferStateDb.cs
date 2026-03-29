@@ -84,6 +84,13 @@ public interface ITransferStateDb : IAsyncDisposable
     Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(string name, int recentMinutes, CancellationToken ct);
 
     /// <summary>
+    /// 全テーブルのデータを削除してリセットする（--full-rebuild / 設定変更時）。
+    /// ファイル削除ではなく SQL で消去するため、ダッシュボードが DB を開いたままでも実行可能。
+    /// テーブル定義は保持される。
+    /// </summary>
+    Task ResetAllAsync(CancellationToken ct);
+
+    /// <summary>
     /// skip_list マイグレーション用: path/name を done ステータスで INSERT する。
     /// レコードが既存の場合は何もしない（ON CONFLICT DO NOTHING）。
     /// </summary>
