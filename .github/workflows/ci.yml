@@ -46,6 +46,29 @@ jobs:
           dotnet test tests/unit/CloudMigrator.Tests.Unit.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --results-directory TestResults
           dotnet test tests/integration/CloudMigrator.Tests.Integration.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
 
+      - name: カバレッジレポートの解決
+        if: matrix.os == 'ubuntu-latest'
+        id: coverage
+        shell: pwsh
+        run: |
+          $coverage = Get-ChildItem -Path TestResults -Recurse -Filter coverage.cobertura.xml |
+            Sort-Object FullName |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $coverage) {
+            throw "coverage.cobertura.xml not found under TestResults"
+          }
+          "path=$coverage" >> $env:GITHUB_OUTPUT
+
+      - name: Codecov へカバレッジ送信
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.coverage.outputs.path }}
+          flags: unit
+          fail_ci_if_error: true
+          verbose: true
+
       - name: テスト結果のアップロード
         uses: actions/upload-artifact@v7
         if: always()
@@ -80,8 +103,20 @@ jobs:
       - name: カバレッジ付きテスト実行
         run: dotnet test tests/unit/CloudMigrator.Tests.Unit.csproj --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory QualityResults --logger "trx;LogFileName=test-results.trx"
 
+      - name: 品質ゲート用カバレッジレポートの解決
+        id: quality-coverage
+        shell: pwsh
+        run: |
+          $coverage = Get-ChildItem -Path QualityResults -Recurse -Filter coverage.cobertura.xml |
+            Sort-Object FullName |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $coverage) {
+            throw "coverage.cobertura.xml not found under QualityResults"
+          }
+          "path=$coverage" >> $env:GITHUB_OUTPUT
+
       - name: 品質メトリクスチェック
-        run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- quality-metrics --trx-dir QualityResults --coverage-xml QualityResults/coverage.cobertura.xml
+        run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- quality-metrics --trx-dir QualityResults --coverage-xml "${{ steps.quality-coverage.outputs.path }}"
 
       - name: セキュリティスキャン
         run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- security-scan
