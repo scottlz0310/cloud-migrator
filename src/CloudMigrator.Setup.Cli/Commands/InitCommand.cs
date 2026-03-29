@@ -335,7 +335,7 @@ internal static class InitCommand
             root.Migrator.MaxParallelTransfers = maxParallelTransfers.Value;
         }
         if (adaptiveConcurrencyEnabled is not null)
-            root.Migrator.AdaptiveConcurrency.Enabled = adaptiveConcurrencyEnabled.Value;
+            root.Migrator.GetAdaptiveConcurrency("default").Enabled = adaptiveConcurrencyEnabled.Value;
 
         return JsonSerializer.Serialize(
             root,

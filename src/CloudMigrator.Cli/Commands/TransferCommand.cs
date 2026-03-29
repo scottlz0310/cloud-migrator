@@ -136,6 +136,7 @@ internal static class TransferCommand
 
         logger.LogInformation("SharePoint 移行パイプラインを開始します…");
 
+        svc.ActivateController("sharepoint");
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
         var pipeline = new SharePointMigrationPipeline(
             svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
@@ -143,7 +144,7 @@ internal static class TransferCommand
             stateDb,
             opts,
             svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
-            svc.AdaptiveConcurrencyController);
+            svc.GetController("sharepoint"));
 
         var summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
 
@@ -185,6 +186,7 @@ internal static class TransferCommand
 
         logger.LogInformation("Dropbox 移行パイプラインを開始します…");
 
+        svc.ActivateController("dropbox");
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
         var pipeline = new DropboxMigrationPipeline(
             svc.StorageProvider,          // OneDrive ソース（GraphStorageProvider）
@@ -192,7 +194,7 @@ internal static class TransferCommand
             stateDb,
             opts,
             svc.LoggerFactory.CreateLogger<DropboxMigrationPipeline>(),
-            svc.AdaptiveConcurrencyController);
+            svc.GetController("dropbox"));
 
         var summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
 
