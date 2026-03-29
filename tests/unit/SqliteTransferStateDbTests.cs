@@ -180,6 +180,61 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         resetCount.Should().Be(0);
     }
 
+    // ── ResetAllAsync ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResetAllAsync_ClearsAllTablesAndLeavesDbAccessible()
+    {
+        // 検証対象: ResetAllAsync  目的: transfer_records / checkpoints / metrics の全データが削除され、DB は引き続き使用可能
+        await _db.InitializeAsync(CancellationToken.None);
+        var item = MakeItem("docs", "file.txt");
+        await _db.UpsertPendingAsync(item, CancellationToken.None);
+        await _db.SaveCheckpointAsync("cursor", "abc", CancellationToken.None);
+        await _db.RecordMetricAsync("rate_limit_pct", 1.5, CancellationToken.None);
+
+        await _db.ResetAllAsync(CancellationToken.None);
+
+        // transfer_records: 削除済み
+        (await _db.GetStatusAsync("docs", "file.txt", CancellationToken.None)).Should().BeNull();
+        // checkpoints: 削除済み
+        (await _db.GetCheckpointAsync("cursor", CancellationToken.None)).Should().BeNull();
+        // DB は正常に使用可能（再 INSERT できる）
+        await _db.UpsertPendingAsync(item, CancellationToken.None);
+        (await _db.GetStatusAsync("docs", "file.txt", CancellationToken.None)).Should().Be(TransferStatus.Pending);
+    }
+
+    // ── InsertPendingIfNewAsync ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task InsertPendingIfNewAsync_NewItem_InsertsAndReturnsTrue()
+    {
+        // 検証対象: InsertPendingIfNewAsync  目的: 未登録アイテムが pending で INSERT され true を返す
+        await _db.InitializeAsync(CancellationToken.None);
+        var item = MakeItem("docs", "new.txt");
+
+        var inserted = await _db.InsertPendingIfNewAsync(item, CancellationToken.None);
+
+        inserted.Should().BeTrue();
+        (await _db.GetStatusAsync("docs", "new.txt", CancellationToken.None)).Should().Be(TransferStatus.Pending);
+    }
+
+    [Fact]
+    public async Task InsertPendingIfNewAsync_ExistingItem_DoesNothingAndReturnsFalse()
+    {
+        // 検証対象: InsertPendingIfNewAsync  目的: 既存アイテムは変更されず false を返す（ON CONFLICT DO NOTHING）
+        await _db.InitializeAsync(CancellationToken.None);
+        var item = MakeItem("docs", "existing.txt");
+        await _db.UpsertPendingAsync(item, CancellationToken.None);
+        // done に変更しておく（既存レコードが上書きされないことを確認）
+        await _db.MarkDoneAsync("docs", "existing.txt", CancellationToken.None);
+
+        var inserted = await _db.InsertPendingIfNewAsync(item, CancellationToken.None);
+
+        inserted.Should().BeFalse();
+        // done のまま変わっていないことを確認
+        (await _db.GetStatusAsync("docs", "existing.txt", CancellationToken.None)).Should().Be(TransferStatus.Done);
+    }
+
     // ── チェックポイント ──────────────────────────────────────────────────────
 
     [Fact]

@@ -10,11 +10,11 @@ namespace CloudMigrator.Core.Migration;
 
 /// <summary>
 /// OneDrive → Dropbox 移行パイプライン。
-/// ストリーミングクロール + SQLite 状態管理 + Bounded Channel による省メモリ設計。
+/// SQLite 状態管理 + Bounded Channel による省メモリ設計。
 /// <list type="bullet">
-///   <item>Phase A（リカバリ）: DB の pending/processing/failed レコードを先行キューイング</item>
-///   <item>Phase B（クロール）: OneDrive ストリーミングクロールで新規アイテムを発見・キューイング</item>
-///   <item>Consumer: AdaptiveConcurrencyController で並列制御しながら Dropbox 転送</item>
+///   <item>Phase A（リカバリ）: permanent_failed を failed に戻し、前回失敗ファイルを再試行対象にする</item>
+///   <item>Phase B（クロール）: OneDrive を全量クロールし新規アイテムを SQLite に登録する（Channel には書かない）</item>
+///   <item>Phase D（転送）: SQLite の pending/processing/failed をストリームで Bounded Channel に投入し、並列転送する</item>
 /// </list>
 /// <para>
 /// 「空フォルダの非転送」: Phase B クロール時に IsFolder=true のアイテムはスキップされます。
@@ -73,34 +73,11 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         if (existingStartedAt is null)
             await _stateDb.SaveCheckpointAsync("pipeline_started_at", _pipelineStartTime.ToString("O"), ct).ConfigureAwait(false);
 
-        var channel = Channel.CreateBounded<TransferJob>(new BoundedChannelOptions(ChannelCapacity)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = false,
-            SingleWriter = true,
-        });
+        // Phase A + Phase B: クロールを完了まで先行実行（SQLite に登録し Channel には書かない）
+        await PhasesABAsync(ct).ConfigureAwait(false);
 
-        // Producer（Phase A + Phase B）と Consumer を並行実行
-        // linked CTS により、一方が異常終了した際にもう一方をキャンセルする
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var producerTask = ProduceAsync(channel.Writer, linkedCts.Token);
-        var consumerTask = ConsumeAsync(channel.Reader, linkedCts.Token);
-
-        int success;
-        int failed;
-        try
-        {
-            (success, failed) = await consumerTask.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Consumer が例外で終了した場合、Producer もキャンセルして待機する
-            await linkedCts.CancelAsync().ConfigureAwait(false);
-            await producerTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-            throw;
-        }
-
-        await producerTask.ConfigureAwait(false);
+        // Phase D: SQLite の pending/processing/failed を全件ストリームで転送
+        var (success, failed) = await PhaseDAsync(ct).ConfigureAwait(false);
 
         sw.Stop();
 
@@ -128,88 +105,132 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     internal const string CrawlCompleteKey = "crawl_complete";
     internal const string CrawlTotalKey = "crawl_total";
 
-    private async Task ProduceAsync(ChannelWriter<TransferJob> writer, CancellationToken ct)
+    /// <summary>
+    /// Phase A（リカバリ）+ Phase B（クロール）を順次実行する。
+    /// Phase B はクロールを最後まで完了させ、新規アイテムを SQLite に登録するのみで Channel には書かない。
+    /// </summary>
+    private async Task PhasesABAsync(CancellationToken ct)
+    {
+        // ── Phase A: クラッシュリカバリ + permanent_failed リセット ──────────────
+        // processing → pending: 前回クラッシュ時に処理中だったファイルをリカバリ対象に戻す。
+        // Phase B 完了まで転送が始まらない設計のため、リセットせずに放置するとダッシュボードの
+        // 進捗表示が長時間「処理中」のままになる。
+        await _stateDb.ResetProcessingAsync(ct).ConfigureAwait(false);
+
+        var resetCount = await _stateDb.ResetPermanentFailedAsync(ct).ConfigureAwait(false);
+        if (resetCount > 0)
+            _logger.LogInformation("Phase A: 前回リトライ上限到達ファイル {Count} 件を再試行対象に戻します", resetCount);
+
+        // ── Phase B: ソースクロールで新規アイテムを SQLite に登録 ──────────────
+        // Channel への書き込みは Phase D が担うため、Phase B はクロールのみ行う。
+        // GraphStorageProvider は ListPagedAsync で Graph Delta API を使ったネイティブページングを実装しており、
+        // @odata.nextLink が cursor として保存されるため、中断→再開時も途中ページから再開可能。
+        // クロール完了後は @odata.deltaLink が cursor に保存され、次回実行では差分のみ取得する。
+
+        // クロール完了フラグをリセット（前回の crawl_complete フラグを上書き）
+        await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "false", ct).ConfigureAwait(false);
+
+        var cursor = await _stateDb.GetCheckpointAsync(CursorKey, ct).ConfigureAwait(false);
+        var pageCount = 0;
+        var newItems = 0;
+
+        while (true)
+        {
+            var page = await _sourceProvider.ListPagedAsync(SourceRootPath, cursor, ct)
+                .ConfigureAwait(false);
+            pageCount++;
+
+            foreach (var item in page.Items.Where(i => !i.IsFolder))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // InsertPendingIfNewAsync: 未登録なら pending で INSERT し true を返す（ON CONFLICT DO NOTHING）。
+                // GetStatusAsync + UpsertPendingAsync の 2 クエリを 1 クエリに集約して N+1 を回避する。
+                if (await _stateDb.InsertPendingIfNewAsync(item, ct).ConfigureAwait(false))
+                    newItems++;
+                // 既存アイテム（pending/processing/failed/done/permanent_failed）はスキップ
+                // pending/processing/failed → Phase D の GetPendingStreamAsync でキューイングされる
+                // done/permanent_failed → 転送済み・永続失敗
+            }
+
+            // ページ単位でチェックポイント保存（クロール中断時の再開に備える）
+            if (page.Cursor is not null)
+                await _stateDb.SaveCheckpointAsync(CursorKey, page.Cursor, ct).ConfigureAwait(false);
+
+            _logger.LogDebug("クロール進捗: ページ {Page}, HasMore={HasMore}", pageCount, page.HasMore);
+
+            if (!page.HasMore)
+                break;
+
+            cursor = page.Cursor;
+        }
+
+        _logger.LogInformation(
+            "ソースクロール完了: {Pages} ページ, 新規 {New} 件", pageCount, newItems);
+
+        // クロール完了時点の真の総数（pending + processing + done + failed + permanent_failed）を
+        // チェックポイントに保存する。Consumer が並列で done に変化させてもカウント自体は変わらない。
+        var crawlSummary = await _stateDb.GetSummaryAsync(ct).ConfigureAwait(false);
+        await _stateDb.SaveCheckpointAsync(CrawlTotalKey, crawlSummary.Total.ToString(), ct).ConfigureAwait(false);
+        _logger.LogInformation("クロール確定総数: {Total} 件", crawlSummary.Total);
+
+        // クロール完了フラグを保存（ダッシュボードで総数が確定済みかを判定するために使用）
+        await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "true", ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Phase D: SQLite の pending/processing/failed 全件を Bounded Channel 経由で並列転送する。
+    /// </summary>
+    private async Task<(int success, int failed)> PhaseDAsync(CancellationToken ct)
+    {
+        var channel = Channel.CreateBounded<TransferJob>(new BoundedChannelOptions(ChannelCapacity)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = true,
+        });
+
+        // Producer（SQLite ストリーム → Channel）と Consumer（並列転送）を並行実行
+        // linked CTS により、一方が異常終了した際にもう一方をキャンセルする
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var producerTask = PhaseDProduceAsync(channel.Writer, linkedCts.Token);
+        var consumerTask = ConsumeAsync(channel.Reader, linkedCts.Token);
+
+        int success;
+        int failed;
+        try
+        {
+            (success, failed) = await consumerTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Consumer が例外で終了した場合、Producer もキャンセルして待機する
+            await linkedCts.CancelAsync().ConfigureAwait(false);
+            await producerTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            throw;
+        }
+
+        await producerTask.ConfigureAwait(false);
+        return (success, failed);
+    }
+
+    /// <summary>
+    /// Phase D Producer: SQLite の pending/processing/failed をストリームで Channel に投入する。
+    /// </summary>
+    private async Task PhaseDProduceAsync(ChannelWriter<TransferJob> writer, CancellationToken ct)
     {
         try
         {
-            // クロール開始をリセット（前回の crawl_complete フラグを上書き）
-            await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "false", ct).ConfigureAwait(false);
-
-            // ── Phase A: クラッシュリカバリ + permanent_failed リセット ───────────────
-            var resetCount = await _stateDb.ResetPermanentFailedAsync(ct).ConfigureAwait(false);
-            if (resetCount > 0)
-                _logger.LogInformation("Phase A: 前回リトライ上限到達ファイル {Count} 件を再試行対象に戻します", resetCount);
-
-            // ── Phase A: DB の未完了・失敗レコードをリカバリキューイング ──────────────
-            var recovered = 0;
+            var count = 0;
             await foreach (var record in _stateDb.GetPendingStreamAsync(ct).ConfigureAwait(false))
             {
                 var job = RecordToJob(record);
                 await writer.WriteAsync(job, ct).ConfigureAwait(false);
-                recovered++;
+                count++;
             }
 
-            if (recovered > 0)
-                _logger.LogInformation("リカバリキューイング: {Count} 件 (pending/processing/failed)", recovered);
-
-            // ── Phase B: ソースクロールで新規アイテムを発見 ──────────────────────────
-            // GraphStorageProvider は ListPagedAsync で Graph Delta API を使ったネイティブページングを
-            // 実装しており、ページ単位（200 件）で即座に Channel へ投入できる。
-            // @odata.nextLink が cursor として保存されるため、中断→再開時も途中ページから再開可能。
-            // クロール完了後は @odata.deltaLink が cursor に保存され、次回実行では差分のみ取得する。
-            var cursor = await _stateDb.GetCheckpointAsync(CursorKey, ct).ConfigureAwait(false);
-            var pageCount = 0;
-            var newItems = 0;
-
-            while (true)
-            {
-                var page = await _sourceProvider.ListPagedAsync(SourceRootPath, cursor, ct)
-                    .ConfigureAwait(false);
-                pageCount++;
-
-                foreach (var item in page.Items.Where(i => !i.IsFolder))
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    var status = await _stateDb.GetStatusAsync(item.Path, item.Name, ct)
-                        .ConfigureAwait(false);
-
-                    // null = 未登録の新規アイテム → INSERT して channel に投入
-                    if (status is null)
-                    {
-                        await _stateDb.UpsertPendingAsync(item, ct).ConfigureAwait(false);
-                        var job = new TransferJob { Source = item, DestinationRoot = _options.DestinationRoot };
-                        await writer.WriteAsync(job, ct).ConfigureAwait(false);
-                        newItems++;
-                    }
-                    // それ以外（pending/processing/failed/done/permanent_failed）はスキップ
-                    // pending/processing/failed → Phase A でキューイング済み
-                    // done/permanent_failed → 転送済み・永続失敗
-                }
-
-                // ページ単位でチェックポイント保存（クロール中断時の再開に備える）
-                if (page.Cursor is not null)
-                    await _stateDb.SaveCheckpointAsync(CursorKey, page.Cursor, ct).ConfigureAwait(false);
-
-                _logger.LogDebug("クロール進捗: ページ {Page}, HasMore={HasMore}", pageCount, page.HasMore);
-
-                if (!page.HasMore)
-                    break;
-
-                cursor = page.Cursor;
-            }
-
-            _logger.LogInformation(
-                "ソースクロール完了: {Pages} ページ, 新規 {New} 件", pageCount, newItems);
-
-            // クロール完了時点の真の総数（pending + processing + done + failed + permanent_failed）を
-            // チェックポイントに保存する。Consumer が並列で done に変化させてもカウント自体は変わらない。
-            var crawlSummary = await _stateDb.GetSummaryAsync(ct).ConfigureAwait(false);
-            await _stateDb.SaveCheckpointAsync(CrawlTotalKey, crawlSummary.Total.ToString(), ct).ConfigureAwait(false);
-            _logger.LogInformation("クロール確定総数: {Total} 件", crawlSummary.Total);
-
-            // クロール完了フラグを保存（ダッシュボードで総数が確定済みかを判定するために使用）
-            await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "true", ct).ConfigureAwait(false);
+            if (count > 0)
+                _logger.LogInformation("Phase D: 転送キューイング完了: {Count} 件 (pending/processing/failed)", count);
         }
         catch (OperationCanceledException)
         {
@@ -218,7 +239,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Producer でエラーが発生しました");
+            _logger.LogError(ex, "Phase D Producer でエラーが発生しました");
             writer.Complete(ex);
             throw;
         }

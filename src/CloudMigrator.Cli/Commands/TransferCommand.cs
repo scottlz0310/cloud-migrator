@@ -111,27 +111,23 @@ internal static class TransferCommand
         MigratorOptions opts,
         CancellationToken ct)
     {
-        var spDbPath = opts.Paths.SharePointStateDb;
+        logger.LogInformation("SharePoint 移行パイプラインを開始します…");
 
-        // フルリビルド or 設定変更時は SQLite 状態 DB をリセット
-        // DB 本体が存在しない場合でも WAL/SHM サイドカーだけ残存することがあるため個別に削除する
+        svc.ActivateController("sharepoint");
+        await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
+
+        // フルリビルド or 設定変更時は SQL で全テーブルをクリア（ファイル削除不要のためダッシュボード開放中でも動作可）
         if (resetState)
         {
-            var deleted = false;
-            if (File.Exists(spDbPath)) { File.Delete(spDbPath); deleted = true; }
-            var walPath = spDbPath + "-wal";
-            if (File.Exists(walPath)) { File.Delete(walPath); deleted = true; }
-            var shmPath = spDbPath + "-shm";
-            if (File.Exists(shmPath)) { File.Delete(shmPath); deleted = true; }
-            if (deleted)
-                logger.LogInformation("SharePoint 状態 DB をリセットしました: {Path}", spDbPath);
+            await stateDb.InitializeAsync(ct).ConfigureAwait(false);
+            await stateDb.ResetAllAsync(ct).ConfigureAwait(false);
+            logger.LogInformation("SharePoint 状態 DB をリセットしました: {Path}", opts.Paths.SharePointStateDb);
         }
-        else if (!File.Exists(spDbPath) && File.Exists(opts.Paths.SkipList))
+        else if (!File.Exists(opts.Paths.SharePointStateDb) && File.Exists(opts.Paths.SkipList))
         {
             // 初回起動時: 既存 skip_list を SQLite の done レコードとして移行する
             logger.LogInformation("既存 skip_list を SQLite に移行します…");
-            await using var migDb = new SqliteTransferStateDb(spDbPath);
-            await migDb.InitializeAsync(ct).ConfigureAwait(false);
+            await stateDb.InitializeAsync(ct).ConfigureAwait(false);
             var skipList = await svc.SkipListManager.LoadAsync(ct).ConfigureAwait(false);
             var migrated = 0;
             foreach (var skipKey in skipList)
@@ -141,17 +137,12 @@ internal static class TransferCommand
                 var name = lastSlash >= 0 ? skipKey[(lastSlash + 1)..] : skipKey;
                 if (!string.IsNullOrEmpty(name))
                 {
-                    await migDb.InsertDoneIfNotExistsAsync(path, name, ct).ConfigureAwait(false);
+                    await stateDb.InsertDoneIfNotExistsAsync(path, name, ct).ConfigureAwait(false);
                     migrated++;
                 }
             }
             logger.LogInformation("skip_list から {Count} 件を SQLite に移行しました", migrated);
         }
-
-        logger.LogInformation("SharePoint 移行パイプラインを開始します…");
-
-        svc.ActivateController("sharepoint");
-        await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
 
         // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
         // stateDb は SQLite 状態を保持するため使い回す
@@ -191,30 +182,18 @@ internal static class TransferCommand
         MigratorOptions opts,
         CancellationToken ct)
     {
-        // フルリビルド or 設定変更時は SQLite 状態 DB をリセット
-        if (resetState)
-        {
-            var dbPath = opts.Paths.DropboxStateDb;
-            if (File.Exists(dbPath))
-            {
-                File.Delete(dbPath);
-
-                // WAL モード利用時は .db-wal / .db-shm サイドカーファイルも残存するため併せて削除する。
-                // 削除しないと次回起動時に古い WAL が復元され、意図しない状態になる可能性がある。
-                var walPath = dbPath + "-wal";
-                if (File.Exists(walPath)) File.Delete(walPath);
-
-                var shmPath = dbPath + "-shm";
-                if (File.Exists(shmPath)) File.Delete(shmPath);
-
-                logger.LogInformation("Dropbox 状態 DB をリセットしました: {Path}", dbPath);
-            }
-        }
-
         logger.LogInformation("Dropbox 移行パイプラインを開始します…");
 
         svc.ActivateController("dropbox");
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
+
+        // フルリビルド or 設定変更時は SQL で全テーブルをクリア（ファイル削除不要のためダッシュボード開放中でも動作可）
+        if (resetState)
+        {
+            await stateDb.InitializeAsync(ct).ConfigureAwait(false);
+            await stateDb.ResetAllAsync(ct).ConfigureAwait(false);
+            logger.LogInformation("Dropbox 状態 DB をリセットしました: {Path}", opts.Paths.DropboxStateDb);
+        }
 
         // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
         // stateDb は SQLite 状態を保持するため使い回す
