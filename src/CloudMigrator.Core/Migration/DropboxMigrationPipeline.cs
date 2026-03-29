@@ -135,6 +135,11 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
             // クロール開始をリセット（前回の crawl_complete フラグを上書き）
             await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "false", ct).ConfigureAwait(false);
 
+            // ── Phase A: クラッシュリカバリ + permanent_failed リセット ───────────────
+            var resetCount = await _stateDb.ResetPermanentFailedAsync(ct).ConfigureAwait(false);
+            if (resetCount > 0)
+                _logger.LogInformation("Phase A: 前回リトライ上限到達ファイル {Count} 件を再試行対象に戻します", resetCount);
+
             // ── Phase A: DB の未完了・失敗レコードをリカバリキューイング ──────────────
             var recovered = 0;
             await foreach (var record in _stateDb.GetPendingStreamAsync(ct).ConfigureAwait(false))

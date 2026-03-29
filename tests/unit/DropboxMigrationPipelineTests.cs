@@ -56,6 +56,7 @@ public class DropboxMigrationPipelineTests
     private void SetupDbBase()
     {
         _mockDb.Setup(db => db.InitializeAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDb.Setup(db => db.ResetPermanentFailedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
         _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(NoRecords());
         _mockDb.Setup(db => db.GetCheckpointAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         _mockDb.Setup(db => db.GetSummaryAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new TransferDbSummary());

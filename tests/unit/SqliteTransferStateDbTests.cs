@@ -148,6 +148,38 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         status.Should().Be(TransferStatus.PermanentFailed);
     }
 
+    // ── ResetPermanentFailedAsync ────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResetPermanentFailedAsync_WithPermanentFailedRecords_ResetsToFailedAndReturnsCount()
+    {
+        // 検証対象: ResetPermanentFailedAsync  目的: permanent_failed が failed に戻り件数を返す
+        await _db.InitializeAsync(CancellationToken.None);
+        var item = MakeItem("docs", "file.txt");
+        await _db.UpsertPendingAsync(item, CancellationToken.None);
+        for (var i = 0; i < SqliteTransferStateDb.MaxRetry; i++)
+            await _db.MarkFailedAsync("docs", "file.txt", "err", CancellationToken.None);
+        (await _db.GetStatusAsync("docs", "file.txt", CancellationToken.None))
+            .Should().Be(TransferStatus.PermanentFailed);
+
+        var resetCount = await _db.ResetPermanentFailedAsync(CancellationToken.None);
+
+        resetCount.Should().Be(1);
+        (await _db.GetStatusAsync("docs", "file.txt", CancellationToken.None))
+            .Should().Be(TransferStatus.Failed);
+    }
+
+    [Fact]
+    public async Task ResetPermanentFailedAsync_NoPermanentFailedRecords_ReturnsZero()
+    {
+        // 検証対象: ResetPermanentFailedAsync  目的: 対象がなければ 0 を返す
+        await _db.InitializeAsync(CancellationToken.None);
+
+        var resetCount = await _db.ResetPermanentFailedAsync(CancellationToken.None);
+
+        resetCount.Should().Be(0);
+    }
+
     // ── チェックポイント ──────────────────────────────────────────────────────
 
     [Fact]
