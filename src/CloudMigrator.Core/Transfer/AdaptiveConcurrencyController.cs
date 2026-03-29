@@ -24,6 +24,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     // lock(_syncRoot) で保護するフィールド
     private readonly object _syncRoot = new();
     private int _current;
+    private int _startupHeadroom;    // ソフトスタートでまだセマフォに放流していない容量
     private int _absorbedActual;      // 実際にセマフォから吸収済みのスロット数
     private int _consecutiveSuccesses;
     private int _pendingDecreases;    // 減速トリガーカウンター
@@ -65,6 +66,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         _min = minDegree;
         _max = maxDegree;
         _current = Math.Clamp(initialDegree, minDegree, maxDegree);
+        _startupHeadroom = _max - _current;
         SuccessThreshold = successThreshold;
         _increaseStep = increaseStep;
         _decreaseStep = decreaseStep;
@@ -168,25 +170,31 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>
     /// 転送成功を通知する。
-    /// 連続成功数が <see cref="SuccessThreshold"/> に達し、吸収済みスロットが存在する場合に
+    /// 連続成功数が <see cref="SuccessThreshold"/> に達した場合、
+    /// ソフトスタート時の未使用ヘッドルームまたは吸収済みスロットを使って
     /// 並列度を <see cref="IncreaseStep"/> 回復する。
     /// </summary>
     public void NotifySuccess()
     {
-        int prevDegree = -1, newDegree = -1, step = 0;
+        int prevDegree = -1, newDegree = -1, step = 0, fromStartupHeadroom = 0, fromAbsorbed = 0;
         lock (_syncRoot)
         {
             _consecutiveSuccesses++;
-            if (_consecutiveSuccesses >= SuccessThreshold
-                && _current < _max
-                && _absorbedActual > 0)
+            if (_consecutiveSuccesses >= SuccessThreshold && _current < _max)
             {
-                _consecutiveSuccesses = 0;
-                step = Math.Min(_increaseStep, Math.Min(_max - _current, _absorbedActual));
-                prevDegree = _current;
-                _current += step;
-                _absorbedActual -= step;
-                newDegree = _current;
+                var releasable = _startupHeadroom + _absorbedActual;
+                if (releasable > 0)
+                {
+                    _consecutiveSuccesses = 0;
+                    step = Math.Min(_increaseStep, Math.Min(_max - _current, releasable));
+                    fromAbsorbed = Math.Min(step, _absorbedActual);
+                    fromStartupHeadroom = step - fromAbsorbed;
+                    prevDegree = _current;
+                    _current += step;
+                    _absorbedActual -= fromAbsorbed;
+                    _startupHeadroom -= fromStartupHeadroom;
+                    newDegree = _current;
+                }
             }
         }
 
