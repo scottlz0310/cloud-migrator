@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Buffers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -11,7 +12,7 @@ namespace CloudMigrator.Providers.Dropbox;
 /// <summary>
 /// Dropbox API を使用した <see cref="IStorageProvider"/> 実装。
 /// </summary>
-public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
+public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorageProvider, IDisposable
 {
     private const string ApiBaseUrl = "https://api.dropboxapi.com/2";
     private const string ContentBaseUrl = "https://content.dropboxapi.com/2";
@@ -30,8 +31,10 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     private readonly int _simpleUploadLimitBytes;
     private readonly int _uploadChunkSizeBytes;
     private readonly Action<TimeSpan?>? _onRateLimit;
+    private long _retryCount;
 
     public string ProviderId => "dropbox";
+    public long TotalRetryCount => Interlocked.Read(ref _retryCount);
 
     /// <summary>
     /// Dropbox の <c>files/upload</c> はパスを指定するだけで親フォルダを自動作成するため、
@@ -146,33 +149,17 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
 
         var sourcePath = BuildSourceFilePath(job.Source);
         var destinationPath = NormalizeFilePath(job.DestinationFullPath);
-        var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        await using var downloadStream = await DownloadStreamByPathAsync(sourcePath, cancellationToken).ConfigureAwait(false);
 
-        try
-        {
-            await DownloadToTempFileAsync(sourcePath, tempPath, cancellationToken).ConfigureAwait(false);
+        if (job.Source.SizeBytes.Value <= _simpleUploadLimitBytes)
+            await UploadSimpleAsync(destinationPath, downloadStream, job.Source.SizeBytes.Value, cancellationToken).ConfigureAwait(false);
+        else
+            await UploadChunkedAsync(destinationPath, downloadStream, cancellationToken).ConfigureAwait(false);
 
-            if (job.Source.SizeBytes.Value <= _simpleUploadLimitBytes)
-                await UploadSimpleAsync(destinationPath, tempPath, cancellationToken).ConfigureAwait(false);
-            else
-                await UploadChunkedAsync(destinationPath, tempPath, cancellationToken).ConfigureAwait(false);
-
-            _logger.LogInformation(
-                "Dropbox 転送完了: {SourcePath} -> {DestinationPath}",
-                sourcePath,
-                destinationPath);
-        }
-        finally
-        {
-            try
-            {
-                File.Delete(tempPath);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                _logger.LogWarning(ex, "テンポラリファイルの削除に失敗: {Path}", tempPath);
-            }
-        }
+        _logger.LogInformation(
+            "Dropbox 転送完了: {SourcePath} -> {DestinationPath}",
+            sourcePath,
+            destinationPath);
     }
 
     /// <inheritdoc/>
@@ -180,11 +167,18 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     {
         EnsureAccessTokenConfigured();
 
-        var sourcePath = BuildSourceFilePath(item);
         var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         try
         {
-            await DownloadToTempFileAsync(sourcePath, tempPath, cancellationToken).ConfigureAwait(false);
+            await using var stream = await DownloadStreamAsync(item, cancellationToken).ConfigureAwait(false);
+            await using var tempStream = new FileStream(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                81920,
+                useAsync: true);
+            await stream.CopyToAsync(tempStream, cancellationToken).ConfigureAwait(false);
             return tempPath;
         }
         catch
@@ -195,7 +189,27 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<Stream> DownloadStreamAsync(StorageItem item, CancellationToken cancellationToken = default)
+    {
+        EnsureAccessTokenConfigured();
+        return DownloadStreamByPathAsync(BuildSourceFilePath(item), cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task UploadFromLocalAsync(string localFilePath, long fileSizeBytes, string destinationFullPath, CancellationToken cancellationToken = default)
+    {
+        EnsureAccessTokenConfigured();
+
+        await using var stream = File.OpenRead(localFilePath);
+        await UploadFromStreamAsync(stream, fileSizeBytes, destinationFullPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task UploadFromStreamAsync(
+        Stream sourceStream,
+        long fileSizeBytes,
+        string destinationFullPath,
+        CancellationToken cancellationToken = default)
     {
         EnsureAccessTokenConfigured();
 
@@ -203,9 +217,9 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         _logger.LogDebug("Dropbox アップロード開始: {DestPath} ({Bytes} bytes)", destinationPath, fileSizeBytes);
 
         if (fileSizeBytes <= _simpleUploadLimitBytes)
-            await UploadSimpleAsync(destinationPath, localFilePath, cancellationToken).ConfigureAwait(false);
+            await UploadSimpleAsync(destinationPath, sourceStream, fileSizeBytes, cancellationToken).ConfigureAwait(false);
         else
-            await UploadChunkedAsync(destinationPath, localFilePath, cancellationToken).ConfigureAwait(false);
+            await UploadChunkedAsync(destinationPath, sourceStream, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Dropbox アップロード完了: {DestPath}", destinationPath);
     }
@@ -314,9 +328,9 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         }
     }
 
-    private async Task DownloadToTempFileAsync(string sourcePath, string tempPath, CancellationToken ct)
+    private async Task<Stream> DownloadStreamByPathAsync(string sourcePath, CancellationToken ct)
     {
-        using var response = await SendWithRetryAsync(
+        var response = await SendWithRetryAsync(
             () =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/download");
@@ -328,64 +342,99 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
             ct,
             HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
-            await ThrowDropboxErrorAsync(response, "files/download", ct).ConfigureAwait(false);
-
-        await using var responseStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var tempStream = new FileStream(
-            tempPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            81920,
-            useAsync: true);
-        await responseStream.CopyToAsync(tempStream, ct).ConfigureAwait(false);
-    }
-
-    private async Task UploadSimpleAsync(string destinationPath, string localPath, CancellationToken ct)
-    {
-        using var response = await SendWithRetryAsync(
-            () =>
+        {
+            try
             {
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload");
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-                request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
-                {
-                    path = destinationPath,
-                    mode = "overwrite",
-                    autorename = false,
-                    mute = true,
-                    strict_conflict = false,
-                }));
-                request.Content = new StreamContent(File.OpenRead(localPath));
-                request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-                return request;
-            },
-            "files/upload",
-            ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-            await ThrowDropboxErrorAsync(response, "files/upload", ct).ConfigureAwait(false);
+                await ThrowDropboxErrorAsync(response, "files/download", ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                response.Dispose();
+            }
+        }
+
+        var responseStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        return new ResponseBodyStream(response, responseStream);
     }
 
-    private async Task UploadChunkedAsync(string destinationPath, string localPath, CancellationToken ct)
+    private async Task UploadSimpleAsync(
+        string destinationPath,
+        Stream sourceStream,
+        long fileSizeBytes,
+        CancellationToken ct)
     {
-        await using var stream = File.OpenRead(localPath);
+        var payload = await BufferUploadPayloadAsync(sourceStream, fileSizeBytes, ct).ConfigureAwait(false);
+        try
+        {
+            using var response = await SendWithRetryAsync(
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload")
+                    {
+                        Version = HttpVersion.Version20,
+                        VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher,
+                    };
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                    request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new
+                    {
+                        path = destinationPath,
+                        mode = "overwrite",
+                        autorename = false,
+                        mute = true,
+                        strict_conflict = false,
+                    }));
+                    request.Content = CreateChunkContent(payload.Buffer, payload.Count);
+                    request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                    return request;
+                },
+                "files/upload",
+                ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                await ThrowDropboxErrorAsync(response, "files/upload", ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            payload.Dispose();
+        }
+    }
+
+    private async Task UploadChunkedAsync(string destinationPath, Stream sourceStream, CancellationToken ct)
+    {
         var sessionId = await StartUploadSessionAsync(ct).ConfigureAwait(false);
         long offset = 0;
+        var currentBuffer = ArrayPool<byte>.Shared.Rent(_uploadChunkSizeBytes);
+        var nextBuffer = ArrayPool<byte>.Shared.Rent(_uploadChunkSizeBytes);
 
-        while (true)
+        try
         {
-            var chunk = await ReadChunkAsync(stream, _uploadChunkSizeBytes, ct).ConfigureAwait(false);
-            var isLast = stream.Position == stream.Length;
+            var currentRead = await ReadChunkAsync(sourceStream, currentBuffer, _uploadChunkSizeBytes, ct)
+                .ConfigureAwait(false);
+            if (currentRead == 0)
+                throw new InvalidOperationException("Dropbox chunk upload の読み取り対象が空です。");
 
-            if (isLast)
+            while (true)
             {
-                await FinishUploadSessionAsync(sessionId, offset, destinationPath, chunk, ct)
+                var nextRead = await ReadChunkAsync(sourceStream, nextBuffer, _uploadChunkSizeBytes, ct)
                     .ConfigureAwait(false);
-                break;
-            }
 
-            await AppendUploadSessionAsync(sessionId, offset, chunk, ct).ConfigureAwait(false);
-            offset += chunk.Length;
+                if (nextRead == 0)
+                {
+                    await FinishUploadSessionAsync(sessionId, offset, destinationPath, currentBuffer, currentRead, ct)
+                        .ConfigureAwait(false);
+                    break;
+                }
+
+                await AppendUploadSessionAsync(sessionId, offset, currentBuffer, currentRead, ct)
+                    .ConfigureAwait(false);
+                offset += currentRead;
+                (currentBuffer, nextBuffer) = (nextBuffer, currentBuffer);
+                currentRead = nextRead;
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(currentBuffer);
+            ArrayPool<byte>.Shared.Return(nextBuffer);
         }
     }
 
@@ -397,7 +446,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                 var request = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload_session/start");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
                 request.Headers.Add("Dropbox-API-Arg", JsonSerializer.Serialize(new { close = false }));
-                request.Content = new ByteArrayContent([]);
+                request.Content = new StreamContent(Stream.Null);
                 request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                 return request;
             },
@@ -413,7 +462,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
             ?? throw new InvalidOperationException("Dropbox upload session の session_id が取得できませんでした。");
     }
 
-    private async Task AppendUploadSessionAsync(string sessionId, long offset, byte[] chunk, CancellationToken ct)
+    private async Task AppendUploadSessionAsync(string sessionId, long offset, byte[] chunk, int count, CancellationToken ct)
     {
         using var response = await SendWithRetryAsync(
             () =>
@@ -425,7 +474,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                     cursor = new { session_id = sessionId, offset },
                     close = false,
                 }));
-                request.Content = new ByteArrayContent(chunk);
+                request.Content = CreateChunkContent(chunk, count);
                 request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                 return request;
             },
@@ -440,6 +489,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         long offset,
         string destinationPath,
         byte[] chunk,
+        int count,
         CancellationToken ct)
     {
         using var response = await SendWithRetryAsync(
@@ -459,7 +509,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                         strict_conflict = false,
                     },
                 }));
-                request.Content = new ByteArrayContent(chunk);
+                request.Content = CreateChunkContent(chunk, count);
                 request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                 return request;
             },
@@ -583,6 +633,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
                 }
 
                 var delay = await GetRetryDelayAsync(response, attempt, ct).ConfigureAwait(false);
+                Interlocked.Increment(ref _retryCount);
                 _logger.LogWarning(
                     "Dropbox API の一時エラーのため再試行します: {Operation} status={StatusCode} attempt={Attempt} delayMs={DelayMs}",
                     operation,
@@ -595,6 +646,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
             }
             catch (HttpRequestException ex) when (attempt < _maxRetry)
             {
+                Interlocked.Increment(ref _retryCount);
                 _logger.LogWarning(
                     ex,
                     "Dropbox API の通信エラーのため再試行します: {Operation} attempt={Attempt}",
@@ -603,6 +655,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
             }
             catch (TaskCanceledException ex) when (!ct.IsCancellationRequested && attempt < _maxRetry)
             {
+                Interlocked.Increment(ref _retryCount);
                 _logger.LogWarning(
                     ex,
                     "Dropbox API のタイムアウトのため再試行します: {Operation} attempt={Attempt}",
@@ -742,9 +795,49 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
         return normalized;
     }
 
-    private static async Task<byte[]> ReadChunkAsync(Stream stream, int chunkSize, CancellationToken ct)
+    private static HttpContent CreateChunkContent(byte[] buffer, int count) =>
+        new BufferSliceContent(buffer, count);
+
+    private static async Task<RentedBuffer> BufferUploadPayloadAsync(
+        Stream sourceStream,
+        long fileSizeBytes,
+        CancellationToken ct)
     {
-        var buffer = new byte[chunkSize];
+        ArgumentOutOfRangeException.ThrowIfNegative(fileSizeBytes);
+        if (fileSizeBytes > int.MaxValue)
+            throw new InvalidOperationException("simple upload では 2GB 超のバッファリングはサポートしません。");
+
+        var expectedSize = (int)fileSizeBytes;
+        var buffer = ArrayPool<byte>.Shared.Rent(Math.Max(1, expectedSize));
+        var totalRead = 0;
+
+        try
+        {
+            while (totalRead < expectedSize)
+            {
+                var read = await sourceStream.ReadAsync(
+                    buffer.AsMemory(totalRead, expectedSize - totalRead),
+                    ct).ConfigureAwait(false);
+                if (read == 0)
+                    break;
+
+                totalRead += read;
+            }
+
+            if (totalRead != expectedSize)
+                throw new IOException($"simple upload 用バッファリングの読み取りサイズが不一致です。expected={expectedSize} actual={totalRead}");
+
+            return new RentedBuffer(buffer, totalRead);
+        }
+        catch
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+            throw;
+        }
+    }
+
+    private static async Task<int> ReadChunkAsync(Stream stream, byte[] buffer, int chunkSize, CancellationToken ct)
+    {
         var totalRead = 0;
 
         while (totalRead < chunkSize)
@@ -758,7 +851,49 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
             totalRead += read;
         }
 
-        return totalRead == buffer.Length ? buffer : buffer[..totalRead];
+        return totalRead;
+    }
+
+    private sealed class RentedBuffer : IDisposable
+    {
+        private byte[]? _buffer;
+
+        public RentedBuffer(byte[] buffer, int count)
+        {
+            _buffer = buffer;
+            Count = count;
+        }
+
+        public byte[] Buffer => _buffer ?? throw new ObjectDisposedException(nameof(RentedBuffer));
+        public int Count { get; }
+
+        public void Dispose()
+        {
+            var buffer = Interlocked.Exchange(ref _buffer, null);
+            if (buffer is not null)
+                ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private sealed class BufferSliceContent : HttpContent
+    {
+        private readonly byte[] _buffer;
+        private readonly int _count;
+
+        public BufferSliceContent(byte[] buffer, int count)
+        {
+            _buffer = buffer;
+            _count = count;
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(_buffer.AsMemory(0, _count)).AsTask();
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = _count;
+            return true;
+        }
     }
 
     private bool HasRefreshCapability()
@@ -890,5 +1025,82 @@ public sealed class DropboxStorageProvider : IStorageProvider, IDisposable
     {
         [JsonPropertyName("session_id")]
         public string SessionId { get; init; } = string.Empty;
+    }
+
+    private sealed class ResponseBodyStream : Stream
+    {
+        private readonly HttpResponseMessage _response;
+        private readonly Stream _inner;
+        private int _disposed;
+
+        public ResponseBodyStream(HttpResponseMessage response, Stream inner)
+        {
+            _response = response;
+            _inner = inner;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            _inner.FlushAsync(cancellationToken);
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            _inner.Read(buffer, offset, count);
+
+        public override int Read(Span<byte> buffer) =>
+            _inner.Read(buffer);
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            _inner.ReadAsync(buffer, offset, count, cancellationToken);
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            _inner.ReadAsync(buffer, cancellationToken);
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            _inner.Seek(offset, origin);
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override void Write(ReadOnlySpan<byte> buffer) =>
+            throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            if (disposing)
+            {
+                _inner.Dispose();
+                _response.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            await _inner.DisposeAsync().ConfigureAwait(false);
+            _response.Dispose();
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

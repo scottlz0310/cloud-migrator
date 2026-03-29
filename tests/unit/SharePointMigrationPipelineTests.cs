@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Migration;
@@ -203,7 +204,7 @@ public class SharePointMigrationPipelineTests
     {
         // 検証対象: Phase C  目的: DB の DISTINCT paths から祖先フォルダを展開して EnsureFolderAsync が呼ばれる
         // paths: ["docs/projects"] → ancestors: ["docs", "docs/projects"]
-        var createdFolders = new List<string>();
+        var createdFolders = new ConcurrentBag<string>();
 
         _mockDb.Setup(db => db.InitializeAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.ResetProcessingAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -235,7 +236,7 @@ public class SharePointMigrationPipelineTests
     public async Task RunAsync_PhaseCDeduplicatesPaths()
     {
         // 検証対象: Phase C  目的: 同一祖先が複数回 EnsureFolderAsync されない
-        var createdFolders = new List<string>();
+        var createdFolders = new ConcurrentBag<string>();
 
         _mockDb.Setup(db => db.InitializeAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.ResetProcessingAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);

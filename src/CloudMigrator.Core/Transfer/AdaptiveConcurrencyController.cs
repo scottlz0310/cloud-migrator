@@ -18,6 +18,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     private readonly int _increaseStep;
     private readonly int _decreaseStep;
     private readonly int _decreaseTriggerCount;
+    private readonly bool _halveOnRateLimit;
     private readonly ILogger<AdaptiveConcurrencyController> _logger;
 
     // lock(_syncRoot) で保護するフィールド
@@ -51,7 +52,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         ILogger<AdaptiveConcurrencyController> logger,
         int increaseStep = 1,
         int decreaseStep = 1,
-        int decreaseTriggerCount = 1)
+        int decreaseTriggerCount = 1,
+        bool halveOnRateLimit = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(minDegree, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxDegree, minDegree);
@@ -67,6 +69,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         _increaseStep = increaseStep;
         _decreaseStep = decreaseStep;
         _decreaseTriggerCount = decreaseTriggerCount;
+        _halveOnRateLimit = halveOnRateLimit;
         _logger = logger;
 
         // 初期並列度でセマフォを作成（maxDegree が上限）
@@ -142,9 +145,11 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             if (_pendingDecreases >= _decreaseTriggerCount && _current > _min)
             {
                 _pendingDecreases = 0;
-                step = Math.Min(_decreaseStep, _current - _min);
                 prevDegree = _current;
-                _current -= step;
+                _current = _halveOnRateLimit
+                    ? Math.Max(_min, _current / 2)
+                    : _current - Math.Min(_decreaseStep, _current - _min);
+                step = prevDegree - _current;
                 newDegree = _current;
             }
         }
