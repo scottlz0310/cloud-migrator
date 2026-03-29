@@ -408,6 +408,26 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     }
 
     /// <inheritdoc/>
+    public async Task<bool> InsertPendingIfNewAsync(StorageItem item, CancellationToken ct)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO transfer_records (path, name, source_id, size_bytes, modified, status, retry_count, error, updated_at)
+            VALUES (@path, @name, @sourceId, @size, @modified, 'pending', 0, NULL, @updatedAt)
+            ON CONFLICT(path, name) DO NOTHING;
+            """;
+        cmd.Parameters.AddWithValue("@path", item.Path);
+        cmd.Parameters.AddWithValue("@name", item.Name);
+        cmd.Parameters.AddWithValue("@sourceId", item.Id);
+        cmd.Parameters.AddWithValue("@size", (object?)item.SizeBytes ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@modified", (object?)item.LastModifiedUtc?.ToString("O") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
+    }
+
+    /// <inheritdoc/>
     public async Task InsertDoneIfNotExistsAsync(string path, string name, CancellationToken ct)
     {
         await using var conn = new SqliteConnection(_connectionString);
@@ -444,13 +464,24 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     {
         await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
+
+        // トランザクションで3テーブルを原子的にクリアする（途中で例外/キャンセルが発生しても部分削除にならない）
+        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
         await using var cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
         cmd.CommandText = """
             DELETE FROM transfer_records;
             DELETE FROM checkpoints;
             DELETE FROM metrics;
             """;
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        await tx.CommitAsync(ct).ConfigureAwait(false);
+
+        // WAL をトランケートしてディスク容量を回収する
+        // ベストエフォート: 他の読み取り接続がある場合は部分的なチェックポイントになるが、エラーにはならない
+        await using var cpCmd = conn.CreateCommand();
+        cpCmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await cpCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

@@ -91,6 +91,14 @@ public interface ITransferStateDb : IAsyncDisposable
     Task ResetAllAsync(CancellationToken ct);
 
     /// <summary>
+    /// Phase B クロール用: 未登録の新規アイテムのみ pending として INSERT する。
+    /// 既存レコードは一切変更しない（ON CONFLICT DO NOTHING）。
+    /// GetStatusAsync + UpsertPendingAsync の 2 クエリを 1 クエリに集約することで N+1 を回避する。
+    /// </summary>
+    /// <returns>新規 INSERT された場合 true、既存のためスキップされた場合 false。</returns>
+    Task<bool> InsertPendingIfNewAsync(StorageItem item, CancellationToken ct);
+
+    /// <summary>
     /// skip_list マイグレーション用: path/name を done ステータスで INSERT する。
     /// レコードが既存の場合は何もしない（ON CONFLICT DO NOTHING）。
     /// </summary>

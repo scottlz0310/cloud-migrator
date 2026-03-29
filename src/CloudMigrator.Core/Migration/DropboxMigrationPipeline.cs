@@ -111,7 +111,12 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
     /// </summary>
     private async Task PhasesABAsync(CancellationToken ct)
     {
-        // ── Phase A: permanent_failed リセット ────────────────────────────────
+        // ── Phase A: クラッシュリカバリ + permanent_failed リセット ──────────────
+        // processing → pending: 前回クラッシュ時に処理中だったファイルをリカバリ対象に戻す。
+        // Phase B 完了まで転送が始まらない設計のため、リセットせずに放置するとダッシュボードの
+        // 進捗表示が長時間「処理中」のままになる。
+        await _stateDb.ResetProcessingAsync(ct).ConfigureAwait(false);
+
         var resetCount = await _stateDb.ResetPermanentFailedAsync(ct).ConfigureAwait(false);
         if (resetCount > 0)
             _logger.LogInformation("Phase A: 前回リトライ上限到達ファイル {Count} 件を再試行対象に戻します", resetCount);
@@ -139,16 +144,11 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
             {
                 ct.ThrowIfCancellationRequested();
 
-                var status = await _stateDb.GetStatusAsync(item.Path, item.Name, ct)
-                    .ConfigureAwait(false);
-
-                // null = 未登録の新規アイテム → SQLite に INSERT のみ（Channel への投入は Phase D で行う）
-                if (status is null)
-                {
-                    await _stateDb.UpsertPendingAsync(item, ct).ConfigureAwait(false);
+                // InsertPendingIfNewAsync: 未登録なら pending で INSERT し true を返す（ON CONFLICT DO NOTHING）。
+                // GetStatusAsync + UpsertPendingAsync の 2 クエリを 1 クエリに集約して N+1 を回避する。
+                if (await _stateDb.InsertPendingIfNewAsync(item, ct).ConfigureAwait(false))
                     newItems++;
-                }
-                // それ以外（pending/processing/failed/done/permanent_failed）はスキップ
+                // 既存アイテム（pending/processing/failed/done/permanent_failed）はスキップ
                 // pending/processing/failed → Phase D の GetPendingStreamAsync でキューイングされる
                 // done/permanent_failed → 転送済み・永続失敗
             }

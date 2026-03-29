@@ -67,11 +67,13 @@ public class DropboxMigrationPipelineTests
     private void SetupDbBase()
     {
         _mockDb.Setup(db => db.InitializeAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDb.Setup(db => db.ResetProcessingAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.ResetPermanentFailedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
         _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(NoRecords());
         _mockDb.Setup(db => db.GetCheckpointAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         _mockDb.Setup(db => db.GetSummaryAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new TransferDbSummary());
-        _mockDb.Setup(db => db.UpsertPendingAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        // Phase B: InsertPendingIfNewAsync はデフォルト false（既存アイテム扱い）
+        _mockDb.Setup(db => db.InsertPendingIfNewAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         _mockDb.Setup(db => db.MarkProcessingAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.MarkDoneAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDb.Setup(db => db.MarkFailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -105,14 +107,15 @@ public class DropboxMigrationPipelineTests
     [Fact]
     public async Task RunAsync_NewItemFromPhaseB_TransfersSuccessfullyAndReturnsSuccess1()
     {
-        // 検証対象: Phase B クロール  目的: status=null の新規アイテムが SQLite に登録され、Phase D で転送されて success=1 になる
+        // 検証対象: Phase B クロール  目的: 新規アイテムが InsertPendingIfNewAsync で登録され、Phase D で転送されて success=1 になる
         var item = MakeItem("docs", "report.pdf", "od-abc");
         var tempFile = Path.GetTempFileName();
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
-                   .ReturnsAsync((TransferStatus?)null);
+            // Phase B: 新規アイテム → InsertPendingIfNewAsync が true を返す
+            _mockDb.Setup(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(true);
             // Phase D: GetPendingStreamAsync が Phase B で登録されたアイテムを返す
             _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
                    .Returns(FromRecords([RecordFrom(item)]));
@@ -128,7 +131,7 @@ public class DropboxMigrationPipelineTests
 
             summary.Success.Should().Be(1);
             summary.Failed.Should().Be(0);
-            _mockDb.Verify(db => db.UpsertPendingAsync(item, It.IsAny<CancellationToken>()), Times.Once);
+            _mockDb.Verify(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()), Times.Once);
             _mockDb.Verify(db => db.MarkDoneAsync("docs", "report.pdf", It.IsAny<CancellationToken>()), Times.Once);
         }
         finally
@@ -145,12 +148,12 @@ public class DropboxMigrationPipelineTests
     [InlineData(TransferStatus.PermanentFailed)]
     public async Task RunAsync_ItemWithTerminalStatus_SkipsTransfer(TransferStatus status)
     {
-        // 検証対象: Phase B  目的: done/permanent_failed のアイテムは転送されない
+        // 検証対象: Phase B  目的: 既存アイテムは InsertPendingIfNewAsync が false を返し転送されない
+        // InsertPendingIfNewAsync の ON CONFLICT DO NOTHING により、ステータス問わず既存行はスキップされる
+        _ = status; // InsertPendingIfNewAsync はステータスを区別しない（DB 側で DO NOTHING）
         var item = MakeItem("docs", "done.txt");
 
-        SetupDbBase();
-        _mockDb.Setup(db => db.GetStatusAsync("docs", "done.txt", It.IsAny<CancellationToken>()))
-               .ReturnsAsync(status);
+        SetupDbBase(); // InsertPendingIfNewAsync はデフォルト false（既存アイテム）
 
         _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                    .ReturnsAsync(SingleItemPage(item));
@@ -159,7 +162,7 @@ public class DropboxMigrationPipelineTests
 
         summary.Success.Should().Be(0);
         summary.Failed.Should().Be(0);
-        _mockDb.Verify(db => db.UpsertPendingAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockDb.Verify(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()), Times.Once);
         _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -171,19 +174,20 @@ public class DropboxMigrationPipelineTests
     [InlineData(TransferStatus.Failed)]
     public async Task RunAsync_ItemAlreadyQueuedStatus_SkipsUpsertInPhaseB(TransferStatus status)
     {
-        // 検証対象: Phase B  目的: Phase A キュー済みステータスのアイテムは Phase B では追加されない
+        // 検証対象: Phase B  目的: 既存アイテムは InsertPendingIfNewAsync が false を返し再 INSERT されない
+        // pending/processing/failed → Phase D の GetPendingStreamAsync でキューイングされる
+        _ = status; // InsertPendingIfNewAsync はステータスを区別しない（DO NOTHING で一律スキップ）
         var item = MakeItem("docs", "queued.txt");
 
-        SetupDbBase();
-        _mockDb.Setup(db => db.GetStatusAsync("docs", "queued.txt", It.IsAny<CancellationToken>()))
-               .ReturnsAsync(status);
+        SetupDbBase(); // InsertPendingIfNewAsync はデフォルト false（既存アイテム）
 
         _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
                    .ReturnsAsync(SingleItemPage(item));
 
         await CreatePipeline().RunAsync(CancellationToken.None);
 
-        _mockDb.Verify(db => db.UpsertPendingAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        // InsertPendingIfNewAsync は呼ばれるが false（既存）を返すため新規登録は行われない
+        _mockDb.Verify(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── Phase A: クラッシュリカバリ ───────────────────────────────────────
@@ -240,8 +244,8 @@ public class DropboxMigrationPipelineTests
         var item = MakeItem("data", "bad.bin", "od-bad");
 
         SetupDbBase();
-        _mockDb.Setup(db => db.GetStatusAsync("data", "bad.bin", It.IsAny<CancellationToken>()))
-               .ReturnsAsync((TransferStatus?)null);
+        _mockDb.Setup(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()))
+               .ReturnsAsync(true);
         _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
                .Returns(FromRecords([RecordFrom(item)]));
 
@@ -269,8 +273,8 @@ public class DropboxMigrationPipelineTests
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync("data", "upload-fail.bin", It.IsAny<CancellationToken>()))
-                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(true);
             _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
                    .Returns(FromRecords([RecordFrom(item)]));
 
@@ -334,7 +338,7 @@ public class DropboxMigrationPipelineTests
         var summary = await CreatePipeline().RunAsync(CancellationToken.None);
 
         summary.Success.Should().Be(0);
-        _mockDb.Verify(db => db.GetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockDb.Verify(db => db.InsertPendingIfNewAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
         _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -349,8 +353,8 @@ public class DropboxMigrationPipelineTests
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
-                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(true);
             _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
                    .Returns(FromRecords([RecordFrom(item)]));
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
@@ -380,8 +384,8 @@ public class DropboxMigrationPipelineTests
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync("docs", "report.pdf", It.IsAny<CancellationToken>()))
-                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(true);
             _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
                    .Returns(FromRecords([RecordFrom(item)]));
             _mockSource.Setup(s => s.ListPagedAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
@@ -423,8 +427,8 @@ public class DropboxMigrationPipelineTests
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync("docs", "a.txt", It.IsAny<CancellationToken>()))
-                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(true);
             // crawl_total / crawl_complete 保存時の呼び出し順を記録
             _mockDb.Setup(db => db.SaveCheckpointAsync(
                 DropboxMigrationPipeline.CrawlTotalKey, It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -478,8 +482,8 @@ public class DropboxMigrationPipelineTests
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync("docs", "a.txt", It.IsAny<CancellationToken>()))
-                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.InsertPendingIfNewAsync(item, It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(true);
             _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
                    .Returns(FromRecords([RecordFrom(item)]));
             _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
@@ -526,8 +530,8 @@ public class DropboxMigrationPipelineTests
         try
         {
             SetupDbBase();
-            _mockDb.Setup(db => db.GetStatusAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                   .ReturnsAsync((TransferStatus?)null);
+            _mockDb.Setup(db => db.InsertPendingIfNewAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                   .ReturnsAsync(true);
             // Phase D: GetPendingStreamAsync が 100 件の全アイテムを返す
             _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>()))
                    .Returns(FromRecords(items.Select(RecordFrom)));
