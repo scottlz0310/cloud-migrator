@@ -91,6 +91,9 @@ public class SharePointMigrationPipelineTests
     {
         _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDest.Setup(d => d.UploadFromLocalAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        // モック先プロバイダーはサーバーサイドコピー非対応としてクライアント経由フォールバックを強制する
+        _mockDest.Setup(d => d.ServerSideCopyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ThrowsAsync(new NotSupportedException());
     }
 
     // ── Phase A: ResetProcessingAsync が呼ばれる ──────────────────────────
@@ -301,6 +304,8 @@ public class SharePointMigrationPipelineTests
         _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
                    .ThrowsAsync(new IOException("ダウンロード失敗"));
 
+        SetupDestBase();
+
         var summary = await CreatePipeline().RunAsync(CancellationToken.None);
 
         summary.Success.Should().Be(0);
@@ -369,6 +374,56 @@ public class SharePointMigrationPipelineTests
             summary.Success.Should().Be(1);
             // 並列度変化があった場合（初回: -1 → 実際の値）に記録される
             _mockDb.Verify(db => db.RecordMetricAsync("current_parallelism", It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PhaseDServerSideCopySuccess_SkipsClientTransfer()
+    {
+        var record = MakeRecord("docs", "copied.pdf");
+
+        SetupDbWithBothPhasesComplete();
+        _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(FromRecords([record]));
+        _mockDest.Setup(d => d.ServerSideCopyAsync("id-1", "SP-Root/docs", "copied.pdf", It.IsAny<CancellationToken>()))
+                 .Returns(Task.CompletedTask);
+
+        var summary = await CreatePipeline().RunAsync(CancellationToken.None);
+
+        summary.Success.Should().Be(1);
+        summary.Failed.Should().Be(0);
+        _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockDest.Verify(d => d.UploadFromLocalAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockDb.Verify(db => db.MarkDoneAsync("docs", "copied.pdf", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_PhaseDServerSideCopyFailure_FallsBackToClientTransfer()
+    {
+        var record = MakeRecord("docs", "fallback.pdf");
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            SetupDbWithBothPhasesComplete();
+            _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(FromRecords([record]));
+            _mockDest.Setup(d => d.ServerSideCopyAsync("id-1", "SP-Root/docs", "fallback.pdf", It.IsAny<CancellationToken>()))
+                     .ThrowsAsync(new InvalidOperationException("copy failed"));
+            _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(tempFile);
+            _mockDest.Setup(d => d.UploadFromLocalAsync(tempFile, record.SizeBytes!.Value, "SP-Root/docs/fallback.pdf", It.IsAny<CancellationToken>()))
+                     .Returns(Task.CompletedTask);
+
+            var summary = await CreatePipeline().RunAsync(CancellationToken.None);
+
+            summary.Success.Should().Be(1);
+            summary.Failed.Should().Be(0);
+            _mockSource.Verify(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()), Times.Once);
+            _mockDest.Verify(d => d.UploadFromLocalAsync(tempFile, record.SizeBytes!.Value, "SP-Root/docs/fallback.pdf", It.IsAny<CancellationToken>()), Times.Once);
+            _mockDb.Verify(db => db.MarkDoneAsync("docs", "fallback.pdf", It.IsAny<CancellationToken>()), Times.Once);
+            _mockDb.Verify(db => db.MarkFailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         }
         finally
         {

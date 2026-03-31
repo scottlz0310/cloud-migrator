@@ -361,4 +361,21 @@ public sealed class SetupInitCommandTests : IDisposable
         var migrator = doc.RootElement.GetProperty("migrator");
         migrator.GetProperty("dropbox").GetProperty("rootPath").GetString().Should().Be("/移行データ");
     }
+
+    [Fact]
+    public void ApplySharePointDestinationToConfigTemplate_ShouldOverwriteDestinationProviderToSharePoint()
+    {
+        // 検証対象: ApplySharePointDestinationToConfigTemplate
+        // 目的: 既存の destinationProvider を sharepoint に上書きし、他の設定値は維持すること
+        var template = InitCommand.ApplyDropboxValuesToConfigTemplate(
+            InitCommand.BuildDefaultConfigTemplate(),
+            "/移行データ");
+
+        var result = InitCommand.ApplySharePointDestinationToConfigTemplate(template);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        var migrator = doc.RootElement.GetProperty("migrator");
+        migrator.GetProperty("destinationProvider").GetString().Should().Be("sharepoint");
+        migrator.GetProperty("dropbox").GetProperty("rootPath").GetString().Should().Be("/移行データ");
+    }
 }

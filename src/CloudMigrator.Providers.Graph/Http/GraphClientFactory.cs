@@ -23,11 +23,16 @@ public static class GraphClientFactory
     /// 429/503 レスポンス検出時に呼び出すコールバック（動的並列度制御用）。
     /// null の場合は通知なし。引数は Retry-After 値（null の場合は不明）。
     /// </param>
+    /// <param name="copyLocationCapture">
+    /// Graph /copy の 202 Monitor URL を捕捉するハンドラー。
+    /// null の場合はサーバーサイドコピー機能が無効になる。
+    /// </param>
     public static GraphServiceClient Create(
         GraphAuthenticator authenticator,
         int timeoutSec = 300,
         int maxRetry = 3,
-        Action<TimeSpan?>? onRateLimit = null)
+        Action<TimeSpan?>? onRateLimit = null,
+        CopyLocationCaptureHandler? copyLocationCapture = null)
     {
         // Kiota 標準ミドルウェアスタック（RetryHandler / RedirectHandler 等）を組み込む
         var handlers = KiotaClientFactory.CreateDefaultHandlers();
@@ -58,6 +63,11 @@ public static class GraphClientFactory
                 break;
             }
         }
+
+        // CopyLocationCaptureHandler はすべてのミドルウェアの最内側（末尾）に配置する。
+        // これにより RetryHandler がリトライした最終レスポンスの Location ヘッダーを捕捉できる。
+        if (copyLocationCapture is not null)
+            handlers.Add(copyLocationCapture);
 
         var httpClient = KiotaClientFactory.Create(handlers);
         httpClient.Timeout = TimeSpan.FromSeconds(timeoutSec);

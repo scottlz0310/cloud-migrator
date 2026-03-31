@@ -76,6 +76,22 @@ public interface IStorageProvider
     Task EnsureFolderAsync(string folderPath, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 転送元プロバイダー内部のアイテム ID を指定して転送先へサーバーサイドコピーを実行する。
+    /// データはクライアントを経由せず Microsoft DC 内で完結するため、帯域消費ゼロで転送できる。
+    /// 実装しないプロバイダーは <see cref="NotSupportedException"/> をスローする。
+    /// </summary>
+    /// <param name="sourceItemId">転送元 driveItem.Id</param>
+    /// <param name="destinationFolderPath">転送先フォルダの相対パス（ドライブルートからの相対）</param>
+    /// <param name="fileName">転送先ファイル名</param>
+    /// <param name="ct">キャンセルトークン</param>
+    Task ServerSideCopyAsync(
+        string sourceItemId,
+        string destinationFolderPath,
+        string fileName,
+        CancellationToken ct = default)
+        => throw new NotSupportedException($"{ProviderId} はサーバーサイドコピーをサポートしていません。");
+
+    /// <summary>
     /// ファイルアップロード時に親フォルダを自動作成するか。
     /// <c>true</c> の場合、転送オーケストレーション処理はフォルダ先行作成フェーズをスキップする。
     /// デフォルト: <c>false</c>（Graph 等の従来実装への後方互換）。

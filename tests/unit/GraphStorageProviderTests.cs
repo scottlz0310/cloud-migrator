@@ -1,12 +1,16 @@
 using CloudMigrator.Providers.Abstractions;
 using CloudMigrator.Providers.Graph;
+using CloudMigrator.Providers.Graph.Http;
 using FluentAssertions;
+using System.Net;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Graph.Drives.Item.Items.Item.Delta;
 using Microsoft.Graph.Models;
 using Microsoft.Kiota.Abstractions;
+using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.Kiota.Abstractions.Serialization;
+using Microsoft.Kiota.Http.HttpClientLibrary;
 using Moq;
 
 namespace CloudMigrator.Tests.Unit;
@@ -137,6 +141,136 @@ public class GraphStorageProviderTests
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldThrowNotSupported_WhenCaptureHandlerIsMissing()
+    {
+        var provider = CreateProvider();
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*CopyLocationCaptureHandler*");
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldThrowInvalidOperation_WhenSharePointDriveIdIsMissing()
+    {
+        var (_, client) = CreateServerSideCopyMockClient(new DriveItem { Id = "copied-item" });
+        var provider = new GraphStorageProvider(
+            client,
+            _mockLogger.Object,
+            new GraphStorageOptions { OneDriveUserId = "user1" },
+            copyLocationCapture: new CopyLocationCaptureHandler());
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*SharePointDriveId*");
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldComplete_WhenCopyReturnsDriveItemImmediately()
+    {
+        var (mockAdapter, client) = CreateServerSideCopyMockClient(new DriveItem { Id = "copied-item" });
+        var provider = new GraphStorageProvider(
+            client,
+            _mockLogger.Object,
+            new GraphStorageOptions
+            {
+                OneDriveUserId = "user1",
+                SharePointDriveId = "sharepoint-drive",
+            },
+            copyLocationCapture: new CopyLocationCaptureHandler());
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        mockAdapter.Verify(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldThrow_WhenMonitorUrlIsNotCaptured()
+    {
+        var (_, client) = CreateServerSideCopyMockClient(copyResponse: null);
+        var provider = new GraphStorageProvider(
+            client,
+            _mockLogger.Object,
+            new GraphStorageOptions
+            {
+                OneDriveUserId = "user1",
+                SharePointDriveId = "sharepoint-drive",
+            },
+            copyLocationCapture: new CopyLocationCaptureHandler());
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Monitor URL*");
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldComplete_WhenMonitorReturnsCompletedStatus()
+    {
+        await using var monitorServer = new LoopbackMonitorServer(
+            new MonitorResponse(HttpStatusCode.OK, """{"status":"completed"}"""));
+        var (copyCapture, client) = CreateHttpServerSideCopyClient(monitorServer.Url);
+        var provider = CreateServerSideCopyProvider(client, copyCapture, timeoutSec: 2);
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        monitorServer.RequestCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldThrow_WhenMonitorReturnsFailedStatus()
+    {
+        await using var monitorServer = new LoopbackMonitorServer(
+            new MonitorResponse(HttpStatusCode.OK, """{"status":"failed","error":{"message":"boom"}}"""));
+        var (copyCapture, client) = CreateHttpServerSideCopyClient(monitorServer.Url);
+        var provider = CreateServerSideCopyProvider(client, copyCapture, timeoutSec: 2);
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*boom*");
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldContinueAfterInvalidMonitorJson_AndEventuallyComplete()
+    {
+        await using var monitorServer = new LoopbackMonitorServer(
+            new MonitorResponse(HttpStatusCode.OK, "not-json"),
+            new MonitorResponse(HttpStatusCode.OK, """{"status":"completed"}"""));
+        var (copyCapture, client) = CreateHttpServerSideCopyClient(monitorServer.Url);
+        var provider = CreateServerSideCopyProvider(client, copyCapture, timeoutSec: 2);
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        monitorServer.RequestCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldContinueAfterRetryAfter429_AndEventuallyComplete()
+    {
+        await using var monitorServer = new LoopbackMonitorServer(
+            new MonitorResponse(HttpStatusCode.TooManyRequests, string.Empty, RetryAfterSeconds: 1),
+            new MonitorResponse(HttpStatusCode.OK, """{"status":"completed"}"""));
+        var (copyCapture, client) = CreateHttpServerSideCopyClient(monitorServer.Url);
+        var provider = CreateServerSideCopyProvider(client, copyCapture, timeoutSec: 3);
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        monitorServer.RequestCount.Should().Be(2);
+    }
+
     // ── Phase 3 クロール挙動テスト ─────────────────────────────────────
 
     private static (Mock<IRequestAdapter> adapter, GraphServiceClient client) CreateMockClient(
@@ -167,6 +301,232 @@ public class GraphStorageProviderTests
             .ReturnsAsync((DriveItemCollectionResponse?)null);
 
         return (mockAdapter, new GraphServiceClient(mockAdapter.Object));
+    }
+
+    private static (Mock<IRequestAdapter> adapter, GraphServiceClient client) CreateServerSideCopyMockClient(
+        DriveItem? copyResponse)
+    {
+        var mockWriter = new Mock<ISerializationWriter>();
+        mockWriter.Setup(w => w.GetSerializedContent()).Returns(new MemoryStream());
+
+        var mockWriterFactory = new Mock<ISerializationWriterFactory>();
+        mockWriterFactory
+            .Setup(f => f.GetSerializationWriter(It.IsAny<string>()))
+            .Returns(mockWriter.Object);
+
+        var mockAdapter = new Mock<IRequestAdapter>();
+        mockAdapter.Setup(a => a.SerializationWriterFactory).Returns(mockWriterFactory.Object);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        mockAdapter.Setup(a => a.SendAsync(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<Drive>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Drive { Id = "source-drive-id" });
+        mockAdapter.Setup(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(copyResponse);
+
+        return (mockAdapter, new GraphServiceClient(mockAdapter.Object));
+    }
+
+    private GraphStorageProvider CreateServerSideCopyProvider(
+        GraphServiceClient client,
+        CopyLocationCaptureHandler copyCapture,
+        int timeoutSec)
+        => new(
+            client,
+            _mockLogger.Object,
+            new GraphStorageOptions
+            {
+                OneDriveUserId = "user1",
+                SharePointDriveId = "sharepoint-drive",
+            },
+            copyLocationCapture: copyCapture,
+            serverSideCopy: new CloudMigrator.Core.Configuration.ServerSideCopyOptions
+            {
+                TimeoutSec = timeoutSec,
+                PollJitterMaxMs = 0,
+                PollInitialDelayMs = 0,
+                PollMaxDelayMs = 0,
+            });
+
+    private static (CopyLocationCaptureHandler capture, GraphServiceClient client) CreateHttpServerSideCopyClient(
+        Uri? monitorUrl,
+        DriveItem? immediateCopyResponse = null)
+    {
+        var copyCapture = new CopyLocationCaptureHandler();
+        var transport = new StubGraphTransportHandler(request =>
+        {
+            if (request.Method == HttpMethod.Get
+                && request.RequestUri?.AbsolutePath.EndsWith("/users/user1/drive", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return JsonResponse(HttpStatusCode.OK, """{"id":"source-drive-id"}""");
+            }
+
+            if (request.Method == HttpMethod.Post
+                && request.RequestUri?.AbsolutePath.EndsWith("/copy", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                if (immediateCopyResponse is not null)
+                    return JsonResponse(HttpStatusCode.OK, """{"id":"copied-item"}""");
+
+                var accepted = new HttpResponseMessage(HttpStatusCode.Accepted);
+                if (monitorUrl is not null)
+                    accepted.Headers.Location = monitorUrl;
+                return accepted;
+            }
+
+            throw new InvalidOperationException($"Unexpected request: {request.Method} {request.RequestUri}");
+        });
+        copyCapture.InnerHandler = transport;
+
+        var httpClient = new HttpClient(copyCapture);
+        var authProvider = new BaseBearerTokenAuthenticationProvider(new FakeAccessTokenProvider());
+        var adapter = new HttpClientRequestAdapter(authProvider, httpClient: httpClient)
+        {
+            BaseUrl = "https://graph.microsoft.com/v1.0",
+        };
+
+        return (copyCapture, new GraphServiceClient(adapter));
+    }
+
+    private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json)
+        => new(statusCode)
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+        };
+
+    private sealed class FakeAccessTokenProvider : IAccessTokenProvider
+    {
+        public AllowedHostsValidator AllowedHostsValidator { get; } = new(["graph.microsoft.com"]);
+
+        public Task<string> GetAuthorizationTokenAsync(
+            Uri uri,
+            Dictionary<string, object>? additionalAuthenticationContext = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult("test-token");
+    }
+
+    private sealed class StubGraphTransportHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+            => Task.FromResult(responder(request));
+    }
+
+    private sealed record MonitorResponse(HttpStatusCode StatusCode, string Body, int? RetryAfterSeconds = null);
+
+    private sealed class LoopbackMonitorServer : IAsyncDisposable
+    {
+        private readonly System.Net.Sockets.TcpListener _listener;
+        private readonly CancellationTokenSource _cts = new();
+        private readonly Task _acceptLoop;
+        private readonly Queue<MonitorResponse> _responses;
+        private readonly MonitorResponse _fallbackResponse;
+        private int _requestCount;
+
+        public LoopbackMonitorServer(params MonitorResponse[] responses)
+        {
+            _responses = new Queue<MonitorResponse>(responses);
+            _fallbackResponse = responses.Length > 0
+                ? responses[^1]
+                : new MonitorResponse(HttpStatusCode.OK, """{"status":"completed"}""");
+            _listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            _listener.Start();
+            var port = ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
+            Url = new Uri($"http://127.0.0.1:{port}/monitor");
+            _acceptLoop = Task.Run(AcceptLoopAsync);
+        }
+
+        public Uri Url { get; }
+
+        public int RequestCount => Volatile.Read(ref _requestCount);
+
+        public async ValueTask DisposeAsync()
+        {
+            _cts.Cancel();
+            _listener.Stop();
+            try
+            {
+                await _acceptLoop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        private async Task AcceptLoopAsync()
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                System.Net.Sockets.TcpClient client;
+                try
+                {
+                    client = await _listener.AcceptTcpClientAsync(_cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+
+                _ = Task.Run(() => HandleClientAsync(client), _cts.Token);
+            }
+        }
+
+        private async Task HandleClientAsync(System.Net.Sockets.TcpClient client)
+        {
+            using (client)
+            await using (var stream = client.GetStream())
+            using (var reader = new StreamReader(stream, System.Text.Encoding.ASCII, leaveOpen: true))
+            {
+                while (true)
+                {
+                    var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                    if (line is null || line.Length == 0)
+                        break;
+                }
+
+                Interlocked.Increment(ref _requestCount);
+                var response = _responses.Count > 0 ? _responses.Dequeue() : _fallbackResponse;
+                var bodyBytes = System.Text.Encoding.UTF8.GetBytes(response.Body);
+                var header = new System.Text.StringBuilder()
+                    .Append($"HTTP/1.1 {(int)response.StatusCode} {GetReasonPhrase(response.StatusCode)}\r\n")
+                    .Append("Connection: close\r\n")
+                    .Append($"Content-Length: {bodyBytes.Length}\r\n");
+
+                if (bodyBytes.Length > 0)
+                    header.Append("Content-Type: application/json\r\n");
+                if (response.RetryAfterSeconds is { } retryAfter)
+                    header.Append($"Retry-After: {retryAfter}\r\n");
+
+                header.Append("\r\n");
+
+                var headerBytes = System.Text.Encoding.ASCII.GetBytes(header.ToString());
+                await stream.WriteAsync(headerBytes, _cts.Token).ConfigureAwait(false);
+                if (bodyBytes.Length > 0)
+                    await stream.WriteAsync(bodyBytes, _cts.Token).ConfigureAwait(false);
+            }
+        }
+
+        private static string GetReasonPhrase(HttpStatusCode statusCode)
+            => statusCode switch
+            {
+                HttpStatusCode.OK => "OK",
+                HttpStatusCode.Accepted => "Accepted",
+                HttpStatusCode.TooManyRequests => "Too Many Requests",
+                _ => statusCode.ToString(),
+            };
     }
 
     [Fact]

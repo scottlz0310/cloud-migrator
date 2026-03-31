@@ -411,9 +411,11 @@ internal static class BootstrapCommand
             maxParallelTransfers,
             adaptiveConcurrencyEnabled);
 
-        // Dropbox 転送先の場合: destinationProvider と dropbox.rootPath を config.json に反映
+        // 転送先プロバイダーを config.json に反映（Dropbox: "dropbox" + rootPath、SharePoint: "sharepoint"）
         if (isDropboxDest)
             configTemplate = InitCommand.ApplyDropboxValuesToConfigTemplate(configTemplate, dropboxRootPath);
+        else
+            configTemplate = InitCommand.ApplySharePointDestinationToConfigTemplate(configTemplate);
 
         // 既存ファイルがある場合は対話的に上書き確認する（--force 指定時はスキップ）
         bool EffectiveForce(string path) =>

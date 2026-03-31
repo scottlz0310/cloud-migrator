@@ -63,6 +63,9 @@ public sealed class MigratorOptions
     // --- プロバイダー設定 ---
     public GraphProviderOptions Graph { get; set; } = new();
     public DropboxProviderOptions Dropbox { get; set; } = new();
+
+    // --- サーバーサイドコピー設定 ---
+    public ServerSideCopyOptions ServerSideCopy { get; set; } = new();
 }
 
 /// <summary>
@@ -176,6 +179,30 @@ public sealed class AdaptiveConcurrencyOptions
 
     /// <summary>減速を発火するために必要な 429/503 の累積回数（減速の条件）。デフォルト 1</summary>
     public int DecreaseTriggerCount { get; set; } = 1;
+}
+
+/// <summary>
+/// Graph API サーバーサイドコピー（/copy エンドポイント）の Monitor URL ポーリング設定。
+/// </summary>
+public sealed class ServerSideCopyOptions
+{
+    /// <summary>
+    /// Monitor URL 初回ポーリング前のランダムジッター上限（ミリ秒）。
+    /// 並列コピー操作が一斉にポーリングするサンダリングハードを防ぐ。デフォルト 2000ms
+    /// </summary>
+    public int PollJitterMaxMs { get; set; } = 2000;
+
+    /// <summary>Monitor URL ポーリングの初期待機時間（ミリ秒）。デフォルト 2000ms</summary>
+    public int PollInitialDelayMs { get; set; } = 2000;
+
+    /// <summary>Monitor URL ポーリングの最大待機時間（ミリ秒）。指数バックオフの上限。デフォルト 10000ms</summary>
+    public int PollMaxDelayMs { get; set; } = 10000;
+
+    /// <summary>
+    /// サーバーサイドコピー全体のタイムアウト（秒）。
+    /// この時間内に完了しなければ例外を投げてクライアント経由にフォールバックする。デフォルト 1800（30分）
+    /// </summary>
+    public int TimeoutSec { get; set; } = 1800;
 }
 
 /// <summary>

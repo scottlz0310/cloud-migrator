@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Text.Json;
+using CloudMigrator.Core.Configuration;
 using CloudMigrator.Providers.Abstractions;
 using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Logging;
@@ -21,6 +24,11 @@ public sealed class GraphStorageProvider : IStorageProvider
     private readonly int _largeFileThresholdBytes;
     private readonly int _chunkSizeBytes;
     private readonly UploadSessionStore? _sessionStore;
+    private readonly CopyLocationCaptureHandler? _copyCapture;
+    private readonly ServerSideCopyOptions _serverSideCopy;
+    // コピー操作のポーリングで使用する認証不要の HttpClient（Monitor URL は SAS-style）
+    // タイムアウトは CancellationToken と PollCopyOperationAsync の deadline で一元管理する。
+    private static readonly HttpClient s_monitorHttpClient = new() { Timeout = Timeout.InfiniteTimeSpan };
     private string? _cachedOneDriveDriveId;
     // フォルダ先行作成フェーズのパス→ID キャッシュ（SharePoint への重複 API 呼び出しを防ぐ・並行安全）
     private readonly ConcurrentDictionary<string, string> _folderIdCache = new(StringComparer.OrdinalIgnoreCase);
@@ -33,13 +41,17 @@ public sealed class GraphStorageProvider : IStorageProvider
     /// <param name="largeFileThresholdMb">大容量判定閾値（MB）。デフォルト 4</param>
     /// <param name="chunkSizeMb">チャンクサイズ（MB）。デフォルト 5</param>
     /// <param name="sessionStore">アップロードセッション永続化（null = 無効）</param>
+    /// <param name="copyLocationCapture">サーバーサイドコピーの Monitor URL 捕捉ハンドラー（null = 機能無効）</param>
+    /// <param name="serverSideCopy">サーバーサイドコピーのポーリング設定。null の場合はデフォルト値を使用</param>
     public GraphStorageProvider(
         GraphServiceClient client,
         ILogger<GraphStorageProvider> logger,
         GraphStorageOptions? options = null,
         int largeFileThresholdMb = 4,
         int chunkSizeMb = 5,
-        UploadSessionStore? sessionStore = null)
+        UploadSessionStore? sessionStore = null,
+        CopyLocationCaptureHandler? copyLocationCapture = null,
+        ServerSideCopyOptions? serverSideCopy = null)
     {
         _client = client;
         _logger = logger;
@@ -47,6 +59,8 @@ public sealed class GraphStorageProvider : IStorageProvider
         _largeFileThresholdBytes = largeFileThresholdMb * 1024 * 1024;
         _chunkSizeBytes = chunkSizeMb * 1024 * 1024;
         _sessionStore = sessionStore;
+        _copyCapture = copyLocationCapture;
+        _serverSideCopy = serverSideCopy ?? new ServerSideCopyOptions();
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -757,6 +771,218 @@ public sealed class GraphStorageProvider : IStorageProvider
         }
 
         _logger.LogDebug("フォルダ確認完了: {FolderPath}", folderPath);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // IStorageProvider: ServerSideCopyAsync
+    // Graph /copy エンドポイントで OneDrive → SharePoint をサーバーサイドコピー
+    // ─────────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public Task ServerSideCopyAsync(
+        string sourceItemId,
+        string destinationFolderPath,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        if (_copyCapture is null)
+            throw new NotSupportedException(
+                "CopyLocationCaptureHandler が設定されていないためサーバーサイドコピーを使用できません。" +
+                " GraphClientFactory.Create に copyLocationCapture を渡してください。");
+
+        return CopyToSharePointAsync(sourceItemId, destinationFolderPath, fileName, ct);
+    }
+
+    /// <summary>
+    /// Graph API の /copy アクションで OneDrive → SharePoint をサーバーサイドコピーする。
+    /// データはクライアントを経由せず Microsoft DC 内で完結する。
+    /// コピーは非同期ジョブとして開始され、Monitor URL をポーリングして完了を待つ。
+    /// </summary>
+    /// <param name="sourceItemId">OneDrive の driveItem.Id</param>
+    /// <param name="destinationFolderPath">転送先フォルダの相対パス（ドライブルートからの相対）</param>
+    /// <param name="fileName">転送先ファイル名</param>
+    /// <param name="ct">キャンセルトークン</param>
+    private async Task CopyToSharePointAsync(
+        string sourceItemId,
+        string destinationFolderPath,
+        string fileName,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(_options.SharePointDriveId))
+            throw new InvalidOperationException("SharePointDriveId が未設定のためサーバーサイドコピーを実行できません。");
+
+        // 転送先フォルダの driveItem.Id を _folderIdCache から取得する
+        string destFolderId;
+        if (string.IsNullOrEmpty(destinationFolderPath))
+        {
+            destFolderId = "root";
+        }
+        else
+        {
+            var cacheKey = $"{_options.SharePointDriveId}:{destinationFolderPath.TrimStart('/')}";
+            if (!_folderIdCache.TryGetValue(cacheKey, out destFolderId!))
+                throw new InvalidOperationException(
+                    $"転送先フォルダ ID がキャッシュに見つかりません: {destinationFolderPath}" +
+                    " Phase C のフォルダ先行作成が完了していない可能性があります。");
+        }
+
+        var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
+
+        // Register a scoped capture slot before calling Copy.PostAsync.
+        // The handler completes the task source when a 202 Location header is observed,
+        // and disposing the scope restores the previous AsyncLocal value on every exit path.
+        using var capture = CopyLocationCaptureHandler.BeginCapture();
+        var locationTcs = capture.TaskSource;
+        var copyResult = await _client.Drives[oneDriveId].Items[sourceItemId]
+                .Copy.PostAsync(
+                    new Microsoft.Graph.Drives.Item.Items.Item.Copy.CopyPostRequestBody
+                    {
+                        ParentReference = new ItemReference
+                        {
+                            DriveId = _options.SharePointDriveId,
+                            Id = destFolderId,
+                        },
+                        Name = fileName,
+                    },
+                    cancellationToken: ct)
+                .ConfigureAwait(false);
+
+        // 同期完了（200 OK で DriveItem が返った）場合はそのまま終了
+        if (copyResult is not null)
+        {
+            _logger.LogDebug("サーバーサイドコピー即時完了: SourceId={SourceId} → {FileName}", sourceItemId, fileName);
+            return;
+        }
+
+        // 非同期コピー（202 Accepted）: Monitor URL を取得してポーリング
+        if (!locationTcs.Task.IsCompletedSuccessfully)
+            throw new InvalidOperationException(
+                $"Copy API から Monitor URL が取得できませんでした: SourceId={sourceItemId}");
+
+        var monitorUrl = await locationTcs.Task.ConfigureAwait(false);
+        if (string.IsNullOrEmpty(monitorUrl))
+            throw new InvalidOperationException(
+                $"Copy API の 202 レスポンスに Location ヘッダーがありません: SourceId={sourceItemId}");
+
+        _logger.LogDebug("サーバーサイドコピー開始: SourceId={SourceId} → {FileName}, MonitorUrl={Url}",
+            sourceItemId, fileName, monitorUrl);
+
+        await PollCopyOperationAsync(monitorUrl, sourceItemId, fileName, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Copy 非同期ジョブの Monitor URL を指数バックオフでポーリングし、完了または失敗を待つ。
+    /// </summary>
+    private async Task PollCopyOperationAsync(
+        string monitorUrl, string sourceItemId, string fileName, CancellationToken ct)
+    {
+        // 設定値を安全な範囲に正規化（負数・0 は ArgumentOutOfRangeException を引き起こす）
+        var timeoutSec = Math.Max(1, _serverSideCopy.TimeoutSec);
+        var jitterMaxMs = Math.Max(0, _serverSideCopy.PollJitterMaxMs);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(timeoutSec);
+
+        // 初回のみランダムジッターを入れて、並列コピーが一斉にポーリングするサンダリングハードを防ぐ
+        if (jitterMaxMs > 0)
+            await Task.Delay(Random.Shared.Next(0, jitterMaxMs), ct).ConfigureAwait(false);
+
+        var delayMs = Math.Max(0, _serverSideCopy.PollInitialDelayMs);
+        var maxDelayMs = Math.Max(delayMs, _serverSideCopy.PollMaxDelayMs);
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            await Task.Delay(delayMs, ct).ConfigureAwait(false);
+            delayMs = Math.Min(delayMs * 2, maxDelayMs);
+
+            HttpResponseMessage pollResponse;
+            try
+            {
+                pollResponse = await s_monitorHttpClient.GetAsync(monitorUrl, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Monitor URL へのポーリングで例外が発生しました: {Url}", monitorUrl);
+                continue;
+            }
+
+            using (pollResponse)
+            {
+                if (!pollResponse.IsSuccessStatusCode)
+                {
+                    if (pollResponse.StatusCode == HttpStatusCode.TooManyRequests)
+                    {
+                        // Retry-After ヘッダーがあればその値、なければ現在のバックオフ値を使用
+                        double retryAfterSec = 0;
+                        if (pollResponse.Headers.RetryAfter?.Delta is { } delta)
+                            retryAfterSec = delta.TotalSeconds;
+                        else if (pollResponse.Headers.RetryAfter?.Date is { } retryDate)
+                            retryAfterSec = (retryDate - DateTimeOffset.UtcNow).TotalSeconds;
+                        var waitMs = retryAfterSec > 0
+                            ? (int)Math.Min(retryAfterSec * 1000, 60_000)
+                            : delayMs;
+                        _logger.LogWarning(
+                            "Monitor URL が 429 を返しました。{WaitSec}s 待機します: SourceId={SourceId}",
+                            waitMs / 1000.0, sourceItemId);
+                        await Task.Delay(waitMs, ct).ConfigureAwait(false);
+                        // Retry-After 待機後はループ先頭のバックオフ待機を抑制する（二重待機防止）
+                        delayMs = 0;
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Monitor URL ポーリングが非成功ステータスを返しました: {StatusCode}",
+                            (int)pollResponse.StatusCode);
+                    }
+                    continue;
+                }
+
+                string? status = null;
+                string? errorMessage = null;
+                try
+                {
+                    await using var stream = await pollResponse.Content
+                        .ReadAsStreamAsync(ct).ConfigureAwait(false);
+                    using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct)
+                        .ConfigureAwait(false);
+
+                    if (doc.RootElement.TryGetProperty("status", out var statusProp))
+                        status = statusProp.GetString();
+
+                    if (doc.RootElement.TryGetProperty("error", out var errorProp)
+                        && errorProp.TryGetProperty("message", out var msgProp))
+                        errorMessage = msgProp.GetString();
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "Monitor URL のレスポンス JSON 解析に失敗しました");
+                    continue;
+                }
+
+                switch (status)
+                {
+                    case "completed":
+                        _logger.LogInformation(
+                            "サーバーサイドコピー完了: SourceId={SourceId} → {FileName}", sourceItemId, fileName);
+                        return;
+
+                    case "failed":
+                        throw new InvalidOperationException(
+                            $"サーバーサイドコピーがサーバー側で失敗しました: SourceId={sourceItemId}, " +
+                            $"FileName={fileName}, Error={errorMessage}");
+
+                    default:
+                        _logger.LogDebug(
+                            "サーバーサイドコピー進行中: Status={Status}, SourceId={SourceId}",
+                            status ?? "(unknown)", sourceItemId);
+                        break;
+                }
+            } // using (pollResponse)
+        }
+
+        throw new TimeoutException(
+            $"サーバーサイドコピーがタイムアウトしました ({_serverSideCopy.TimeoutSec}s): " +
+            $"SourceId={sourceItemId}, FileName={fileName}");
     }
 
     /// <summary>フォルダが存在しなければ作成し、そのアイテム ID を返す（FR-06）。</summary>
