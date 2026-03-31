@@ -374,6 +374,29 @@ internal static class InitCommand
             });
     }
 
+    /// <summary>
+    /// SharePoint 転送先用に destinationProvider を "sharepoint" に設定する。
+    /// Dropbox から SharePoint へ変更した場合など、既存値を上書きする。
+    /// </summary>
+    internal static string ApplySharePointDestinationToConfigTemplate(string configTemplate)
+    {
+        var root = JsonSerializer.Deserialize<MigratorConfigRoot>(
+            configTemplate,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException("config テンプレートの解析に失敗しました。");
+
+        root.Migrator.DestinationProvider = "sharepoint";
+
+        return JsonSerializer.Serialize(
+            root,
+            new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            });
+    }
+
     internal static string ApplyGraphValuesToEnvTemplate(
         string envTemplate,
         string? oneDriveUserId,

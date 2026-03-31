@@ -91,6 +91,9 @@ public class SharePointMigrationPipelineTests
     {
         _mockDest.Setup(d => d.EnsureFolderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _mockDest.Setup(d => d.UploadFromLocalAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        // モック先プロバイダーはサーバーサイドコピー非対応としてクライアント経由フォールバックを強制する
+        _mockDest.Setup(d => d.ServerSideCopyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ThrowsAsync(new NotSupportedException());
     }
 
     // ── Phase A: ResetProcessingAsync が呼ばれる ──────────────────────────
@@ -300,6 +303,8 @@ public class SharePointMigrationPipelineTests
         _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(FromRecords([record]));
         _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
                    .ThrowsAsync(new IOException("ダウンロード失敗"));
+        _mockDest.Setup(d => d.ServerSideCopyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ThrowsAsync(new NotSupportedException());
 
         var summary = await CreatePipeline().RunAsync(CancellationToken.None);
 

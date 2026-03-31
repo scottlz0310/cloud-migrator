@@ -189,11 +189,13 @@ internal sealed class CliServices : IDisposable
                 " 一方のみを有効にしてください。");
         }
 
+        var copyCapture = new CopyLocationCaptureHandler();
         var graphClient = GraphClientFactory.Create(
             auth,
             timeoutSec: options.TimeoutSec,
             maxRetry: options.RetryCount,
-            onRateLimit: onRateLimit);
+            onRateLimit: onRateLimit,
+            copyLocationCapture: copyCapture);
 
         var storageOptions = new GraphStorageOptions
         {
@@ -214,7 +216,9 @@ internal sealed class CliServices : IDisposable
             storageOptions,
             largeFileThresholdMb: options.LargeFileThresholdMb,
             chunkSizeMb: options.ChunkSizeMb,
-            sessionStore: sessionStore);
+            sessionStore: sessionStore,
+            copyLocationCapture: copyCapture,
+            serverSideCopy: options.ServerSideCopy);
 
         var dropboxOptions = new DropboxStorageOptions
         {

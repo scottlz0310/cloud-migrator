@@ -413,7 +413,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         return (success, failed);
     }
 
-    /// <summary>1 ファイルをクロスプロバイダー転送する（OneDrive ダウンロード → SharePoint アップロード）。</summary>
+    /// <summary>1 ファイルをクロスプロバイダー転送する（サーバーサイドコピー優先、失敗時はクライアント経由にフォールバック）。</summary>
     private async Task TransferItemAsync(TransferJob job, CancellationToken ct)
     {
         await _stateDb.MarkProcessingAsync(job.Source.Path, job.Source.Name, ct).ConfigureAwait(false);
@@ -422,6 +422,31 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
             throw new InvalidOperationException(
                 $"SizeBytes が未設定のため転送できません: {job.Source.SkipKey}");
 
+        // ── サーバーサイドコピーを試みる ───────────────────────────────────────
+        try
+        {
+            await _destinationProvider.ServerSideCopyAsync(
+                job.Source.Id,
+                job.DestinationPath,
+                job.Source.Name,
+                ct).ConfigureAwait(false);
+            return;
+        }
+        catch (NotSupportedException)
+        {
+            // プロバイダーがサーバーサイドコピーを実装していない → クライアント経由にフォールバック
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "サーバーサイドコピー失敗。クライアント経由にフォールバックします: {SkipKey}", job.Source.SkipKey);
+        }
+
+        // ── クライアント経由フォールバック（ダウンロード → アップロード）─────────
         var tempPath = await _sourceProvider.DownloadToTempAsync(job.Source, ct).ConfigureAwait(false);
         try
         {
