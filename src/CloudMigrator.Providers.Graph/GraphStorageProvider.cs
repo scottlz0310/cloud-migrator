@@ -27,8 +27,8 @@ public sealed class GraphStorageProvider : IStorageProvider
     private readonly CopyLocationCaptureHandler? _copyCapture;
     private readonly ServerSideCopyOptions _serverSideCopy;
     // コピー操作のポーリングで使用する認証不要の HttpClient（Monitor URL は SAS-style）
-    // タイムアウトは 1 リクエスト単位の上限。全体タイムアウトは PollCopyOperationAsync の deadline で管理する。
-    private static readonly HttpClient s_monitorHttpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // タイムアウトは CancellationToken と PollCopyOperationAsync の deadline で一元管理する。
+    private static readonly HttpClient s_monitorHttpClient = new() { Timeout = Timeout.InfiniteTimeSpan };
     private string? _cachedOneDriveDriveId;
     // フォルダ先行作成フェーズのパス→ID キャッシュ（SharePoint への重複 API 呼び出しを防ぐ・並行安全）
     private readonly ConcurrentDictionary<string, string> _folderIdCache = new(StringComparer.OrdinalIgnoreCase);
@@ -830,12 +830,11 @@ public sealed class GraphStorageProvider : IStorageProvider
 
         // AsyncLocal に TCS をセットしてから Copy.PostAsync を呼ぶ。
         // CopyLocationCaptureHandler が 202 Location ヘッダーを TCS に格納する。
+        // finally で必ず TrySetResult(null) を呼び、例外・即時完了・ポーリング後いずれの経路でも TCS をクリーンアップする。
         var locationTcs = CopyLocationCaptureHandler.BeginCapture();
-
-        Microsoft.Graph.Models.DriveItem? copyResult;
         try
         {
-            copyResult = await _client.Drives[oneDriveId].Items[sourceItemId]
+            var copyResult = await _client.Drives[oneDriveId].Items[sourceItemId]
                 .Copy.PostAsync(
                     new Microsoft.Graph.Drives.Item.Items.Item.Copy.CopyPostRequestBody
                     {
@@ -848,34 +847,34 @@ public sealed class GraphStorageProvider : IStorageProvider
                     },
                     cancellationToken: ct)
                 .ConfigureAwait(false);
+
+            // 同期完了（200 OK で DriveItem が返った）場合はそのまま終了
+            if (copyResult is not null)
+            {
+                _logger.LogDebug("サーバーサイドコピー即時完了: SourceId={SourceId} → {FileName}", sourceItemId, fileName);
+                return;
+            }
+
+            // 非同期コピー（202 Accepted）: Monitor URL を取得してポーリング
+            if (!locationTcs.Task.IsCompletedSuccessfully)
+                throw new InvalidOperationException(
+                    $"Copy API から Monitor URL が取得できませんでした: SourceId={sourceItemId}");
+
+            var monitorUrl = await locationTcs.Task.ConfigureAwait(false);
+            if (string.IsNullOrEmpty(monitorUrl))
+                throw new InvalidOperationException(
+                    $"Copy API の 202 レスポンスに Location ヘッダーがありません: SourceId={sourceItemId}");
+
+            _logger.LogDebug("サーバーサイドコピー開始: SourceId={SourceId} → {FileName}, MonitorUrl={Url}",
+                sourceItemId, fileName, monitorUrl);
+
+            await PollCopyOperationAsync(monitorUrl, sourceItemId, fileName, ct).ConfigureAwait(false);
         }
-        catch
+        finally
         {
+            // TrySetResult は冪等。既に Handler が設定済みの場合は no-op。
             locationTcs.TrySetResult(null);
-            throw;
         }
-
-        // 同期完了（200 OK で DriveItem が返った）場合はそのまま終了
-        if (copyResult is not null)
-        {
-            _logger.LogDebug("サーバーサイドコピー即時完了: SourceId={SourceId} → {FileName}", sourceItemId, fileName);
-            return;
-        }
-
-        // 非同期コピー（202 Accepted）: Monitor URL を取得してポーリング
-        if (!locationTcs.Task.IsCompletedSuccessfully)
-            throw new InvalidOperationException(
-                $"Copy API から Monitor URL が取得できませんでした: SourceId={sourceItemId}");
-
-        var monitorUrl = await locationTcs.Task.ConfigureAwait(false);
-        if (string.IsNullOrEmpty(monitorUrl))
-            throw new InvalidOperationException(
-                $"Copy API の 202 レスポンスに Location ヘッダーがありません: SourceId={sourceItemId}");
-
-        _logger.LogDebug("サーバーサイドコピー開始: SourceId={SourceId} → {FileName}, MonitorUrl={Url}",
-            sourceItemId, fileName, monitorUrl);
-
-        await PollCopyOperationAsync(monitorUrl, sourceItemId, fileName, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -884,12 +883,17 @@ public sealed class GraphStorageProvider : IStorageProvider
     private async Task PollCopyOperationAsync(
         string monitorUrl, string sourceItemId, string fileName, CancellationToken ct)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(_serverSideCopy.TimeoutSec);
-        // 初回のみランダムジッターを入れて、並列コピーが一斉にポーリングするサンダリングハードを防ぐ
-        await Task.Delay(Random.Shared.Next(0, _serverSideCopy.PollJitterMaxMs), ct).ConfigureAwait(false);
+        // 設定値を安全な範囲に正規化（負数・0 は ArgumentOutOfRangeException を引き起こす）
+        var timeoutSec = Math.Max(1, _serverSideCopy.TimeoutSec);
+        var jitterMaxMs = Math.Max(0, _serverSideCopy.PollJitterMaxMs);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(timeoutSec);
 
-        var delayMs = _serverSideCopy.PollInitialDelayMs;
-        var maxDelayMs = _serverSideCopy.PollMaxDelayMs;
+        // 初回のみランダムジッターを入れて、並列コピーが一斉にポーリングするサンダリングハードを防ぐ
+        if (jitterMaxMs > 0)
+            await Task.Delay(Random.Shared.Next(0, jitterMaxMs), ct).ConfigureAwait(false);
+
+        var delayMs = Math.Max(0, _serverSideCopy.PollInitialDelayMs);
+        var maxDelayMs = Math.Max(delayMs, _serverSideCopy.PollMaxDelayMs);
 
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -928,6 +932,8 @@ public sealed class GraphStorageProvider : IStorageProvider
                             "Monitor URL が 429 を返しました。{WaitSec}s 待機します: SourceId={SourceId}",
                             waitMs / 1000.0, sourceItemId);
                         await Task.Delay(waitMs, ct).ConfigureAwait(false);
+                        // Retry-After 待機後はループ先頭のバックオフ待機を抑制する（二重待機防止）
+                        delayMs = 0;
                     }
                     else
                     {

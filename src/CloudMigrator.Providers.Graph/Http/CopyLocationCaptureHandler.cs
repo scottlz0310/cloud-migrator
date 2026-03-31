@@ -40,6 +40,8 @@ public sealed class CopyLocationCaptureHandler : DelegatingHandler
             && s_tcs.Value is { } tcs)
         {
             tcs.TrySetResult(response.Headers.Location?.ToString());
+            // 捕捉後は AsyncLocal 上の TCS 参照をクリアし、同一コンテキストでの誤相関と不要なメモリ保持を防ぐ
+            s_tcs.Value = null;
         }
 
         return response;

@@ -303,8 +303,6 @@ public class SharePointMigrationPipelineTests
         _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(FromRecords([record]));
         _mockSource.Setup(s => s.DownloadToTempAsync(It.IsAny<StorageItem>(), It.IsAny<CancellationToken>()))
                    .ThrowsAsync(new IOException("ダウンロード失敗"));
-        _mockDest.Setup(d => d.ServerSideCopyAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                 .ThrowsAsync(new NotSupportedException());
 
         var summary = await CreatePipeline().RunAsync(CancellationToken.None);
 
