@@ -828,13 +828,12 @@ public sealed class GraphStorageProvider : IStorageProvider
 
         var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
 
-        // AsyncLocal に TCS をセットしてから Copy.PostAsync を呼ぶ。
-        // CopyLocationCaptureHandler が 202 Location ヘッダーを TCS に格納する。
-        // finally で必ず TrySetResult(null) を呼び、例外・即時完了・ポーリング後いずれの経路でも TCS をクリーンアップする。
-        var locationTcs = CopyLocationCaptureHandler.BeginCapture();
-        try
-        {
-            var copyResult = await _client.Drives[oneDriveId].Items[sourceItemId]
+        // Register a scoped capture slot before calling Copy.PostAsync.
+        // The handler completes the task source when a 202 Location header is observed,
+        // and disposing the scope restores the previous AsyncLocal value on every exit path.
+        using var capture = CopyLocationCaptureHandler.BeginCapture();
+        var locationTcs = capture.TaskSource;
+        var copyResult = await _client.Drives[oneDriveId].Items[sourceItemId]
                 .Copy.PostAsync(
                     new Microsoft.Graph.Drives.Item.Items.Item.Copy.CopyPostRequestBody
                     {
@@ -848,33 +847,27 @@ public sealed class GraphStorageProvider : IStorageProvider
                     cancellationToken: ct)
                 .ConfigureAwait(false);
 
-            // 同期完了（200 OK で DriveItem が返った）場合はそのまま終了
-            if (copyResult is not null)
-            {
-                _logger.LogDebug("サーバーサイドコピー即時完了: SourceId={SourceId} → {FileName}", sourceItemId, fileName);
-                return;
-            }
-
-            // 非同期コピー（202 Accepted）: Monitor URL を取得してポーリング
-            if (!locationTcs.Task.IsCompletedSuccessfully)
-                throw new InvalidOperationException(
-                    $"Copy API から Monitor URL が取得できませんでした: SourceId={sourceItemId}");
-
-            var monitorUrl = await locationTcs.Task.ConfigureAwait(false);
-            if (string.IsNullOrEmpty(monitorUrl))
-                throw new InvalidOperationException(
-                    $"Copy API の 202 レスポンスに Location ヘッダーがありません: SourceId={sourceItemId}");
-
-            _logger.LogDebug("サーバーサイドコピー開始: SourceId={SourceId} → {FileName}, MonitorUrl={Url}",
-                sourceItemId, fileName, monitorUrl);
-
-            await PollCopyOperationAsync(monitorUrl, sourceItemId, fileName, ct).ConfigureAwait(false);
-        }
-        finally
+        // 同期完了（200 OK で DriveItem が返った）場合はそのまま終了
+        if (copyResult is not null)
         {
-            // TrySetResult は冪等。既に Handler が設定済みの場合は no-op。
-            locationTcs.TrySetResult(null);
+            _logger.LogDebug("サーバーサイドコピー即時完了: SourceId={SourceId} → {FileName}", sourceItemId, fileName);
+            return;
         }
+
+        // 非同期コピー（202 Accepted）: Monitor URL を取得してポーリング
+        if (!locationTcs.Task.IsCompletedSuccessfully)
+            throw new InvalidOperationException(
+                $"Copy API から Monitor URL が取得できませんでした: SourceId={sourceItemId}");
+
+        var monitorUrl = await locationTcs.Task.ConfigureAwait(false);
+        if (string.IsNullOrEmpty(monitorUrl))
+            throw new InvalidOperationException(
+                $"Copy API の 202 レスポンスに Location ヘッダーがありません: SourceId={sourceItemId}");
+
+        _logger.LogDebug("サーバーサイドコピー開始: SourceId={SourceId} → {FileName}, MonitorUrl={Url}",
+            sourceItemId, fileName, monitorUrl);
+
+        await PollCopyOperationAsync(monitorUrl, sourceItemId, fileName, ct).ConfigureAwait(false);
     }
 
     /// <summary>

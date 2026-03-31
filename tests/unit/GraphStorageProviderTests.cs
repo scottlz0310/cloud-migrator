@@ -1,5 +1,6 @@
 using CloudMigrator.Providers.Abstractions;
 using CloudMigrator.Providers.Graph;
+using CloudMigrator.Providers.Graph.Http;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
@@ -137,6 +138,78 @@ public class GraphStorageProviderTests
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldThrowNotSupported_WhenCaptureHandlerIsMissing()
+    {
+        var provider = CreateProvider();
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*CopyLocationCaptureHandler*");
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldThrowInvalidOperation_WhenSharePointDriveIdIsMissing()
+    {
+        var (_, client) = CreateServerSideCopyMockClient(new DriveItem { Id = "copied-item" });
+        var provider = new GraphStorageProvider(
+            client,
+            _mockLogger.Object,
+            new GraphStorageOptions { OneDriveUserId = "user1" },
+            copyLocationCapture: new CopyLocationCaptureHandler());
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*SharePointDriveId*");
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldComplete_WhenCopyReturnsDriveItemImmediately()
+    {
+        var (mockAdapter, client) = CreateServerSideCopyMockClient(new DriveItem { Id = "copied-item" });
+        var provider = new GraphStorageProvider(
+            client,
+            _mockLogger.Object,
+            new GraphStorageOptions
+            {
+                OneDriveUserId = "user1",
+                SharePointDriveId = "sharepoint-drive",
+            },
+            copyLocationCapture: new CopyLocationCaptureHandler());
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        mockAdapter.Verify(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldThrow_WhenMonitorUrlIsNotCaptured()
+    {
+        var (_, client) = CreateServerSideCopyMockClient(copyResponse: null);
+        var provider = new GraphStorageProvider(
+            client,
+            _mockLogger.Object,
+            new GraphStorageOptions
+            {
+                OneDriveUserId = "user1",
+                SharePointDriveId = "sharepoint-drive",
+            },
+            copyLocationCapture: new CopyLocationCaptureHandler());
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Monitor URL*");
+    }
+
     // ── Phase 3 クロール挙動テスト ─────────────────────────────────────
 
     private static (Mock<IRequestAdapter> adapter, GraphServiceClient client) CreateMockClient(
@@ -165,6 +238,36 @@ public class GraphStorageProviderTests
             .ReturnsAsync((DriveItemCollectionResponse?)null)
             .ReturnsAsync((DriveItemCollectionResponse?)null)
             .ReturnsAsync((DriveItemCollectionResponse?)null);
+
+        return (mockAdapter, new GraphServiceClient(mockAdapter.Object));
+    }
+
+    private static (Mock<IRequestAdapter> adapter, GraphServiceClient client) CreateServerSideCopyMockClient(
+        DriveItem? copyResponse)
+    {
+        var mockWriter = new Mock<ISerializationWriter>();
+        mockWriter.Setup(w => w.GetSerializedContent()).Returns(new MemoryStream());
+
+        var mockWriterFactory = new Mock<ISerializationWriterFactory>();
+        mockWriterFactory
+            .Setup(f => f.GetSerializationWriter(It.IsAny<string>()))
+            .Returns(mockWriter.Object);
+
+        var mockAdapter = new Mock<IRequestAdapter>();
+        mockAdapter.Setup(a => a.SerializationWriterFactory).Returns(mockWriterFactory.Object);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        mockAdapter.Setup(a => a.SendAsync(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<Drive>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Drive { Id = "source-drive-id" });
+        mockAdapter.Setup(a => a.SendAsync(
+                It.Is<RequestInformation>(r => r.HttpMethod == Method.POST),
+                It.IsAny<ParsableFactory<DriveItem>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(copyResponse);
 
         return (mockAdapter, new GraphServiceClient(mockAdapter.Object));
     }

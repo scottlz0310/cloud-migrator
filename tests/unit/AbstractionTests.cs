@@ -81,3 +81,37 @@ public class TransferJobTests
         job.DestinationFullPath.Should().Be("/target/readme.md");
     }
 }
+
+public class StorageProviderDefaultMethodTests
+{
+    [Fact]
+    public async Task ServerSideCopyAsync_DefaultImplementation_ShouldThrowNotSupported()
+    {
+        IStorageProvider provider = new StubStorageProvider();
+
+        var act = async () => await provider.ServerSideCopyAsync("src-1", "docs", "file.txt");
+
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*stub*");
+    }
+
+    private sealed class StubStorageProvider : IStorageProvider
+    {
+        public string ProviderId => "stub";
+
+        public Task<IReadOnlyList<StorageItem>> ListItemsAsync(string rootPath, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<StorageItem>>([]);
+
+        public Task<string> DownloadToTempAsync(StorageItem item, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Path.GetTempFileName());
+
+        public Task UploadFromLocalAsync(string localFilePath, long fileSizeBytes, string destinationFullPath, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task UploadFileAsync(TransferJob job, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task EnsureFolderAsync(string folderPath, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+}

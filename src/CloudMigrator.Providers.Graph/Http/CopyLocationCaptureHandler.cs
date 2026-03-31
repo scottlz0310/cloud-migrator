@@ -3,47 +3,55 @@ using System.Net;
 namespace CloudMigrator.Providers.Graph.Http;
 
 /// <summary>
-/// Graph API /copy エンドポイントへの POST に対する 202 レスポンスから
-/// Location ヘッダー（Monitor URL）を捕捉する <see cref="DelegatingHandler"/>。
-/// <para>
-/// <see cref="BeginCapture"/> を呼び出した非同期コンテキストと、そこから派生するすべての
-/// 子コンテキスト（Kiota SDK 内の HTTP 呼び出しチェーンを含む）で値が共有される
-/// <see cref="AsyncLocal{T}"/> を利用することで、並列コピー操作ごとに安全に相関させる。
-/// </para>
+/// Captures the monitor URL returned by Graph /copy 202 responses.
 /// </summary>
 public sealed class CopyLocationCaptureHandler : DelegatingHandler
 {
     private static readonly AsyncLocal<TaskCompletionSource<string?>?> s_tcs = new();
 
     /// <summary>
-    /// 呼び出し元の非同期コンテキストに Monitor URL 捕捉用 TCS を設定し、その TCS を返す。
-    /// 直後に <c>Copy.PostAsync</c> を呼び出すことで、202 レスポンスの Location ヘッダーが
-    /// TCS に格納される。
+    /// Registers a capture slot for the current async flow.
     /// </summary>
-    internal static TaskCompletionSource<string?> BeginCapture()  // internal: GraphStorageProvider のみが呼び出す
+    internal static CaptureScope BeginCapture()
     {
-        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        s_tcs.Value = tcs;
-        return tcs;
+        var previous = s_tcs.Value;
+        var taskSource = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        s_tcs.Value = taskSource;
+        return new CaptureScope(previous, taskSource);
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-        // /copy エンドポイントへの POST で 202 Accepted が返った場合のみ Location を捕捉する
         if (response.StatusCode == HttpStatusCode.Accepted
             && request.Method == HttpMethod.Post
             && (request.RequestUri?.AbsolutePath.EndsWith("/copy", StringComparison.OrdinalIgnoreCase) ?? false)
-            && s_tcs.Value is { } tcs)
+            && s_tcs.Value is { } taskSource)
         {
-            tcs.TrySetResult(response.Headers.Location?.ToString());
-            // 捕捉後は AsyncLocal 上の TCS 参照をクリアし、同一コンテキストでの誤相関と不要なメモリ保持を防ぐ
+            taskSource.TrySetResult(response.Headers.Location?.ToString());
             s_tcs.Value = null;
         }
 
         return response;
+    }
+
+    internal sealed class CaptureScope(TaskCompletionSource<string?>? previous, TaskCompletionSource<string?> taskSource) : IDisposable
+    {
+        private bool _disposed;
+
+        internal TaskCompletionSource<string?> TaskSource { get; } = taskSource;
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            TaskSource.TrySetResult(null);
+            s_tcs.Value = previous;
+        }
     }
 }
