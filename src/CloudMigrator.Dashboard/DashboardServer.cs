@@ -1,6 +1,7 @@
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,19 +21,37 @@ public static class DashboardServer
     /// </summary>
     public static async Task RunAsync(string dbPath, int port, CancellationToken ct)
     {
+        // SqliteTransferStateDb は DI に渡すが、インスタンスを外部から渡す場合は
+        // DI コンテナが DisposeAsync を呼ばないため finally で明示的に解放する。
+        var db = new SqliteTransferStateDb(dbPath);
+        await db.InitializeAsync(ct).ConfigureAwait(false);
+        var app = BuildApp(db);
+        app.Urls.Add($"http://localhost:{port}");
+        try
+        {
+            await app.RunAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await db.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 全エンドポイントをマップした <see cref="WebApplication"/> を生成する。
+    /// <paramref name="configureWebHost"/> に <c>wb =&gt; wb.UseTestServer()</c> を渡すと
+    /// インプロセスの TestServer として使用できる（単体テスト向け）。
+    /// </summary>
+    internal static WebApplication BuildApp(
+        ITransferStateDb db,
+        Action<IWebHostBuilder>? configureWebHost = null)
+    {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
-
-        // ITransferStateDb を DI コンテナに登録する。
-        // テストや将来の DB 差し替えはここを変更するだけで対応できる。
-        builder.Services.AddSingleton<ITransferStateDb>(_ => new SqliteTransferStateDb(dbPath));
+        builder.Services.AddSingleton(db);
+        configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
-        app.Urls.Add($"http://localhost:{port}");
-
-        // 起動時に 1 回だけスキーマ初期化（IDisposable はホスト停止時に解放される）
-        var db = app.Services.GetRequiredService<ITransferStateDb>();
-        await db.InitializeAsync(ct).ConfigureAwait(false);
 
         // ── API エンドポイント ────────────────────────────────────────────────
 
@@ -97,7 +116,7 @@ public static class DashboardServer
         // GET /  → ダッシュボード HTML
         app.MapGet("/", () => Results.Content(IndexHtml, "text/html; charset=utf-8"));
 
-        await app.RunAsync(ct).ConfigureAwait(false);
+        return app;
     }
 
     // ── インライン HTML（Chart.js CDN 使用） ──────────────────────────────────
@@ -255,11 +274,12 @@ public static class DashboardServer
             const POLL_INTERVAL = 5000; // ms
             const MAX_HISTORY = 60;     // 直近 5 分分（5s × 60）
 
-            let latestFilesPerMin = 0;  // 最新スループット（ETA 計算用）
-            let completedAt   = null;   // 完了検出時刻（一度だけセット）
-            let lastPhaseData = null;   // 最新フェーズデータ（サマリー用）
-            let peakFilesPerMin = 0;    // ピーク スループット（files/min）
-            let peakBytesPerSec = 0;    // ピーク スループット（bytes/sec）
+            let latestFilesPerMin = 0;   // 最新スループット（ETA 計算用）
+            let completedAt    = null;   // 完了検出時刻（一度だけセット）
+            let lastPhaseData  = null;   // 最新フェーズデータ（サマリー用）
+            let peakFilesPerMin = 0;     // ピーク スループット（files/min）
+            let peakBytesPerSec = 0;     // ピーク スループット（bytes/sec）
+            let pipelineStartedAt = null; // パイプライン開始時刻（全期間カバーのメトリクス取得用）
 
             function fmtDuration(sec) {
               sec = Math.round(sec);
@@ -511,6 +531,7 @@ public static class DashboardServer
 
               // 経過時間（pipeline_started_at checkpoint 優先、なければ firstUpdatedAt を代用）
               const startedAt = s.pipelineStartedAt ?? s.firstUpdatedAt;
+              if (startedAt && !pipelineStartedAt) pipelineStartedAt = startedAt;
               if (startedAt) {
                 const elapsedSec = (Date.now() - new Date(startedAt).getTime()) / 1000;
                 document.getElementById('c-elapsed').textContent = fmtDuration(elapsedSec);
@@ -526,7 +547,10 @@ public static class DashboardServer
 
               // 完了検出：pending/processing がゼロかつ 1 件以上完了
               const allDone = s.pending === 0 && s.processing === 0 && s.done > 0;
-              if (allDone && !completedAt) completedAt = new Date();
+              if (allDone && !completedAt) {
+                // 完了確定時刻はサーバー由来の lastUpdatedAt を優先し、なければクライアント時刻を使用
+                completedAt = s.lastUpdatedAt ? new Date(s.lastUpdatedAt) : new Date();
+              }
               if (completedAt) {
                 showCompletionSummary(s);
                 // フェーズバッジを「移行完了」に固定
@@ -538,11 +562,16 @@ public static class DashboardServer
             }
 
             async function refreshMetrics() {
+              // パイプライン開始から全期間をカバーする分数（最低 60 分）
+              // 60 分を超える移行でピーク値が欠落するのを防ぐための動的計算
+              const minsElapsed = pipelineStartedAt
+                ? Math.ceil((Date.now() - new Date(pipelineStartedAt).getTime()) / 60000) + 10 : 60;
+              const metricsMinutes = Math.max(60, minsElapsed);
               const [rlRes, filesRes, bytesRes, parallelRes] = await Promise.all([
-                fetch('/api/metrics?name=rate_limit_pct&minutes=60'),
-                fetch('/api/metrics?name=throughput_files_per_min&minutes=60'),
-                fetch('/api/metrics?name=throughput_bytes_per_sec&minutes=60'),
-                fetch('/api/metrics?name=current_parallelism&minutes=60'),
+                fetch(`/api/metrics?name=rate_limit_pct&minutes=${metricsMinutes}`),
+                fetch(`/api/metrics?name=throughput_files_per_min&minutes=${metricsMinutes}`),
+                fetch(`/api/metrics?name=throughput_bytes_per_sec&minutes=${metricsMinutes}`),
+                fetch(`/api/metrics?name=current_parallelism&minutes=${metricsMinutes}`),
               ]);
               if (rlRes.ok) {
                 const data = await rlRes.json();
