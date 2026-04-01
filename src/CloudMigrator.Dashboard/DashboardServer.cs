@@ -1,6 +1,7 @@
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,19 +21,37 @@ public static class DashboardServer
     /// </summary>
     public static async Task RunAsync(string dbPath, int port, CancellationToken ct)
     {
+        // SqliteTransferStateDb は DI に渡すが、インスタンスを外部から渡す場合は
+        // DI コンテナが DisposeAsync を呼ばないため finally で明示的に解放する。
+        var db = new SqliteTransferStateDb(dbPath);
+        await db.InitializeAsync(ct).ConfigureAwait(false);
+        var app = BuildApp(db);
+        app.Urls.Add($"http://localhost:{port}");
+        try
+        {
+            await app.RunAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await db.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 全エンドポイントをマップした <see cref="WebApplication"/> を生成する。
+    /// <paramref name="configureWebHost"/> に <c>wb =&gt; wb.UseTestServer()</c> を渡すと
+    /// インプロセスの TestServer として使用できる（単体テスト向け）。
+    /// </summary>
+    internal static WebApplication BuildApp(
+        ITransferStateDb db,
+        Action<IWebHostBuilder>? configureWebHost = null)
+    {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
-
-        // ITransferStateDb を DI コンテナに登録する。
-        // テストや将来の DB 差し替えはここを変更するだけで対応できる。
-        builder.Services.AddSingleton<ITransferStateDb>(_ => new SqliteTransferStateDb(dbPath));
+        builder.Services.AddSingleton(db);
+        configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
-        app.Urls.Add($"http://localhost:{port}");
-
-        // 起動時に 1 回だけスキーマ初期化（IDisposable はホスト停止時に解放される）
-        var db = app.Services.GetRequiredService<ITransferStateDb>();
-        await db.InitializeAsync(ct).ConfigureAwait(false);
 
         // ── API エンドポイント ────────────────────────────────────────────────
 
@@ -97,7 +116,7 @@ public static class DashboardServer
         // GET /  → ダッシュボード HTML
         app.MapGet("/", () => Results.Content(IndexHtml, "text/html; charset=utf-8"));
 
-        await app.RunAsync(ct).ConfigureAwait(false);
+        return app;
     }
 
     // ── インライン HTML（Chart.js CDN 使用） ──────────────────────────────────
@@ -148,6 +167,18 @@ public static class DashboardServer
             .card.parallel .value { color: #fb923c; }
             .card.retries .value { color: #f59e0b; }
             .card.text-sm .value { font-size: 1.4rem; }
+            /* 完了サマリー */
+            .completion-summary { background: linear-gradient(135deg, #0a1f0e 0%, #1a1a2e 100%); border-radius: 12px; padding: 20px 24px; border: 2px solid #22c55e; }
+            .completion-header { display: flex; align-items: center; gap: 10px; font-size: 1.15rem; font-weight: 700; color: #22c55e; margin-bottom: 16px; flex-wrap: wrap; }
+            .completion-header .cs-time { margin-left: auto; font-size: .75rem; color: #888; font-weight: 400; }
+            .cs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 12px; }
+            .cs-item { background: rgba(0,0,0,.35); border-radius: 8px; padding: 12px 14px; border: 1px solid #2a2a4a; }
+            .cs-item .cs-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: #888; margin-bottom: 6px; }
+            .cs-item .cs-value { font-size: 1.4rem; font-weight: 700; color: #e2e2e5; line-height: 1.2; }
+            .cs-item .cs-value.success { color: #22c55e; }
+            .cs-item .cs-value.warn    { color: #f59e0b; }
+            .cs-item .cs-value.danger  { color: #ef4444; }
+            .phase-badge.completed { background: #0d9488; }
           </style>
         </head>
         <body>
@@ -188,6 +219,28 @@ public static class DashboardServer
               <div class="bar-label" id="folderProgressLabel">0 / —</div>
             </section>
 
+            <!-- 完了サマリー（移行完了時のみ表示） -->
+            <section class="completion-summary" id="completionSummary" style="display:none">
+              <div class="completion-header">
+                <span>&#10003; 移行完了</span>
+                <span class="cs-time" id="cs-completedAt"></span>
+              </div>
+              <div class="cs-grid">
+                <div class="cs-item"><div class="cs-label">完了ファイル数</div><div class="cs-value success" id="cs-done">—</div></div>
+                <div class="cs-item"><div class="cs-label">失敗ファイル数</div><div class="cs-value" id="cs-failed">—</div></div>
+                <div class="cs-item"><div class="cs-label">転送データ量</div><div class="cs-value" id="cs-bytes">—</div></div>
+                <div class="cs-item"><div class="cs-label">作成フォルダ数</div><div class="cs-value" id="cs-folders">—</div></div>
+                <div class="cs-item"><div class="cs-label">総所要時間</div><div class="cs-value" id="cs-elapsed">—</div></div>
+                <div class="cs-item"><div class="cs-label">平均スループット</div><div class="cs-value" id="cs-avg-fps">—</div></div>
+                <div class="cs-item"><div class="cs-label">平均転送速度</div><div class="cs-value" id="cs-avg-bps">—</div></div>
+                <div class="cs-item"><div class="cs-label">ピーク スループット</div><div class="cs-value" id="cs-peak-fps">—</div></div>
+                <div class="cs-item"><div class="cs-label">ピーク 転送速度</div><div class="cs-value" id="cs-peak-bps">—</div></div>
+                <div class="cs-item"><div class="cs-label">リトライ総数</div><div class="cs-value" id="cs-retries">—</div></div>
+                <div class="cs-item"><div class="cs-label">エラー率</div><div class="cs-value" id="cs-errrate">—</div></div>
+                <div class="cs-item"><div class="cs-label">平均ファイルサイズ</div><div class="cs-value" id="cs-avgsize">—</div></div>
+              </div>
+            </section>
+
             <section class="charts">
               <div class="chart-box">
                 <h2>完了推移（直近ポーリング履歴）</h2>
@@ -221,7 +274,12 @@ public static class DashboardServer
             const POLL_INTERVAL = 5000; // ms
             const MAX_HISTORY = 60;     // 直近 5 分分（5s × 60）
 
-            let latestFilesPerMin = 0;  // 最新スループット（ETA 計算用）
+            let latestFilesPerMin = 0;   // 最新スループット（ETA 計算用）
+            let completedAt    = null;   // 完了検出時刻（一度だけセット）
+            let lastPhaseData  = null;   // 最新フェーズデータ（サマリー用）
+            let peakFilesPerMin = 0;     // ピーク スループット（files/min）
+            let peakBytesPerSec = 0;     // ピーク スループット（bytes/sec）
+            let pipelineStartedAt = null; // パイプライン開始時刻（全期間カバーのメトリクス取得用）
 
             function fmtDuration(sec) {
               sec = Math.round(sec);
@@ -308,6 +366,68 @@ public static class DashboardServer
               if (n < 1024) return n.toFixed(0) + ' B/s';
               if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB/s';
               return (n / (1024 * 1024)).toFixed(1) + ' MB/s';
+            }
+
+            function showCompletionSummary(s) {
+              document.getElementById('completionSummary').style.display = '';
+
+              // 完了日時
+              document.getElementById('cs-completedAt').textContent =
+                completedAt ? completedAt.toLocaleString('ja-JP') : '';
+
+              // 完了ファイル数
+              document.getElementById('cs-done').textContent = fmt(s.done);
+
+              // 失敗ファイル数
+              const failedCount = (s.failed ?? 0) + (s.permanentFailed ?? 0);
+              const failedEl = document.getElementById('cs-failed');
+              failedEl.textContent = fmt(failedCount);
+              failedEl.className = 'cs-value ' + (failedCount > 0 ? 'danger' : 'success');
+
+              // 転送データ量
+              document.getElementById('cs-bytes').textContent = fmtBytes(s.totalDoneSizeBytes);
+
+              // 作成フォルダ数
+              document.getElementById('cs-folders').textContent = fmt(lastPhaseData?.folderDone ?? 0);
+
+              // 総所要時間と平均スループット
+              const startedAt = s.pipelineStartedAt ?? s.firstUpdatedAt;
+              let elapsedSec = null;
+              if (startedAt && completedAt) {
+                elapsedSec = (completedAt.getTime() - new Date(startedAt).getTime()) / 1000;
+                document.getElementById('cs-elapsed').textContent = fmtDuration(elapsedSec);
+              } else {
+                document.getElementById('cs-elapsed').textContent = '—';
+              }
+              if (elapsedSec && elapsedSec > 0 && s.done > 0) {
+                document.getElementById('cs-avg-fps').textContent =
+                  (s.done / (elapsedSec / 60)).toFixed(1) + ' f/m';
+                document.getElementById('cs-avg-bps').textContent =
+                  fmtBytesPerSec(s.totalDoneSizeBytes / elapsedSec);
+              } else {
+                document.getElementById('cs-avg-fps').textContent = '—';
+                document.getElementById('cs-avg-bps').textContent = '—';
+              }
+
+              // ピークスループット
+              document.getElementById('cs-peak-fps').textContent =
+                peakFilesPerMin > 0 ? peakFilesPerMin.toFixed(1) + ' f/m' : '—';
+              document.getElementById('cs-peak-bps').textContent =
+                peakBytesPerSec > 0 ? fmtBytesPerSec(peakBytesPerSec) : '—';
+
+              // リトライ総数
+              document.getElementById('cs-retries').textContent = fmt(s.totalRetries ?? 0);
+
+              // エラー率
+              const total = s.done + failedCount;
+              const errRate = total > 0 ? (failedCount / total * 100) : 0;
+              const errEl = document.getElementById('cs-errrate');
+              errEl.textContent = errRate.toFixed(2) + '%';
+              errEl.className = 'cs-value ' + (errRate > 5 ? 'danger' : errRate > 0 ? 'warn' : 'success');
+
+              // 平均ファイルサイズ
+              document.getElementById('cs-avgsize').textContent =
+                s.done > 0 ? fmtBytes(Math.round(s.totalDoneSizeBytes / s.done)) : '—';
             }
 
             const bytesChart = new Chart(document.getElementById('bytesChart'), {
@@ -411,6 +531,7 @@ public static class DashboardServer
 
               // 経過時間（pipeline_started_at checkpoint 優先、なければ firstUpdatedAt を代用）
               const startedAt = s.pipelineStartedAt ?? s.firstUpdatedAt;
+              if (startedAt && !pipelineStartedAt) pipelineStartedAt = startedAt;
               if (startedAt) {
                 const elapsedSec = (Date.now() - new Date(startedAt).getTime()) / 1000;
                 document.getElementById('c-elapsed').textContent = fmtDuration(elapsedSec);
@@ -423,14 +544,34 @@ public static class DashboardServer
               } else {
                 document.getElementById('c-eta').textContent = remaining === 0 ? '完了' : '—';
               }
+
+              // 完了検出：pending/processing がゼロかつ 1 件以上完了
+              const allDone = s.pending === 0 && s.processing === 0 && s.done > 0;
+              if (allDone && !completedAt) {
+                // 完了確定時刻はサーバー由来の lastUpdatedAt を優先し、なければクライアント時刻を使用
+                completedAt = s.lastUpdatedAt ? new Date(s.lastUpdatedAt) : new Date();
+              }
+              if (completedAt) {
+                showCompletionSummary(s);
+                // フェーズバッジを「移行完了」に固定
+                const badge = document.getElementById('phaseBadge');
+                badge.className  = 'phase-badge completed';
+                badge.textContent = '移行完了';
+                badge.style.display = 'inline';
+              }
             }
 
             async function refreshMetrics() {
+              // パイプライン開始から全期間をカバーする分数（最低 60 分）
+              // 60 分を超える移行でピーク値が欠落するのを防ぐための動的計算
+              const minsElapsed = pipelineStartedAt
+                ? Math.ceil((Date.now() - new Date(pipelineStartedAt).getTime()) / 60000) + 10 : 60;
+              const metricsMinutes = Math.max(60, minsElapsed);
               const [rlRes, filesRes, bytesRes, parallelRes] = await Promise.all([
-                fetch('/api/metrics?name=rate_limit_pct&minutes=60'),
-                fetch('/api/metrics?name=throughput_files_per_min&minutes=60'),
-                fetch('/api/metrics?name=throughput_bytes_per_sec&minutes=60'),
-                fetch('/api/metrics?name=current_parallelism&minutes=60'),
+                fetch(`/api/metrics?name=rate_limit_pct&minutes=${metricsMinutes}`),
+                fetch(`/api/metrics?name=throughput_files_per_min&minutes=${metricsMinutes}`),
+                fetch(`/api/metrics?name=throughput_bytes_per_sec&minutes=${metricsMinutes}`),
+                fetch(`/api/metrics?name=current_parallelism&minutes=${metricsMinutes}`),
               ]);
               if (rlRes.ok) {
                 const data = await rlRes.json();
@@ -447,6 +588,7 @@ public static class DashboardServer
                   filesChart.data.datasets[0].data = data.map(p => p.value);
                   filesChart.update();
                   latestFilesPerMin = data[data.length - 1].value;
+                  peakFilesPerMin = Math.max(peakFilesPerMin, ...data.map(p => p.value));
                 }
               }
               if (bytesRes.ok) {
@@ -455,6 +597,7 @@ public static class DashboardServer
                   bytesChart.data.labels = data.map(p => fmtTime(p.timestamp));
                   bytesChart.data.datasets[0].data = data.map(p => p.value);
                   bytesChart.update();
+                  peakBytesPerSec = Math.max(peakBytesPerSec, ...data.map(p => p.value));
                 }
               }
               if (parallelRes.ok) {
@@ -478,12 +621,15 @@ public static class DashboardServer
               const res = await fetch('/api/phase');
               if (!res.ok) return;
               const p = await res.json();
+              lastPhaseData = p; // サマリー（作成フォルダ数）の参照用にキャッシュ
 
-              // フェーズバッジ更新
-              const badge = document.getElementById('phaseBadge');
-              badge.className = 'phase-badge ' + p.phase;
-              badge.textContent = phaseLabels[p.phase] ?? p.phase;
-              badge.style.display = 'inline';
+              // フェーズバッジ更新（完了済みの場合は refreshStatus 側で上書き済みのため skip）
+              if (!completedAt) {
+                const badge = document.getElementById('phaseBadge');
+                badge.className = 'phase-badge ' + p.phase;
+                badge.textContent = phaseLabels[p.phase] ?? p.phase;
+                badge.style.display = 'inline';
+              }
 
               // フォルダ作成進捗セクション（folder_creation フェーズのみ表示）
               const folderSection = document.getElementById('folderProgressSection');
