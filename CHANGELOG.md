@@ -18,12 +18,6 @@
   - `TransferJobServiceTests.cs` (8 テスト): 排他制御・状態遷移（Completed/Failed/Cancelled）・セマフォ解放
   - `DashboardServerTests.cs` に `POST /api/transfer/start`・`GET /api/transfer/{id}` テスト 4 件追加
 
-### Changed
-- `DashboardServer.BuildApp()` の第 4 引数に `ITransferJobService? jobService = null` を追加
-  - `jobService` 未指定時は `TransferJobService` を自動生成・登録
-  - 既存の呼び出しとの後方互換あり
-- ダッシュボードタブ: 「監視」「設定」に「実行」を追加（3 タブ構成）
-
 - **Studio Ph-1: `GET /api/config` / `PUT /api/config` エンドポイント実装** (Issue #81)
   - `ConfigurationService` 新設: `config.json` の読み書き・シークレット除外・マージ保存をカプセル化
   - `GET /api/config`: シークレットを除外した設定 JSON を返す
@@ -39,6 +33,10 @@
   - ブランド名を「Dashboard」→「Studio」へ更新
 
 ### Changed
+- `DashboardServer.BuildApp()` の第 4 引数に `ITransferJobService? jobService = null` を追加
+  - `jobService` 未指定時は `TransferJobService` を自動生成・登録
+  - 既存の呼び出しとの後方互換あり
+- ダッシュボードタブ: 「監視」「設定」に「実行」を追加（3 タブ構成）
 - `DashboardServer.BuildApp()` の第3引数に `IConfigurationService? configService = null` を追加
   - `configService` 未指定時は `ConfigurationService` を自動生成・登録（/api/config の常に安全な稼働を保証）
   - 既存の呼び出しとの後方互換あり

@@ -54,10 +54,10 @@ public static class DashboardServer
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
         builder.Services.AddSingleton(db);
-        // configService 未指定時は既定実装を生成し登録（/api/config の定常稼備を保証）
+        // configService 未指定時は既定実装を生成し登録（/api/config の定常稼働を保証）
         var resolvedConfigService = configService ?? new ConfigurationService();
         builder.Services.AddSingleton<IConfigurationService>(resolvedConfigService);
-        // jobService 未指定時は既定実装を生成し登録（/api/transfer/* の定常稼備を保証）
+        // jobService 未指定時は既定実装を生成し登録（/api/transfer/* の定常稼働を保証）
         var resolvedJobService = jobService ?? new TransferJobService();
         builder.Services.AddSingleton<ITransferJobService>(resolvedJobService);
         configureWebHost?.Invoke(builder.WebHost);
