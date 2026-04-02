@@ -27,7 +27,8 @@ public static class DashboardServer
         var db = new SqliteTransferStateDb(dbPath);
         await db.InitializeAsync(ct).ConfigureAwait(false);
         var configService = new ConfigurationService();
-        var app = BuildApp(db, configService: configService);
+        var jobService = new TransferJobService();
+        var app = BuildApp(db, configService: configService, jobService: jobService);
         app.Urls.Add($"http://localhost:{port}");
         try
         {
@@ -47,7 +48,8 @@ public static class DashboardServer
     internal static WebApplication BuildApp(
         ITransferStateDb db,
         Action<IWebHostBuilder>? configureWebHost = null,
-        IConfigurationService? configService = null)
+        IConfigurationService? configService = null,
+        ITransferJobService? jobService = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
@@ -55,6 +57,9 @@ public static class DashboardServer
         // configService 未指定時は既定実装を生成し登録（/api/config の定常稼備を保証）
         var resolvedConfigService = configService ?? new ConfigurationService();
         builder.Services.AddSingleton<IConfigurationService>(resolvedConfigService);
+        // jobService 未指定時は既定実装を生成し登録（/api/transfer/* の定常稼備を保証）
+        var resolvedJobService = jobService ?? new TransferJobService();
+        builder.Services.AddSingleton<ITransferJobService>(resolvedJobService);
         configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
@@ -156,6 +161,33 @@ public static class DashboardServer
 
             await svc.UpdateConfigAsync(update, ctx.RequestAborted).ConfigureAwait(false);
             return Results.Ok();
+        });
+
+        // POST /api/transfer/start  → 転送ジョブ開始（202 Accepted or 409 Conflict）
+        app.MapPost("/api/transfer/start", async (ITransferJobService jobSvc, CancellationToken cancellationToken) =>
+        {
+            var job = await jobSvc.TryStartAsync(cancellationToken).ConfigureAwait(false);
+            if (job is null)
+                return Results.Conflict("転送ジョブがすでに実行中です。");
+            return Results.Accepted(
+                $"/api/transfer/{job.JobId}",
+                new { jobId = job.JobId, status = job.Status.ToString() });
+        });
+
+        // GET /api/transfer/{id}  → ジョブ状態取得（200 OK or 404 NotFound）
+        app.MapGet("/api/transfer/{id}", (string id, ITransferJobService jobSvc) =>
+        {
+            var job = jobSvc.GetJob(id);
+            if (job is null)
+                return Results.NotFound();
+            return Results.Ok(new
+            {
+                jobId = job.JobId,
+                status = job.Status.ToString(),
+                startedAt = job.StartedAt,
+                completedAt = job.CompletedAt,
+                errorMessage = job.ErrorMessage,
+            });
         });
 
         // GET /  → ダッシュボード HTML
@@ -299,6 +331,25 @@ public static class DashboardServer
             .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 10px; font-size: .85rem; z-index: 9999; pointer-events: none; }
             .toast.success { background: #14532d; color: #86efac; border: 1px solid #16a34a; }
             .toast.error { background: #450a0a; color: #fca5a5; border: 1px solid #b91c1c; }
+            /* 実行タブ */
+            .run-section { background: #1a1a2e; border-radius: 12px; padding: 24px; border: 1px solid #2a2a4a; }
+            .btn-start { background: #16a34a; border: none; color: #fff; padding: 10px 28px; border-radius: 8px; cursor: pointer; font-size: .95rem; font-weight: 600; transition: opacity .15s; }
+            .btn-start:disabled { opacity: .4; cursor: not-allowed; }
+            .btn-start:hover:not(:disabled) { opacity: .85; }
+            .status-panel { margin-top: 20px; border-radius: 10px; padding: 16px 20px; }
+            .pending-panel { background: #1c1f26; border: 1px solid #374151; color: #9ca3af; }
+            .running-panel { background: #0c1a2e; border: 1px solid #1d4ed8; color: #93c5fd; }
+            .completed-panel { background: #0a1f0e; border: 1px solid #16a34a; color: #86efac; font-weight: 600; }
+            .failed-panel { background: #1a0505; border: 1px solid #b91c1c; color: #fca5a5; }
+            .cancelled-panel { background: #1c1006; border: 1px solid #92400e; color: #fbbf24; }
+            .stop-guide { margin-top: 16px; background: #161616; border-radius: 8px; padding: 14px 16px; border: 1px solid #374151; }
+            .stop-guide p { font-size: .78rem; color: #f59e0b; margin-bottom: 10px; }
+            .stop-guide code { display: block; background: #0d0d0d; padding: 8px 12px; border-radius: 6px; color: #86efac; font-size: .85rem; font-family: 'Cascadia Code', Consolas, monospace; letter-spacing: .03em; user-select: all; }
+            .run-elapsed { font-size: .78rem; color: #60a5fa; margin-top: 6px; }
+            .error-detail { font-size: .78rem; margin-top: 8px; color: #fca5a5; }
+            @keyframes spin { to { transform: rotate(360deg); } }
+            .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #374151; border-top-color: #60a5fa; border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; margin-right: 6px; }
+            .run-progress { color: #e2e2e5; font-size: .9rem; }
           </style>
         </head>
         <body x-data="{ tab: 'monitor' }">
@@ -308,6 +359,7 @@ public static class DashboardServer
             <span class="phase-badge" id="phaseBadge" x-show="tab === 'monitor'"></span>
             <nav class="tabs">
               <button class="tab-btn" :class="tab === 'monitor' ? 'active' : ''" @click="tab='monitor'">&#128202; 監視</button>
+              <button class="tab-btn" :class="tab === 'run' ? 'active' : ''" @click="tab='run'">&#9654;&#65039; 実行</button>
               <button class="tab-btn" :class="tab === 'config' ? 'active' : ''" @click="tab='config'">&#9881;&#65039; 設定</button>
             </nav>
             <span class="refresh-indicator" id="refreshTxt" x-show="tab === 'monitor'">次回更新まで 5s</span>
@@ -452,6 +504,65 @@ public static class DashboardServer
                     <span x-text="saving ? '保存中...' : '保存'"></span>
                   </button>
                   <span class="dirty-indicator" x-show="isDirty()">● 未保存の変更があります</span>
+                </div>
+              </section>
+            </main>
+            <div class="toast" x-show="toast !== null" :class="toast &amp;&amp; toast.type" x-text="toast &amp;&amp; toast.msg" style="display:none;"></div>
+          </div>
+
+          <!-- 実行タブ -->
+          <div x-show="tab === 'run'" x-data="runTab()" x-init="init()">
+            <main style="max-width:900px;margin:0 auto;padding:24px 16px;">
+              <section class="run-section">
+                <h3 class="config-group-title" style="margin-bottom:20px;">転送ジョブ制御</h3>
+
+                <div>
+                  <button class="btn-start" @click="start()" :disabled="starting || isRunning">
+                    <span x-text="starting ? '開始中...' : '転送を開始'"></span>
+                  </button>
+                  <span style="font-size:.78rem;color:#888;margin-left:14px;" x-show="isRunning &amp;&amp; !starting">転送中です。5秒ごとに状態を更新しています...</span>
+                </div>
+
+                <!-- ステータスパネル -->
+                <div x-show="jobId !== null" style="margin-top:22px;">
+
+                  <!-- Pending -->
+                  <div x-show="status === 'Pending'" class="status-panel pending-panel">
+                    <span class="spinner"></span>開始待機中...
+                    <div class="run-elapsed" x-show="startedAt">経過: <span x-text="elapsed"></span></div>
+                  </div>
+
+                  <!-- Running -->
+                  <div x-show="status === 'Running'" class="status-panel running-panel">
+                    <div class="run-progress">
+                      &#9654;&#65039; 転送実行中
+                      <div class="run-elapsed">経過: <span x-text="elapsed"></span></div>
+                    </div>
+                    <div class="stop-guide">
+                      <p>&#9888;&#65039; 転送を停止するには、別ターミナルで以下のコマンドを実行してください:</p>
+                      <code>dotnet run -- transfer --cancel</code>
+                    </div>
+                  </div>
+
+                  <!-- Completed -->
+                  <div x-show="status === 'Completed'" class="status-panel completed-panel">
+                    &#10003; 転送が完了しました
+                    <div class="run-elapsed" x-show="completedAt" x-text="completedAt ? '完了時刻: ' + new Date(completedAt).toLocaleString('ja-JP') : ''"></div>
+                    <div class="run-elapsed" x-show="elapsed !== '—'">所要時間: <span x-text="elapsed"></span></div>
+                  </div>
+
+                  <!-- Failed -->
+                  <div x-show="status === 'Failed'" class="status-panel failed-panel">
+                    &#10007; 転送が失敗しました
+                    <div class="error-detail" x-show="errorMessage" x-text="errorMessage"></div>
+                  </div>
+
+                  <!-- Cancelled -->
+                  <div x-show="status === 'Cancelled'" class="status-panel cancelled-panel">
+                    &#9632; 転送がキャンセルされました
+                    <div class="run-elapsed" x-show="completedAt" x-text="completedAt ? '停止時刻: ' + new Date(completedAt).toLocaleString('ja-JP') : ''"></div>
+                  </div>
+
                 </div>
               </section>
             </main>
@@ -924,6 +1035,114 @@ public static class DashboardServer
                     this.saving = false;
                   }
                 },
+                showToast(msg, type) {
+                  this.toast = { msg, type };
+                  setTimeout(() => { this.toast = null; }, 3500);
+                }
+              };
+            }
+
+            // 実行タブ Alpine.js コンポーネント
+            function runTab() {
+              return {
+                jobId: null,
+                status: null,
+                startedAt: null,
+                completedAt: null,
+                errorMessage: null,
+                starting: false,
+                pollTimer: null,
+                elapsed: '—',
+                elapsedTimer: null,
+                toast: null,
+
+                get isRunning() {
+                  return this.status === 'Pending' || this.status === 'Running';
+                },
+
+                async init() {
+                  // セッション中の jobId を復元してポーリング再開
+                  const saved = sessionStorage.getItem('transferJobId');
+                  if (saved) {
+                    this.jobId = saved;
+                    await this.fetchStatus();
+                    if (this.isRunning) this.startPolling();
+                  }
+                },
+
+                async start() {
+                  this.starting = true;
+                  try {
+                    const res = await fetch('/api/transfer/start', { method: 'POST' });
+                    if (res.status === 202) {
+                      const data = await res.json();
+                      this.jobId = data.jobId;
+                      this.status = data.status;
+                      this.startedAt = null;
+                      this.completedAt = null;
+                      this.errorMessage = null;
+                      this.elapsed = '—';
+                      sessionStorage.setItem('transferJobId', this.jobId);
+                      this.startPolling();
+                    } else if (res.status === 409) {
+                      this.showToast('転送ジョブがすでに実行中です。', 'error');
+                    } else {
+                      this.showToast('転送の開始に失敗しました。', 'error');
+                    }
+                  } catch (e) {
+                    this.showToast('エラー: ' + e.message, 'error');
+                  } finally {
+                    this.starting = false;
+                  }
+                },
+
+                async fetchStatus() {
+                  if (!this.jobId) return;
+                  try {
+                    const res = await fetch('/api/transfer/' + this.jobId);
+                    if (res.ok) {
+                      const data = await res.json();
+                      this.status = data.status;
+                      this.startedAt = data.startedAt;
+                      this.completedAt = data.completedAt;
+                      this.errorMessage = data.errorMessage;
+                      if (this.status === 'Completed' || this.status === 'Failed' || this.status === 'Cancelled') {
+                        this.stopPolling();
+                        this.updateElapsed();
+                      }
+                    } else if (res.status === 404) {
+                      this.stopPolling();
+                    }
+                  } catch (_) { /* ネットワークエラーは無視 */ }
+                },
+
+                startPolling() {
+                  this.stopPolling();
+                  this.pollTimer = setInterval(() => this.fetchStatus(), 5000);
+                  this.startElapsedTimer();
+                },
+
+                stopPolling() {
+                  if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+                  this.stopElapsedTimer();
+                },
+
+                startElapsedTimer() {
+                  this.stopElapsedTimer();
+                  this.elapsedTimer = setInterval(() => this.updateElapsed(), 1000);
+                },
+
+                stopElapsedTimer() {
+                  if (this.elapsedTimer) { clearInterval(this.elapsedTimer); this.elapsedTimer = null; }
+                },
+
+                updateElapsed() {
+                  if (!this.startedAt) return;
+                  const end = this.completedAt ? new Date(this.completedAt) : new Date();
+                  const sec = Math.round((end - new Date(this.startedAt)) / 1000);
+                  this.elapsed = fmtDuration(sec);
+                },
+
                 showToast(msg, type) {
                   this.toast = { msg, type };
                   setTimeout(() => { this.toast = null; }, 3500);
