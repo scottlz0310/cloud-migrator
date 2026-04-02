@@ -91,7 +91,9 @@ public sealed class TransferJobServiceTests
 
         var updated = service.GetJob(job!.JobId);
         updated!.Status.Should().Be(JobStatus.Failed);
-        updated.ErrorMessage.Should().Contain("テストエラー");
+        // errorMessage には汎用メッセージが設定される（内部例外の詳細は外部に漏らさない）
+        updated.ErrorMessage.Should().NotBeNullOrEmpty();
+        updated.ErrorMessage.Should().Be(JobErrorMessages.GenericFailure);
         updated.CompletedAt.Should().NotBeNull();
     }
 

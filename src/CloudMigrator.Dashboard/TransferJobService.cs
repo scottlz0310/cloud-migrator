@@ -3,6 +3,17 @@ using System.Collections.Concurrent;
 namespace CloudMigrator.Dashboard;
 
 /// <summary>
+/// ジョブエラー時にクライアントへ返す汎用メッセージ定数。
+/// 内部例外の詳細（パス・URL 等）を外部に漏らさないよう、
+/// すべての失敗ケースでこの汎用文言を使用する。
+/// 詳細は Phase 5 でロガー注入後にサーバーログへ記録する。
+/// </summary>
+internal static class JobErrorMessages
+{
+    internal const string GenericFailure = "転送処理中にエラーが発生しました。詳細はサーバーログを参照してください。";
+}
+
+/// <summary>
 /// 転送ジョブのライフサイクルを管理するサービス契約。
 /// </summary>
 public interface ITransferJobService
@@ -98,7 +109,7 @@ public sealed class TransferJobService : ITransferJobService
                 CompletedAt = DateTimeOffset.UtcNow,
             };
         }
-        catch (OperationCanceledException ex)
+        catch (OperationCanceledException)
         {
             // ct 由来のキャンセルのみ Cancelled に遷移する。
             // ct と無関係な内部タイムアウト等の OCE は Failed として扱う。
@@ -112,21 +123,23 @@ public sealed class TransferJobService : ITransferJobService
             }
             else
             {
+                // TODO: Phase 5 でロガー注入後、ここで ex の詳細をログに記録する
                 _jobs[jobId] = _jobs[jobId] with
                 {
                     Status = JobStatus.Failed,
                     CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = ex.Message,
+                    ErrorMessage = JobErrorMessages.GenericFailure,
                 };
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
+            // TODO: Phase 5 でロガー注入後、ここで例外詳細をログに記録する
             _jobs[jobId] = _jobs[jobId] with
             {
                 Status = JobStatus.Failed,
                 CompletedAt = DateTimeOffset.UtcNow,
-                ErrorMessage = ex.Message,
+                ErrorMessage = JobErrorMessages.GenericFailure,
             };
         }
         finally
