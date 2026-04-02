@@ -59,7 +59,7 @@ public sealed class TransferJobService : ITransferJobService
             return null;
 
         var jobId = Guid.NewGuid().ToString("D");
-        var job = new TransferJobInfo(jobId, JobStatus.Pending, DateTimeOffset.UtcNow, null, null);
+        var job = new TransferJobInfo(jobId, JobStatus.Pending, null, null, null);
         _jobs[jobId] = job;
         _jobOrder.Enqueue(jobId);
 
@@ -87,7 +87,7 @@ public sealed class TransferJobService : ITransferJobService
     {
         try
         {
-            _jobs[jobId] = _jobs[jobId] with { Status = JobStatus.Running };
+            _jobs[jobId] = _jobs[jobId] with { Status = JobStatus.Running, StartedAt = DateTimeOffset.UtcNow };
 
             if (_work is not null)
                 await _work(ct).ConfigureAwait(false);
