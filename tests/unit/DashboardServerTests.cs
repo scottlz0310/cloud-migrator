@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using CloudMigrator.Dashboard;
@@ -18,11 +20,12 @@ namespace CloudMigrator.Tests.Unit;
 public sealed class DashboardServerTests : IAsyncDisposable
 {
     private readonly Mock<ITransferStateDb> _mockDb = new(MockBehavior.Loose);
+    private readonly Mock<IConfigurationService> _mockConfigService = new(MockBehavior.Loose);
     private WebApplication? _app;
 
     private async Task<HttpClient> CreateClientAsync()
     {
-        _app = DashboardServer.BuildApp(_mockDb.Object, wb => wb.UseTestServer());
+        _app = DashboardServer.BuildApp(_mockDb.Object, wb => wb.UseTestServer(), _mockConfigService.Object);
         await _app.StartAsync();
         return _app.GetTestClient();
     }
@@ -185,4 +188,114 @@ public sealed class DashboardServerTests : IAsyncDisposable
         var html = await response.Content.ReadAsStringAsync();
         html.Should().Contain("CloudMigrator");
     }
+
+    // ── /api/config GET ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetConfig_ReturnsOkWithConfigDto()
+    {
+        // 検証対象: GET /api/config  目的: IConfigurationService から ConfigDto を取得して 200 OK を返す
+        var dto = new ConfigDto(
+            MaxParallelTransfers: 20,
+            ChunkSizeMb: 5,
+            LargeFileThresholdMb: 4,
+            RetryCount: 3,
+            TimeoutSec: 300,
+            DestinationRoot: "Documents/テスト",
+            DestinationProvider: "sharepoint");
+        _mockConfigService
+            .Setup(s => s.GetConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(dto);
+        var client = await CreateClientAsync();
+
+        var response = await client.GetAsync("/api/config");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("\"maxParallelTransfers\":20");
+        body.Should().Contain("\"destinationRoot\":\"Documents/\u30c6\u30b9\u30c8\"");
+    }
+
+    // ── /api/config PUT ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PutConfig_WithValidBody_Returns200()
+    {
+        // 検証対象: PUT /api/config  目的: 正常な JSON を送ると UpdateConfigAsync を呼び出して 200 を返す
+        _mockConfigService
+            .Setup(s => s.UpdateConfigAsync(It.IsAny<ConfigUpdateDto>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var client = await CreateClientAsync();
+
+        var json = JsonSerializer.Serialize(new { maxParallelTransfers = 10, chunkSizeMb = 8 });
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await client.PutAsync("/api/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _mockConfigService.Verify(
+            s => s.UpdateConfigAsync(It.Is<ConfigUpdateDto>(d => d.MaxParallelTransfers == 10 && d.ChunkSizeMb == 8),
+                                     It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PutConfig_WithSecretKey_Returns400()
+    {
+        // 検証対象: PUT /api/config  目的: clientSecret を含む body は 400 BadRequest
+        var client = await CreateClientAsync();
+
+        var json = JsonSerializer.Serialize(new { maxParallelTransfers = 5, clientSecret = "leakme" });
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await client.PutAsync("/api/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _mockConfigService.Verify(s => s.UpdateConfigAsync(It.IsAny<ConfigUpdateDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(0, 5, 3)]    // maxParallelTransfers=0 → 下限違反
+    [InlineData(101, 5, 3)]  // maxParallelTransfers=101 → 上限違反
+    [InlineData(1, 0, 3)]    // chunkSizeMb=0 → 下限違反
+    [InlineData(1, 101, 3)]  // chunkSizeMb=101 → 上限違反
+    [InlineData(1, 5, -1)]   // retryCount=-1 → 下限違反
+    [InlineData(1, 5, 21)]   // retryCount=21 → 上限違反
+    public async Task PutConfig_WithOutOfRangeValues_Returns400(int maxParallel, int chunkSize, int retryCount)
+    {
+        // 検証対象: PUT /api/config  目的: バリデーション範囲外の値は 400 BadRequest
+        var client = await CreateClientAsync();
+
+        var json = JsonSerializer.Serialize(new
+        {
+            maxParallelTransfers = maxParallel,
+            chunkSizeMb = chunkSize,
+            retryCount
+        });
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await client.PutAsync("/api/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task PutConfig_WithPartialBody_PassesOnlySpecifiedFields()
+    {
+        // 検証対象: PUT /api/config  目的: 一部フィールドのみ送信すると、未指定フィールドは null のまま ConfigUpdateDto 経由で UpdateConfigAsync に渡される
+        _mockConfigService
+            .Setup(s => s.UpdateConfigAsync(It.IsAny<ConfigUpdateDto>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var client = await CreateClientAsync();
+
+        // retryCount だけ送信: maxParallelTransfers は null として ConfigUpdateDto に入る
+        var json = JsonSerializer.Serialize(new { retryCount = 5 });
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await client.PutAsync("/api/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _mockConfigService.Verify(
+            s => s.UpdateConfigAsync(
+                It.Is<ConfigUpdateDto>(d => d.RetryCount == 5 && d.MaxParallelTransfers == null),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }
+

@@ -3,7 +3,19 @@
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 前フェーズ履歴: [task-archive-20260323.md](task-archive-20260323.md)
 
-## 現在の状態: SharePoint 版最適化フェーズ 実装中（PR #67）
+## 現在の状態: Studio Ph-1 実装完了（PR #86）
+
+---
+
+## CloudMigrator Studio（Issue #80）
+
+| フェーズ | 内容 | Issue | 状態 |
+|----------|------|-------|------|
+| **Ph-1** | `GET/PUT /api/config` + 設定タブ UI | #81 | ✅ 完了 |
+| **Ph-2** | 転送開始/停止 UI | #82 | 未着手 |
+| **Ph-3** | ログストリーミング SSE | #83 | 未着手 |
+| **Ph-4** | 接続テスト UI | #84 | 未着手 |
+| **Ph-5** | デフォルト起動 Studio | #85 | 未着手 |
 
 ---
 

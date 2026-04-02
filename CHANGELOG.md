@@ -8,6 +8,25 @@
 ## [Unreleased]
 
 ### Added
+- **Studio Ph-1: `GET /api/config` / `PUT /api/config` エンドポイント実装** (Issue #81)
+  - `ConfigurationService` 新設: `config.json` の読み書き・シークレット除外・マージ保存をカプセル化
+  - `GET /api/config`: シークレットを除外した設定 JSON を返す
+  - `PUT /api/config`: 指定フィールドのみマージ保存（未指定フィールドは既存値を保持）
+    - シークレットキー（`secret`/`password`/`token`/`apikey` 等）を含む body は 400 で拒否
+    - バリデーション: `maxParallelTransfers` (1〜100), `chunkSizeMb` (1〜100), `retryCount` (0〜20)
+  - `IConfigurationService` インターフェース: テスト・拡張向けに公開
+- **Studio Ph-1: Alpine.js 設定タブ UI 実装** (Issue #81)
+  - ダッシュボードに「監視」「設定」2 タブを追加（Alpine.js v3.14.9 CDN）
+  - 設定タブ: 推奨設定フォーム（並列数・チャンク・リトライ・タイムアウト・転送先パス）
+  - DANGER セクション（折りたたみ）: 大容量閾値・転送先プロバイダ変更
+  - dirty 判定・保存ボタン・成功/失敗トースト通知
+  - ブランド名を「Dashboard」→「Studio」へ更新
+
+### Changed
+- `DashboardServer.BuildApp()` の第3引数に `IConfigurationService? configService = null` を追加
+  - `configService` 未指定時は `ConfigurationService` を自動生成・登録（/api/config の常に安全な稼働を保証）
+  - 既存の呼び出しとの後方互換あり
+
 - **`transfer` コマンド: 失敗時の再試行確認プロンプト**
   - 転送完了後に失敗ファイルが残っている場合、対話端末では「X件の転送に失敗しています。再試行しますか？ [y/N]」を表示
   - `y` を入力すると同一パイプラインを再実行（Phase A で `permanent_failed` リセットが走るため確実に再試行）
