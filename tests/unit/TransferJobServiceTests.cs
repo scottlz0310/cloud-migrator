@@ -72,7 +72,7 @@ public sealed class TransferJobServiceTests
         var job = await service.TryStartAsync();
 
         tcs.SetResult();
-        await Task.Delay(200);
+        await WaitUntilAsync(() => service.GetJob(job!.JobId)?.Status == JobStatus.Completed);
 
         var updated = service.GetJob(job!.JobId);
         updated!.Status.Should().Be(JobStatus.Completed);
@@ -87,7 +87,7 @@ public sealed class TransferJobServiceTests
             _ => Task.FromException(new InvalidOperationException("テストエラー")));
         var job = await service.TryStartAsync();
 
-        await Task.Delay(200);
+        await WaitUntilAsync(() => service.GetJob(job!.JobId)?.Status == JobStatus.Failed);
 
         var updated = service.GetJob(job!.JobId);
         updated!.Status.Should().Be(JobStatus.Failed);
@@ -104,9 +104,9 @@ public sealed class TransferJobServiceTests
         var job = await service.TryStartAsync(cts.Token);
 
         // ジョブが Running 状態に遷移するまで待ってからキャンセル
-        await Task.Delay(50);
+        await WaitUntilAsync(() => service.GetJob(job!.JobId)?.Status == JobStatus.Running);
         cts.Cancel();
-        await Task.Delay(200);
+        await WaitUntilAsync(() => service.GetJob(job!.JobId)?.Status == JobStatus.Cancelled);
 
         var updated = service.GetJob(job!.JobId);
         updated!.Status.Should().Be(JobStatus.Cancelled);
@@ -124,7 +124,7 @@ public sealed class TransferJobServiceTests
         var midCheck = await service.TryStartAsync(); // Running 中は null
 
         tcs.SetResult();
-        await Task.Delay(200); // セマフォ解放を待つ
+        await WaitUntilAsync(() => service.GetJob(job1!.JobId)?.Status == JobStatus.Completed); // セマフォ解放を待つ
 
         var job2 = await service.TryStartAsync(); // 解放後は取得できる
 
@@ -132,5 +132,16 @@ public sealed class TransferJobServiceTests
         midCheck.Should().BeNull("先行ジョブが実行中のため 2 本目は拒否される");
         job2.Should().NotBeNull("先行ジョブ完了後は新しいジョブを開始できる");
         job2!.JobId.Should().NotBe(job1!.JobId);
+    }
+
+    /// <summary>
+    /// <paramref name="condition"/> が true になるまで 20ms 間隔でポーリングするヘルパー。
+    /// <paramref name="timeoutMs"/> 経過後はタイムアウトして返る（アサーションは呼び元に委ねる）。
+    /// </summary>
+    private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 3000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (!condition() && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
     }
 }

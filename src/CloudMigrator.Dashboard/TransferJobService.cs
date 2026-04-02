@@ -26,11 +26,21 @@ public interface ITransferJobService
 /// <see cref="SemaphoreSlim"/> で同時実行 1 本に制限する。
 /// ジョブはサーバー再起動でリセットされる。
 /// </summary>
+/// <remarks>
+/// ジョブ履歴はインメモリで最大 <see cref="MaxJobHistoryCount"/> 件まで保持する。
+/// 1 回の移行セッションで 1 エントリが増加するペースのため、
+/// 通常運用（1 日数回程度）ではメモリ消費は軽微であるが、
+/// 件数超過時は古いジョブエントリを FIFO で削除する。
+/// </remarks>
 public sealed class TransferJobService : ITransferJobService
 {
+    /// <summary>インメモリで保持するジョブ履歴の最大件数。</summary>
+    internal const int MaxJobHistoryCount = 100;
+
     private readonly Func<CancellationToken, Task>? _work;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly ConcurrentDictionary<string, TransferJobInfo> _jobs = new();
+    private readonly Queue<string> _jobOrder = new();
 
     /// <param name="work">
     /// ジョブで実行する非同期処理。
@@ -51,6 +61,14 @@ public sealed class TransferJobService : ITransferJobService
         var jobId = Guid.NewGuid().ToString("D");
         var job = new TransferJobInfo(jobId, JobStatus.Pending, DateTimeOffset.UtcNow, null, null);
         _jobs[jobId] = job;
+        _jobOrder.Enqueue(jobId);
+
+        // 上限超過時は最古エントリを削除する
+        while (_jobOrder.Count > MaxJobHistoryCount)
+        {
+            if (_jobOrder.TryDequeue(out var oldId))
+                _jobs.TryRemove(oldId, out _);
+        }
 
         // セマフォは RunJobAsync の finally で解放する（fire-and-forget）
         _ = RunJobAsync(jobId, ct);
@@ -80,13 +98,27 @@ public sealed class TransferJobService : ITransferJobService
                 CompletedAt = DateTimeOffset.UtcNow,
             };
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            _jobs[jobId] = _jobs[jobId] with
+            // ct 由来のキャンセルのみ Cancelled に遷移する。
+            // ct と無関係な内部タイムアウト等の OCE は Failed として扱う。
+            if (ct.IsCancellationRequested)
             {
-                Status = JobStatus.Cancelled,
-                CompletedAt = DateTimeOffset.UtcNow,
-            };
+                _jobs[jobId] = _jobs[jobId] with
+                {
+                    Status = JobStatus.Cancelled,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                };
+            }
+            else
+            {
+                _jobs[jobId] = _jobs[jobId] with
+                {
+                    Status = JobStatus.Failed,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = ex.Message,
+                };
+            }
         }
         catch (Exception ex)
         {

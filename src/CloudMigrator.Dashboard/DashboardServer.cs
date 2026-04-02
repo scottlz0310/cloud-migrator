@@ -164,9 +164,11 @@ public static class DashboardServer
         });
 
         // POST /api/transfer/start  → 転送ジョブ開始（202 Accepted or 409 Conflict）
-        app.MapPost("/api/transfer/start", async (ITransferJobService jobSvc, CancellationToken cancellationToken) =>
+        // 注: HTTP リクエストの CancellationToken は渡さず、ジョブ専用の CancellationToken.None を使用する。
+        //       クライアント切断でバックグラウンド転送が意図せずキャンセルされるのを防ぐ。
+        app.MapPost("/api/transfer/start", async (ITransferJobService jobSvc) =>
         {
-            var job = await jobSvc.TryStartAsync(cancellationToken).ConfigureAwait(false);
+            var job = await jobSvc.TryStartAsync(CancellationToken.None).ConfigureAwait(false);
             if (job is null)
                 return Results.Conflict("転送ジョブがすでに実行中です。");
             return Results.Accepted(
@@ -539,8 +541,8 @@ public static class DashboardServer
                       <div class="run-elapsed">経過: <span x-text="elapsed"></span></div>
                     </div>
                     <div class="stop-guide">
-                      <p>&#9888;&#65039; 転送を停止するには、別ターミナルで以下のコマンドを実行してください:</p>
-                      <code>dotnet run -- transfer --cancel</code>
+                      <p>&#9888;&#65039; 転送を停止するには、ダッシュボードを起動したターミナルで Ctrl+C を押してください:</p>
+                      <code>Ctrl+C （ダッシュボード起動ターミナル）</code>
                     </div>
                   </div>
 
@@ -1111,14 +1113,22 @@ public static class DashboardServer
                         this.updateElapsed();
                       }
                     } else if (res.status === 404) {
+                      // サーバー再起動等でジョブが消えた場合はクライアント側の状態もリセットする
                       this.stopPolling();
+                      this.jobId = null;
+                      this.status = null;
+                      this.startedAt = null;
+                      this.completedAt = null;
+                      this.errorMessage = null;
+                      this.elapsed = '—';
+                      sessionStorage.removeItem('transferJobId');
                     }
                   } catch (_) { /* ネットワークエラーは無視 */ }
                 },
 
                 startPolling() {
                   this.stopPolling();
-                  this.pollTimer = setInterval(() => this.fetchStatus(), 5000);
+                  this.pollTimer = setInterval(() => this.fetchStatus(), POLL_INTERVAL);
                   this.startElapsedTimer();
                 },
 
