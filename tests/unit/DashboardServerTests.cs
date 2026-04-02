@@ -21,11 +21,16 @@ public sealed class DashboardServerTests : IAsyncDisposable
 {
     private readonly Mock<ITransferStateDb> _mockDb = new(MockBehavior.Loose);
     private readonly Mock<IConfigurationService> _mockConfigService = new(MockBehavior.Loose);
+    private readonly Mock<ITransferJobService> _mockJobService = new(MockBehavior.Loose);
     private WebApplication? _app;
 
     private async Task<HttpClient> CreateClientAsync()
     {
-        _app = DashboardServer.BuildApp(_mockDb.Object, wb => wb.UseTestServer(), _mockConfigService.Object);
+        _app = DashboardServer.BuildApp(
+            _mockDb.Object,
+            wb => wb.UseTestServer(),
+            _mockConfigService.Object,
+            _mockJobService.Object);
         await _app.StartAsync();
         return _app.GetTestClient();
     }
@@ -296,6 +301,74 @@ public sealed class DashboardServerTests : IAsyncDisposable
                 It.Is<ConfigUpdateDto>(d => d.RetryCount == 5 && d.MaxParallelTransfers == null),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    // ── /api/transfer/start POST ──────────────────────────────────────────
+
+    [Fact]
+    public async Task PostTransferStart_Returns202_WhenNoJobRunning()
+    {
+        // 検証対象: POST /api/transfer/start  目的: ジョブがない場合 202 Accepted + jobId を返す
+        var job = new TransferJobInfo("test-guid-001", JobStatus.Pending, DateTimeOffset.UtcNow, null, null);
+        _mockJobService
+            .Setup(s => s.TryStartAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+        var client = await CreateClientAsync();
+
+        var response = await client.PostAsync("/api/transfer/start", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var json = await response.Content.ReadAsStringAsync();
+        json.Should().Contain("test-guid-001");
+        json.Should().Contain("Pending");
+    }
+
+    [Fact]
+    public async Task PostTransferStart_Returns409_WhenJobAlreadyRunning()
+    {
+        // 検証対象: POST /api/transfer/start  目的: ジョブ実行中の場合 409 Conflict を返す
+        _mockJobService
+            .Setup(s => s.TryStartAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TransferJobInfo?)null);
+        var client = await CreateClientAsync();
+
+        var response = await client.PostAsync("/api/transfer/start", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    // ── /api/transfer/{id} GET ───────────────────────────────────────────
+
+    [Fact]
+    public async Task GetTransfer_Returns200_WithJobInfo()
+    {
+        // 検証対象: GET /api/transfer/{id}  目的: 存在する jobId を指定すると 200 OK とジョブ情報を返す
+        var job = new TransferJobInfo("abc-def-123", JobStatus.Running, DateTimeOffset.UtcNow, null, null);
+        _mockJobService
+            .Setup(s => s.GetJob("abc-def-123"))
+            .Returns(job);
+        var client = await CreateClientAsync();
+
+        var response = await client.GetAsync("/api/transfer/abc-def-123");
+        var json = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        json.Should().Contain("abc-def-123");
+        json.Should().Contain("Running");
+    }
+
+    [Fact]
+    public async Task GetTransfer_Returns404_WhenJobNotFound()
+    {
+        // 検証対象: GET /api/transfer/{id}  目的: 存在しない jobId は 404 NotFound を返す
+        _mockJobService
+            .Setup(s => s.GetJob(It.IsAny<string>()))
+            .Returns((TransferJobInfo?)null);
+        var client = await CreateClientAsync();
+
+        var response = await client.GetAsync("/api/transfer/nonexistent-id");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
 
