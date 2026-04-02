@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using Microsoft.AspNetCore.Builder;
@@ -25,7 +26,8 @@ public static class DashboardServer
         // DI コンテナが DisposeAsync を呼ばないため finally で明示的に解放する。
         var db = new SqliteTransferStateDb(dbPath);
         await db.InitializeAsync(ct).ConfigureAwait(false);
-        var app = BuildApp(db);
+        var configService = new ConfigurationService();
+        var app = BuildApp(db, configService: configService);
         app.Urls.Add($"http://localhost:{port}");
         try
         {
@@ -44,11 +46,14 @@ public static class DashboardServer
     /// </summary>
     internal static WebApplication BuildApp(
         ITransferStateDb db,
-        Action<IWebHostBuilder>? configureWebHost = null)
+        Action<IWebHostBuilder>? configureWebHost = null,
+        IConfigurationService? configService = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
         builder.Services.AddSingleton(db);
+        if (configService is not null)
+            builder.Services.AddSingleton(configService);
         configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
@@ -113,10 +118,79 @@ public static class DashboardServer
             return Results.Ok(summary.RecentFailed);
         });
 
+        // GET /api/config  → 設定取得（シークレット除外）
+        app.MapGet("/api/config", async (IConfigurationService svc, CancellationToken cancellationToken) =>
+        {
+            var config = await svc.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+            return Results.Ok(config);
+        });
+
+        // PUT /api/config  → 設定マージ保存（シークレット拒否・バリデーション付き）
+        app.MapPut("/api/config", async (HttpContext ctx, IConfigurationService svc) =>
+        {
+            string body;
+            using (var reader = new StreamReader(ctx.Request.Body))
+                body = await reader.ReadToEndAsync().ConfigureAwait(false);
+
+            if (ContainsSecretKey(body))
+                return Results.BadRequest("シークレットキーを含むフィールドは設定できません。");
+
+            ConfigUpdateDto update;
+            try
+            {
+                update = JsonSerializer.Deserialize<ConfigUpdateDto>(body, ApiJsonOptions)
+                    ?? new ConfigUpdateDto();
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest("JSON の形式が正しくありません。");
+            }
+
+            if (update.MaxParallelTransfers is < 1 or > 100)
+                return Results.BadRequest("maxParallelTransfers は 1〜100 の範囲で指定してください。");
+            if (update.ChunkSizeMb is < 1 or > 100)
+                return Results.BadRequest("chunkSizeMb は 1〜100 の範囲で指定してください。");
+            if (update.RetryCount is < 0 or > 20)
+                return Results.BadRequest("retryCount は 0〜20 の範囲で指定してください。");
+
+            await svc.UpdateConfigAsync(update, ctx.RequestAborted).ConfigureAwait(false);
+            return Results.Ok();
+        });
+
         // GET /  → ダッシュボード HTML
         app.MapGet("/", () => Results.Content(IndexHtml, "text/html; charset=utf-8"));
 
         return app;
+    }
+
+    // ── API ヘルパー ──────────────────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions ApiJsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static readonly string[] SecretKeyPatterns = ["secret", "password", "token", "apikey", "api_key"];
+
+    /// <summary>
+    /// リクエスト JSON にシークレット系キーが含まれていれば true を返す。
+    /// マッチは大文字小文字を区別しない部分一致。
+    /// </summary>
+    private static bool ContainsSecretKey(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                var key = prop.Name.ToLowerInvariant();
+                if (SecretKeyPatterns.Any(p => key.Contains(p)))
+                    return true;
+            }
+            return false;
+        }
+        catch
+        {
+            // 不正 JSON は後続のデシリアライズで 400 として弾く
+            return false;
+        }
     }
 
     // ── インライン HTML（Chart.js CDN 使用） ──────────────────────────────────
@@ -129,6 +203,7 @@ public static class DashboardServer
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <title>CloudMigrator ダッシュボード</title>
           <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+          <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
           <style>
             *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
             body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f0f10; color: #e2e2e5; min-height: 100dvh; }
@@ -179,15 +254,46 @@ public static class DashboardServer
             .cs-item .cs-value.warn    { color: #f59e0b; }
             .cs-item .cs-value.danger  { color: #ef4444; }
             .phase-badge.completed { background: #0d9488; }
+            /* タブナビゲーション */
+            .tabs { display: flex; gap: 4px; }
+            .tab-btn { background: transparent; border: 1px solid #2a2a4a; padding: 5px 14px; border-radius: 8px; color: #aaa; cursor: pointer; font-size: .78rem; transition: all .15s; }
+            .tab-btn:hover { background: #2a2a4a; color: #e2e2e5; }
+            .tab-btn.active { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+            /* 設定フォーム */
+            .config-section { background: #1a1a2e; border-radius: 12px; padding: 24px; border: 1px solid #2a2a4a; }
+            .config-group { margin-bottom: 24px; }
+            .config-group-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: #888; margin-bottom: 14px; }
+            .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+            .field { display: flex; flex-direction: column; gap: 5px; }
+            .field label { font-size: .72rem; color: #888; letter-spacing: .04em; }
+            .field input, .field select { background: #0f0f10; border: 1px solid #3a3a5a; border-radius: 6px; color: #e2e2e5; padding: 7px 10px; font-size: .88rem; width: 100%; transition: border-color .15s; }
+            .field input:focus, .field select:focus { outline: none; border-color: #4f46e5; }
+            .danger-area { margin-top: 20px; border: 1px solid #7f1d1d; border-radius: 8px; overflow: hidden; }
+            .danger-area summary { padding: 10px 16px; cursor: pointer; color: #ef4444; font-size: .82rem; font-weight: 600; background: #1a0505; user-select: none; }
+            .danger-area .danger-content { padding: 16px; }
+            .danger-area .danger-warning { background: #450a0a; border-radius: 6px; padding: 10px 14px; font-size: .78rem; color: #fca5a5; margin-bottom: 14px; border: 1px solid #7f1d1d; }
+            .config-actions { margin-top: 22px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+            .btn-save { background: #4f46e5; border: none; color: #fff; padding: 8px 22px; border-radius: 8px; cursor: pointer; font-size: .88rem; transition: opacity .15s; }
+            .btn-save:disabled { opacity: .4; cursor: not-allowed; }
+            .dirty-indicator { font-size: .75rem; color: #f59e0b; }
+            .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 10px; font-size: .85rem; z-index: 9999; pointer-events: none; }
+            .toast.success { background: #14532d; color: #86efac; border: 1px solid #16a34a; }
+            .toast.error { background: #450a0a; color: #fca5a5; border: 1px solid #b91c1c; }
           </style>
         </head>
-        <body>
+        <body x-data="{ tab: 'monitor' }">
           <header>
             <h1>&#128640; CloudMigrator</h1>
-            <span class="badge">Dashboard</span>
-            <span class="phase-badge" id="phaseBadge"></span>
-            <span class="refresh-indicator" id="refreshTxt">次回更新まで 5s</span>
+            <span class="badge">Studio</span>
+            <span class="phase-badge" id="phaseBadge" x-show="tab === 'monitor'"></span>
+            <nav class="tabs">
+              <button class="tab-btn" :class="tab === 'monitor' ? 'active' : ''" @click="tab='monitor'">&#128202; 監視</button>
+              <button class="tab-btn" :class="tab === 'config' ? 'active' : ''" @click="tab='config'">&#9881;&#65039; 設定</button>
+            </nav>
+            <span class="refresh-indicator" id="refreshTxt" x-show="tab === 'monitor'">次回更新まで 5s</span>
           </header>
+          <!-- 監視タブ -->
+          <div x-show="tab === 'monitor'">
           <main>
             <section class="cards">
               <div class="card done"><div class="label">完了</div><div class="value" id="c-done">—</div></div>
@@ -269,6 +375,68 @@ public static class DashboardServer
               <div id="errorList"><span class="no-errors">現在エラーはありません</span></div>
             </section>
           </main>
+          </div>
+
+          <!-- 設定タブ -->
+          <div x-show="tab === 'config'" x-data="configTab()" x-init="init()">
+            <main style="max-width:900px;margin:0 auto;padding:24px 16px;">
+              <section class="config-section">
+                <div class="config-group">
+                  <h3 class="config-group-title">推奨設定</h3>
+                  <div class="config-grid">
+                    <div class="field">
+                      <label>並列転送数 (maxParallelTransfers)</label>
+                      <input type="number" x-model.number="config.maxParallelTransfers" min="1" max="100" />
+                    </div>
+                    <div class="field">
+                      <label>チャンクサイズ MB (chunkSizeMb)</label>
+                      <input type="number" x-model.number="config.chunkSizeMb" min="1" max="100" />
+                    </div>
+                    <div class="field">
+                      <label>リトライ回数 (retryCount)</label>
+                      <input type="number" x-model.number="config.retryCount" min="0" max="20" />
+                    </div>
+                    <div class="field">
+                      <label>タイムアウト秒 (timeoutSec)</label>
+                      <input type="number" x-model.number="config.timeoutSec" min="1" />
+                    </div>
+                    <div class="field" style="grid-column:1/-1">
+                      <label>転送先ルートパス (destinationRoot)</label>
+                      <input type="text" x-model="config.destinationRoot" />
+                    </div>
+                  </div>
+                </div>
+
+                <details class="danger-area">
+                  <summary>&#9888;&#65039; 上級者向け設定（変更時は注意）</summary>
+                  <div class="danger-content">
+                    <div class="danger-warning">&#9888;&#65039; 以下の設定は動作に大きく影響します。意味を理解した上で変更してください。</div>
+                    <div class="config-grid">
+                      <div class="field">
+                        <label>大容量ファイル閘値 MB (largeFileThresholdMb)</label>
+                        <input type="number" x-model.number="config.largeFileThresholdMb" min="1" max="100" />
+                      </div>
+                      <div class="field">
+                        <label>転送先プロバイダ (destinationProvider)</label>
+                        <select x-model="config.destinationProvider">
+                          <option value="sharepoint">sharepoint</option>
+                          <option value="dropbox">dropbox</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+
+                <div class="config-actions">
+                  <button class="btn-save" @click="save()" :disabled="!isDirty() || saving">
+                    <span x-text="saving ? '保存中...' : '保存'"></span>
+                  </button>
+                  <span class="dirty-indicator" x-show="isDirty()">● 未保存の変更があります</span>
+                </div>
+              </section>
+            </main>
+            <div class="toast" x-show="toast !== null" :class="toast &amp;&amp; toast.type" x-text="toast &amp;&amp; toast.msg" style="display:none;"></div>
+          </div>
 
           <script>
             const POLL_INTERVAL = 5000; // ms
@@ -691,6 +859,57 @@ public static class DashboardServer
 
             // 初回即時ロード
             refresh();
+
+            // 設定タブ Alpine.js コンポーネント
+            function configTab() {
+              return {
+                config: {},
+                original: {},
+                saving: false,
+                toast: null,
+                async init() {
+                  try {
+                    const res = await fetch('/api/config');
+                    if (res.ok) {
+                      this.config = await res.json();
+                      this.original = JSON.parse(JSON.stringify(this.config));
+                    } else {
+                      this.showToast('設定の読み込みに失敗しました', 'error');
+                    }
+                  } catch (e) {
+                    this.showToast('設定の読み込みエラー: ' + e.message, 'error');
+                  }
+                },
+                isDirty() {
+                  return JSON.stringify(this.config) !== JSON.stringify(this.original);
+                },
+                async save() {
+                  this.saving = true;
+                  try {
+                    const res = await fetch('/api/config', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(this.config)
+                    });
+                    if (res.ok) {
+                      this.original = JSON.parse(JSON.stringify(this.config));
+                      this.showToast('設定を保存しました', 'success');
+                    } else {
+                      const msg = await res.text();
+                      this.showToast('保存失敗: ' + msg, 'error');
+                    }
+                  } catch (e) {
+                    this.showToast('保存エラー: ' + e.message, 'error');
+                  } finally {
+                    this.saving = false;
+                  }
+                },
+                showToast(msg, type) {
+                  this.toast = { msg, type };
+                  setTimeout(() => { this.toast = null; }, 3500);
+                }
+              };
+            }
           </script>
         </body>
         </html>
