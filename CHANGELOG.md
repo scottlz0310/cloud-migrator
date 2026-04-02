@@ -24,9 +24,9 @@
 
 ### Changed
 - `DashboardServer.BuildApp()` の第3引数に `IConfigurationService? configService = null` を追加
+  - `configService` 未指定時は `ConfigurationService` を自動生成・登録（/api/config の常に安全な稼働を保証）
   - 既存の呼び出しとの後方互換あり
 
-### Added
 - **`transfer` コマンド: 失敗時の再試行確認プロンプト**
   - 転送完了後に失敗ファイルが残っている場合、対話端末では「X件の転送に失敗しています。再試行しますか？ [y/N]」を表示
   - `y` を入力すると同一パイプラインを再実行（Phase A で `permanent_failed` リセットが走るため確実に再試行）

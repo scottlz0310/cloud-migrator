@@ -52,8 +52,9 @@ public static class DashboardServer
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
         builder.Services.AddSingleton(db);
-        if (configService is not null)
-            builder.Services.AddSingleton(configService);
+        // configService 未指定時は既定実装を生成し登録（/api/config の定常稼備を保証）
+        var resolvedConfigService = configService ?? new ConfigurationService();
+        builder.Services.AddSingleton<IConfigurationService>(resolvedConfigService);
         configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
@@ -172,25 +173,44 @@ public static class DashboardServer
     /// <summary>
     /// リクエスト JSON にシークレット系キーが含まれていれば true を返す。
     /// マッチは大文字小文字を区別しない部分一致。
+    /// オブジェクト／配列のネストを再帰的に検査する。
     /// </summary>
     private static bool ContainsSecretKey(string json)
     {
         try
         {
             using var doc = JsonDocument.Parse(json);
-            foreach (var prop in doc.RootElement.EnumerateObject())
-            {
-                var key = prop.Name.ToLowerInvariant();
-                if (SecretKeyPatterns.Any(p => key.Contains(p)))
-                    return true;
-            }
-            return false;
+            return ContainsSecretKeyInElement(doc.RootElement);
         }
         catch
         {
             // 不正 JSON は後続のデシリアライズで 400 として弾く
             return false;
         }
+    }
+
+    private static bool ContainsSecretKeyInElement(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var prop in element.EnumerateObject())
+                {
+                    if (SecretKeyPatterns.Any(p => prop.Name.ToLowerInvariant().Contains(p)))
+                        return true;
+                    if (ContainsSecretKeyInElement(prop.Value))
+                        return true;
+                }
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (ContainsSecretKeyInElement(item))
+                        return true;
+                }
+                break;
+        }
+        return false;
     }
 
     // ── インライン HTML（Chart.js CDN 使用） ──────────────────────────────────
@@ -413,7 +433,7 @@ public static class DashboardServer
                     <div class="danger-warning">&#9888;&#65039; 以下の設定は動作に大きく影響します。意味を理解した上で変更してください。</div>
                     <div class="config-grid">
                       <div class="field">
-                        <label>大容量ファイル閘値 MB (largeFileThresholdMb)</label>
+                        <label>大容量ファイル閾値 MB (largeFileThresholdMb)</label>
                         <input type="number" x-model.number="config.largeFileThresholdMb" min="1" max="100" />
                       </div>
                       <div class="field">

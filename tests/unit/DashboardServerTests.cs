@@ -279,7 +279,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
     [Fact]
     public async Task PutConfig_WithPartialBody_PassesOnlySpecifiedFields()
     {
-        // 検証対象: PUT /api/config  目的: 一部フィールドのみ送信すると UpdateConfigAsync には null なしで渡される
+        // 検証対象: PUT /api/config  目的: 一部フィールドのみ送信すると、未指定フィールドは null のまま ConfigUpdateDto 経由で UpdateConfigAsync に渡される
         _mockConfigService
             .Setup(s => s.UpdateConfigAsync(It.IsAny<ConfigUpdateDto>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);

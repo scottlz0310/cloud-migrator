@@ -3,7 +3,7 @@
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 前フェーズ履歴: [task-archive-20260323.md](task-archive-20260323.md)
 
-## 現在の状態: Studio Ph-1 実装完了（PR 作成予定）
+## 現在の状態: Studio Ph-1 実装完了（PR #86）
 
 ---
 
