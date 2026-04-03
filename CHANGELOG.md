@@ -8,6 +8,22 @@
 ## [Unreleased]
 
 ### Added
+- **Studio Ph-3: ログストリーミング SSE + ログビューア UI** (Issue #83)
+  - `LogEntry` record 新設（`CloudMigrator.Observability`）: timestamp (UTC) / level / message
+  - `LogStreamSink` 新設（`CloudMigrator.Observability`）: `ILogEventSink` 実装。リングバッファ 500 件 + 複数 SSE クライアントへのブロードキャスト
+  - `LoggingSetup.CreateLoggerFactory` に `logStreamSink` オプションパラメータ追加: 既存のコンソール/ファイルシンクと併用可能
+  - `ILogStreamService` / `LogStreamService` 新設（`CloudMigrator.Dashboard`）: 接続時に直近バッファを初回送信し、以降リアルタイム追記
+  - `GET /api/logs/stream`: SSE エンドポイント（`Content-Type: text/event-stream`）。nginx バッファリング無効化対応
+  - Alpine.js「ログ」タブ追加（4 タブ構成: 監視・実行・設定・ログ）
+    - `Information` / `Warning` / `Error` のログレベルフィルタリングボタン
+    - 480px のスクロール可能ログコンテナ（最大 1,000 件・超過分は古い順に削除）
+    - ログレベル色分け: INFO=グレー / WARN=黄 / ERROR/FATAL=赤
+    - 自動スクロール: 手動スクロール時に一時停止・「最新へ」ボタンで再有効化
+    - クリアボタン（表示中ログを消去、バッファはリセットしない）
+  - `CloudMigrator.Dashboard.csproj` に `CloudMigrator.Observability` の ProjectReference 追加
+  - `LogStreamServiceTests.cs` 新設 (7 テスト): リングバッファ・DropOldest・複数クライアントブロードキャスト・UTC タイムスタンプ
+  - `DashboardServerTests.cs` に `GET /api/logs/stream` テスト 1 件追加
+
 - **Studio Ph-2: 転送ジョブ API + 実行タブ UI** (Issue #82)
   - `JobStatus` enum 新設: `Pending` / `Running` / `Completed` / `Failed` / `Cancelled`
   - `TransferJobInfo` record 新設: jobId・status・startedAt・completedAt・errorMessage

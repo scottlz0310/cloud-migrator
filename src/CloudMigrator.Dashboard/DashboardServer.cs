@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
+using CloudMigrator.Observability;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -20,7 +21,7 @@ public static class DashboardServer
     /// ダッシュボードサーバーを起動する。
     /// <paramref name="ct"/> がキャンセルされると Graceful Shutdown する。
     /// </summary>
-    public static async Task RunAsync(string dbPath, int port, CancellationToken ct)
+    public static async Task RunAsync(string dbPath, int port, CancellationToken ct, LogStreamSink? logStreamSink = null)
     {
         // SqliteTransferStateDb は DI に渡すが、インスタンスを外部から渡す場合は
         // DI コンテナが DisposeAsync を呼ばないため finally で明示的に解放する。
@@ -28,7 +29,9 @@ public static class DashboardServer
         await db.InitializeAsync(ct).ConfigureAwait(false);
         var configService = new ConfigurationService();
         var jobService = new TransferJobService();
-        var app = BuildApp(db, configService: configService, jobService: jobService);
+        var sink = logStreamSink ?? new LogStreamSink();
+        var logStreamService = new LogStreamService(sink);
+        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamService: logStreamService);
         app.Urls.Add($"http://localhost:{port}");
         try
         {
@@ -49,7 +52,8 @@ public static class DashboardServer
         ITransferStateDb db,
         Action<IWebHostBuilder>? configureWebHost = null,
         IConfigurationService? configService = null,
-        ITransferJobService? jobService = null)
+        ITransferJobService? jobService = null,
+        ILogStreamService? logStreamService = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
@@ -60,6 +64,9 @@ public static class DashboardServer
         // jobService 未指定時は既定実装を生成し登録（/api/transfer/* の定常稼働を保証）
         var resolvedJobService = jobService ?? new TransferJobService();
         builder.Services.AddSingleton<ITransferJobService>(resolvedJobService);
+        // logStreamService 未指定時は空シンクを持つ既定実装を生成し登録
+        var resolvedLogStreamService = logStreamService ?? new LogStreamService(new LogStreamSink());
+        builder.Services.AddSingleton<ILogStreamService>(resolvedLogStreamService);
         configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
@@ -190,6 +197,13 @@ public static class DashboardServer
                 completedAt = job.CompletedAt,
                 errorMessage = job.ErrorMessage,
             });
+        });
+
+        // GET /api/logs/stream  → SSE ログストリーム（text/event-stream）
+        // 注: HTTP リクエストの CancellationToken をそのまま渡す（クライアント切断で自動終了）。
+        app.MapGet("/api/logs/stream", async (ILogStreamService logSvc, HttpContext ctx, CancellationToken ct) =>
+        {
+            await logSvc.StreamAsync(ctx, ct).ConfigureAwait(false);
         });
 
         // GET /  → ダッシュボード HTML
@@ -352,6 +366,33 @@ public static class DashboardServer
             @keyframes spin { to { transform: rotate(360deg); } }
             .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #374151; border-top-color: #60a5fa; border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; margin-right: 6px; }
             .run-progress { color: #e2e2e5; font-size: .9rem; }
+            /* ログビューア */
+            .log-section { background: #1a1a2e; border-radius: 12px; padding: 20px; border: 1px solid #2a2a4a; }
+            .log-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+            .log-filters { display: flex; gap: 6px; }
+            .log-filter-btn { background: transparent; border: 1px solid #3a3a5a; border-radius: 6px; color: #555; padding: 3px 10px; cursor: pointer; font-size: .72rem; font-weight: 600; transition: all .15s; }
+            .log-filter-btn:hover { background: #2a2a4a; color: #e2e2e5; }
+            .log-filter-btn.active-info { background: #1e3a5f; border-color: #60a5fa; color: #93c5fd; }
+            .log-filter-btn.active-warn { background: #433000; border-color: #f59e0b; color: #fcd34d; }
+            .log-filter-btn.active-err  { background: #450a0a; border-color: #ef4444; color: #fca5a5; }
+            .log-clear-btn { background: transparent; border: 1px solid #3a3a5a; border-radius: 6px; color: #888; padding: 3px 10px; cursor: pointer; font-size: .72rem; transition: all .15s; }
+            .log-clear-btn:hover { background: #2a2a4a; color: #e2e2e5; }
+            .log-count { font-size: .72rem; color: #555; margin-left: auto; }
+            .log-container { height: 480px; overflow-y: auto; background: #0a0a0d; border-radius: 8px; border: 1px solid #2a2a4a; padding: 6px 8px; font-family: 'Cascadia Code', Consolas, monospace; font-size: .77rem; }
+            .log-line { display: grid; grid-template-columns: 80px 36px 1fr; gap: 8px; padding: 1px 2px; border-radius: 2px; line-height: 1.55; }
+            .log-line:hover { background: rgba(255,255,255,.035); }
+            .log-ts { color: #444; }
+            .log-level { font-weight: 700; text-align: center; }
+            .log-info .log-level { color: #666; }
+            .log-warn .log-level { color: #f59e0b; }
+            .log-err  .log-level { color: #ef4444; }
+            .log-info .log-msg { color: #c9d1d9; }
+            .log-warn .log-msg { color: #fde68a; }
+            .log-err  .log-msg { color: #fca5a5; }
+            .log-empty { color: #444; font-size: .82rem; padding: 20px; text-align: center; font-style: italic; }
+            .auto-scroll-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: .74rem; color: #555; border-top: 1px solid #2a2a4a; padding-top: 8px; }
+            .btn-scroll-bottom { background: #2a2a4a; border: 1px solid #4a4a6a; border-radius: 6px; color: #aaa; padding: 3px 10px; cursor: pointer; font-size: .72rem; }
+            .btn-scroll-bottom:hover { background: #3a3a5a; color: #e2e2e5; }
           </style>
         </head>
         <body x-data="{ tab: 'monitor' }">
@@ -363,6 +404,7 @@ public static class DashboardServer
               <button class="tab-btn" :class="tab === 'monitor' ? 'active' : ''" @click="tab='monitor'">&#128202; 監視</button>
               <button class="tab-btn" :class="tab === 'run' ? 'active' : ''" @click="tab='run'">&#9654;&#65039; 実行</button>
               <button class="tab-btn" :class="tab === 'config' ? 'active' : ''" @click="tab='config'">&#9881;&#65039; 設定</button>
+              <button class="tab-btn" :class="tab === 'logs' ? 'active' : ''" @click="tab='logs'">&#128203; ログ</button>
             </nav>
             <span class="refresh-indicator" id="refreshTxt" x-show="tab === 'monitor'">次回更新まで 5s</span>
           </header>
@@ -569,6 +611,37 @@ public static class DashboardServer
               </section>
             </main>
             <div class="toast" x-show="toast !== null" :class="toast &amp;&amp; toast.type" x-text="toast &amp;&amp; toast.msg" style="display:none;"></div>
+          </div>
+
+          <!-- ログタブ -->
+          <div x-show="tab === 'logs'" x-data="logTab()" x-init="init()">
+            <main style="max-width:1200px;margin:0 auto;padding:24px 16px;">
+              <section class="log-section">
+                <div class="log-toolbar">
+                  <div class="log-filters">
+                    <button class="log-filter-btn" :class="filter.Info ? 'active-info' : ''" @click="filter.Info = !filter.Info">INFO</button>
+                    <button class="log-filter-btn" :class="filter.Warn ? 'active-warn' : ''" @click="filter.Warn = !filter.Warn">WARN</button>
+                    <button class="log-filter-btn" :class="filter.Error ? 'active-err' : ''" @click="filter.Error = !filter.Error">ERROR</button>
+                  </div>
+                  <button class="log-clear-btn" @click="clear()">&#128465; クリア</button>
+                  <span class="log-count" x-text="filteredLogs.length + ' 件'"></span>
+                </div>
+                <div class="log-container" x-ref="logContainer" @scroll="onScroll($event)">
+                  <template x-for="(entry, idx) in filteredLogs" :key="idx">
+                    <div class="log-line" :class="levelClass(entry.level)">
+                      <span class="log-ts" x-text="fmtTs(entry.timestamp)"></span>
+                      <span class="log-level" x-text="fmtLevel(entry.level)"></span>
+                      <span class="log-msg" x-text="entry.message"></span>
+                    </div>
+                  </template>
+                  <div x-show="logs.length === 0" class="log-empty">ログはまだありません。転送を開始するとここに表示されます。</div>
+                </div>
+                <div class="auto-scroll-bar" x-show="!autoScroll">
+                  <button class="btn-scroll-bottom" @click="enableAutoScroll()">&#8595; 最新へ</button>
+                  <span>自動スクロールを一時停止中</span>
+                </div>
+              </section>
+            </main>
           </div>
 
           <script>
@@ -992,6 +1065,78 @@ public static class DashboardServer
 
             // 初回即時ロード
             refresh();
+
+            // ログタブ Alpine.js コンポーネント
+            function logTab() {
+              return {
+                logs: [],
+                filter: { Info: true, Warn: true, Error: true },
+                autoScroll: true,
+                es: null,
+
+                get filteredLogs() {
+                  return this.logs.filter(e => {
+                    const l = e.level;
+                    if (l === 'Warning') return this.filter.Warn;
+                    if (l === 'Error' || l === 'Fatal' || l === 'Critical') return this.filter.Error;
+                    return this.filter.Info;
+                  });
+                },
+
+                levelClass(level) {
+                  if (level === 'Warning') return 'log-warn';
+                  if (level === 'Error' || level === 'Fatal' || level === 'Critical') return 'log-err';
+                  return 'log-info';
+                },
+
+                fmtLevel(level) {
+                  if (level === 'Information') return 'INFO';
+                  if (level === 'Warning')     return 'WARN';
+                  if (level === 'Error')       return 'ERR ';
+                  if (level === 'Fatal')       return 'FATL';
+                  if (level === 'Critical')    return 'CRIT';
+                  return level.slice(0, 4).toUpperCase();
+                },
+
+                fmtTs(ts) {
+                  try {
+                    return new Date(ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                  } catch { return ''; }
+                },
+
+                init() {
+                  this.es = new EventSource('/api/logs/stream');
+                  this.es.onmessage = (e) => {
+                    try {
+                      const entry = JSON.parse(e.data);
+                      this.logs.push(entry);
+                      if (this.logs.length > 1000)
+                        this.logs.splice(0, this.logs.length - 1000);
+                      if (this.autoScroll)
+                        this.$nextTick(() => {
+                          const el = this.$refs.logContainer;
+                          if (el) el.scrollTop = el.scrollHeight;
+                        });
+                    } catch {}
+                  };
+                },
+
+                onScroll(e) {
+                  const el = e.target;
+                  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+                  if (!atBottom && this.autoScroll) this.autoScroll = false;
+                  else if (atBottom && !this.autoScroll) this.autoScroll = true;
+                },
+
+                enableAutoScroll() {
+                  this.autoScroll = true;
+                  const el = this.$refs.logContainer;
+                  if (el) el.scrollTop = el.scrollHeight;
+                },
+
+                clear() { this.logs = []; }
+              };
+            }
 
             // 設定タブ Alpine.js コンポーネント
             function configTab() {

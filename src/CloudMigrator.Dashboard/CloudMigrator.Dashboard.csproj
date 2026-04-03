@@ -3,6 +3,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\CloudMigrator.Core\CloudMigrator.Core.csproj" />
+    <ProjectReference Include="..\CloudMigrator.Observability\CloudMigrator.Observability.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

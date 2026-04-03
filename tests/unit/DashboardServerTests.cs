@@ -370,5 +370,32 @@ public sealed class DashboardServerTests : IAsyncDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // ── /api/logs/stream GET (SSE) ───────────────────────────────────────
+
+    [Fact]
+    public async Task GetLogsStream_Returns200_AndCallsStreamAsync()
+    {
+        // 検証対象: GET /api/logs/stream  目的: ILogStreamService.StreamAsync が呼ばれ 200 OK を返す
+        var mockLogSvc = new Mock<ILogStreamService>(MockBehavior.Strict);
+        mockLogSvc
+            .Setup(s => s.StreamAsync(It.IsAny<Microsoft.AspNetCore.Http.HttpContext>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _app = DashboardServer.BuildApp(
+            _mockDb.Object,
+            wb => wb.UseTestServer(),
+            _mockConfigService.Object,
+            _mockJobService.Object,
+            mockLogSvc.Object);
+        await _app.StartAsync();
+        var client = _app.GetTestClient();
+
+        var response = await client.GetAsync("/api/logs/stream");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        mockLogSvc.Verify(
+            s => s.StreamAsync(It.IsAny<Microsoft.AspNetCore.Http.HttpContext>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }
 
