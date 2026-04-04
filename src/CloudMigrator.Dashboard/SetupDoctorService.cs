@@ -187,7 +187,8 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
 
         try
         {
-            var root = _options.DestinationRoot.Trim('/');
+            // バックスラッシュ・二重スラッシュを含む Windows パス表記に備え、/ に統一してから Trim する
+            var root = _options.DestinationRoot.Replace('\\', '/').Trim('/');
             var url = string.IsNullOrWhiteSpace(root)
                 ? $"https://graph.microsoft.com/v1.0/drives/{Uri.EscapeDataString(_options.DriveId)}"
                 : $"https://graph.microsoft.com/v1.0/drives/{Uri.EscapeDataString(_options.DriveId)}/root:/{BuildEncodedPath(root)}";

@@ -267,11 +267,10 @@ public static class DashboardServer
 
     private static readonly JsonSerializerOptions ApiJsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>診断結果専用: enum を文字列（PascalCase）にシリアライズし、日本語をエスケープしない。</summary>
+    /// <summary>診断結果専用: enum を文字列（PascalCase）にシリアライズする。</summary>
     private static readonly JsonSerializerOptions DoctorJsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     private static readonly string[] SecretKeyPatterns = ["secret", "password", "token", "apikey", "api_key"];
@@ -743,7 +742,7 @@ public static class DashboardServer
                 <!-- チェック一覧 -->
                 <div x-show="result !== null" class="checks-list">
                   <template x-for="c in (result ? result.checks : [])" :key="c.name">
-                    <div class="check-item" :class="c.status.toLowerCase()">
+                    <div class="check-item" :class="c.status === 'Warning' ? 'warn' : c.status.toLowerCase()">
                       <span class="check-icon" x-text="statusIcon(c.status)"></span>
                       <div class="check-body">
                         <span class="check-name" x-text="c.name"></span>

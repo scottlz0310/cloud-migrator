@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using CloudMigrator.Dashboard;
@@ -428,10 +429,15 @@ public sealed class DashboardServerTests : IAsyncDisposable
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         mockDoctorSvc.Verify(s => s.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("Healthy");
-        body.Should().Contain("Graph 認証");
-        body.Should().Contain("Pass");
+        var opts = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            Converters = { new JsonStringEnumConverter() },
+        };
+        var result = await response.Content.ReadFromJsonAsync<DoctorResult>(opts);
+        result!.OverallStatus.Should().Be(OverallStatus.Healthy);
+        result.Checks.Should().HaveCount(3);
+        result.Checks[0].Name.Should().Be("Graph 認証");
+        result.Checks.Should().AllSatisfy(c => c.Status.Should().Be(DoctorStatus.Pass));
     }
 
     [Fact]
@@ -462,9 +468,13 @@ public sealed class DashboardServerTests : IAsyncDisposable
         var response = await client.PostAsync("/api/setup/doctor", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("Unhealthy");
-        body.Should().Contain("Fail");
+        var opts = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            Converters = { new JsonStringEnumConverter() },
+        };
+        var result = await response.Content.ReadFromJsonAsync<DoctorResult>(opts);
+        result!.OverallStatus.Should().Be(OverallStatus.Unhealthy);
+        result.Checks.Should().AllSatisfy(c => c.Status.Should().Be(DoctorStatus.Fail));
     }
 }
 
