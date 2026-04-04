@@ -37,21 +37,20 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
 
     private readonly DoctorOptions _options;
     private readonly HttpClient _http;
-    private readonly bool _ownsHttp;
 
     /// <param name="options">診断に必要な資格情報・設定値。</param>
-    /// <param name="httpClient">テスト用の差し替え可能 HttpClient。null の場合は内部生成。</param>
-    public SetupDoctorService(DoctorOptions options, HttpClient? httpClient = null)
+    /// <param name="httpClient">呼び出し元で管理される共有 HttpClient（IHttpClientFactory 経由で注入）。</param>
+    public SetupDoctorService(DoctorOptions options, HttpClient httpClient)
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
         _options = options;
-        _ownsHttp = httpClient is null;
-        _http = httpClient ?? new HttpClient();
+        _http = httpClient;
     }
 
     /// <inheritdoc/>
     public void Dispose()
     {
-        if (_ownsHttp) _http.Dispose();
+        // 注入された HttpClient のライフサイクルは呼び出し元（IHttpClientFactory）が管理する。
     }
 
     /// <inheritdoc/>
@@ -131,7 +130,10 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return (null, new DoctorCheck(CheckName, DoctorStatus.Fail, ex.Message));
+            System.Diagnostics.Trace.TraceError(
+                "Graph 認証中に例外が発生しました。ClientId: {0}, TenantId: {1}, Exception: {2}",
+                _options.ClientId, _options.TenantId, ex.ToString());
+            return (null, new DoctorCheck(CheckName, DoctorStatus.Fail, "Graph 認証中に予期しないエラーが発生しました。"));
         }
     }
 
@@ -172,7 +174,10 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new DoctorCheck(CheckName, DoctorStatus.Fail, ex.Message);
+            System.Diagnostics.Trace.TraceError(
+                "SharePoint サイト確認中に例外が発生しました。SiteId: {0}, Exception: {1}",
+                _options.SiteId, ex.ToString());
+            return new DoctorCheck(CheckName, DoctorStatus.Fail, "サイト確認中に予期しないエラーが発生しました。");
         }
     }
 
@@ -225,7 +230,10 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new DoctorCheck(CheckName, DoctorStatus.Fail, ex.Message);
+            System.Diagnostics.Trace.TraceError(
+                "ドキュメントライブラリ確認中に例外が発生しました。DriveId: {0}, DestinationRoot: {1}, Exception: {2}",
+                _options.DriveId, _options.DestinationRoot, ex.ToString());
+            return new DoctorCheck(CheckName, DoctorStatus.Fail, "ライブラリ確認中に予期しないエラーが発生しました。");
         }
     }
 

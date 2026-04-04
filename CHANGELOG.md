@@ -18,7 +18,7 @@
     - 「テスト実行」ボタン・スピナー表示・全体判定バナー（Healthy/Degraded/Unhealthy）
     - チェック項目ごとに ✅ Pass / ⚠️ Warning / ❌ Fail を色付きカードで表示
     - エラーメッセージをインラインボックスで表示
-  - `SetupDoctorServiceTests.cs` 新設 (7 テスト): 全チェック Pass / 認証失敗・後続スキップ / 資格情報未設定 / サイト 404 / SiteId 未設定 / DriveId 未設定 / 部分 Fail
+  - `SetupDoctorServiceTests.cs` 新設 (9 テスト): 全チェック Pass / 認証失敗・後続スキップ / 資格情報未設定 / サイト 404 / SiteId 未設定 / DriveId 未設定 / 部分 Fail / `access_token` 空 / `DestinationRoot` 正規化
   - `DashboardServerTests.cs` に `POST /api/setup/doctor` テスト 2 件追加
 
 - **Studio Ph-3: ログストリーミング SSE + ログビューア UI** (Issue #83)

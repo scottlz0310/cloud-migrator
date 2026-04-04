@@ -96,9 +96,14 @@ public static class DashboardServer
         }
         else
         {
+            // IHttpClientFactory 登録: Transient な SetupDoctorService がリクエスト毎に HttpClient を
+            // 再生成しソケット枯渇を引き起こさないようハンドラープールを利用する
+            builder.Services.AddHttpClient();
             // Transient 登録: /api/config 更新後の接続テストで最新設定を反映するため毎リクエスト生成する
-            builder.Services.AddTransient<ISetupDoctorService>(_ =>
+            builder.Services.AddTransient<ISetupDoctorService>(sp =>
             {
+                var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+                var http = httpFactory.CreateClient("SetupDoctor");
                 var cfg = AppConfiguration.Build();
                 var migratorOpts = cfg.GetSection(MigratorOptions.SectionName)
                     .Get<MigratorOptions>() ?? new();
@@ -108,7 +113,7 @@ public static class DashboardServer
                     AppConfiguration.GetGraphClientSecret(),
                     migratorOpts.Graph.SharePointSiteId,
                     migratorOpts.Graph.SharePointDriveId,
-                    migratorOpts.DestinationRoot));
+                    migratorOpts.DestinationRoot), http);
             });
         }
 
