@@ -21,6 +21,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>60e5cdd2-925e-488b-848f-6d5f4d95c93b</UserSecretsId>
+    <AssemblyName>cloud-migrator</AssemblyName>
   </PropertyGroup>
 
 </Project>

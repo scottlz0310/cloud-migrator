@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    env:
+      HUSKY: 0
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            archive_ext: zip
+          - rid: linux-x64
+            os: ubuntu-latest
+            archive_ext: tar.gz
+          - rid: osx-x64
+            os: macos-latest
+            archive_ext: tar.gz
+          - rid: osx-arm64
+            os: macos-latest
+            archive_ext: tar.gz
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: .NET セットアップ
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0'
+
+      - name: 依存関係の復元（RID 付き）
+        # self-contained publish に必要な runtime pack を正しく復元するため
+        # --runtime と SelfContained プロパティを restore 側にも指定する
+        run: >
+          dotnet restore src/CloudMigrator.Cli/CloudMigrator.Cli.csproj
+          --runtime ${{ matrix.rid }}
+          -p:SelfContained=true
+          -p:PublishSingleFile=true
+
+      - name: Self-contained 単一ファイルとして発行
+        run: >
+          dotnet publish src/CloudMigrator.Cli/CloudMigrator.Cli.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          --no-restore
+          --output publish/${{ matrix.rid }}
+
+      - name: アーカイブ作成（Windows）
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          $version  = "${{ github.ref_name }}"
+          $assetName = "cloud-migrator-${version}-${{ matrix.rid }}.zip"
+          Compress-Archive -Path "publish/${{ matrix.rid }}/*" -DestinationPath $assetName
+          "ASSET_NAME=$assetName" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: アーカイブ作成（Unix）
+        if: matrix.archive_ext == 'tar.gz'
+        shell: bash
+        run: |
+          version="${{ github.ref_name }}"
+          asset_name="cloud-migrator-${version}-${{ matrix.rid }}.tar.gz"
+          tar -czf "${asset_name}" -C "publish/${{ matrix.rid }}" .
+          echo "ASSET_NAME=${asset_name}" >> "$GITHUB_ENV"
+
+      - name: リリースが存在しない場合は作成（競合耐性あり）
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+            echo "Release '${{ github.ref_name }}' は既に存在します。"
+            exit 0
+          fi
+
+          if gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes; then
+            echo "Release '${{ github.ref_name }}' を作成しました。"
+            exit 0
+          fi
+
+          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+            echo "別の並列ジョブが Release '${{ github.ref_name }}' を作成済みのため成功扱いにします。"
+            exit 0
+          fi
+
+          echo "Release '${{ github.ref_name }}' の作成に失敗しました。"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: リリースアセットをアップロード
+        run: gh release upload ${{ github.ref_name }} "${{ env.ASSET_NAME }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
