@@ -6,13 +6,22 @@ using CloudMigrator.Dashboard;
 using Microsoft.Extensions.Configuration;
 
 // 初回起動時: ./configs/config.json → AppData へ自動移行
+// 移行メッセージは JSON ログ（stdout）との混在を避けるため stderr に出力する
 var migration = AppConfiguration.MigrateConfigIfNeeded();
 if (migration.Migrated)
-    Console.WriteLine($"[INFO] 設定ファイルを AppData へ移行しました: {migration.SourcePath} → {migration.DestPath}");
+    Console.Error.WriteLine($"[INFO] 設定ファイルを AppData へ移行しました: {migration.SourcePath} → {migration.DestPath}");
 else if (migration.Error is not null)
     Console.Error.WriteLine($"[WARN] 設定ファイルの移行に失敗しました: {migration.Error.Message}");
-// AppData ディレクトリを確実に作成
-AppDataPaths.EnsureDirectoriesExist();
+
+// AppData ディレクトリ作成: 権限不足や読み取り専用環境でも --help 等が中断しないよう例外を捕捉する
+try
+{
+    AppDataPaths.EnsureDirectoriesExist();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"[WARN] AppData ディレクトリの作成に失敗しました: {ex.Message}");
+}
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>

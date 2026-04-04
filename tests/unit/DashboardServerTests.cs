@@ -14,10 +14,17 @@ using Moq;
 namespace CloudMigrator.Tests.Unit;
 
 /// <summary>
+/// 環境変数 MIGRATOR_DATA_DIR を変更するテストを含むため、並列実行を無効化する。
+/// </summary>
+[CollectionDefinition(nameof(DashboardServerTests), DisableParallelization = true)]
+public sealed class DashboardServerTestsCollection { }
+
+/// <summary>
 /// 検証対象: DashboardServer API エンドポイント
 /// 目的: 各エンドポイントが ITransferStateDb を正しく呼び出し、
 ///       適切な HTTP レスポンスを返すことを確認する
 /// </summary>
+[Collection(nameof(DashboardServerTests))]
 public sealed class DashboardServerTests : IAsyncDisposable
 {
     private readonly Mock<ITransferStateDb> _mockDb = new(MockBehavior.Loose);
@@ -573,6 +580,81 @@ public sealed class DashboardServerTests : IAsyncDisposable
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadAsStringAsync();
         json.Should().Be("[]");
+    }
+
+    // ── /api/system/paths ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSystemPaths_WithoutCustomDir_ReturnsDefaultHints()
+    {
+        // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR 未設定時に固定ヒント文字列と usingCustomDataDir=false を返す
+        var original = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
+        Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", null);
+        try
+        {
+            var client = await CreateClientAsync();
+
+            var response = await client.GetAsync("/api/system/paths");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeFalse();
+            body.GetProperty("dataDirectory").GetString().Should().Be("AppData/CloudMigrator/");
+            body.GetProperty("configFile").GetString().Should().Be("configs/config.json");
+            body.GetProperty("logsDirectory").GetString().Should().Be("logs/");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", original);
+        }
+    }
+
+    [Fact]
+    public async Task GetSystemPaths_WithCustomDir_ReturnsCustomHint()
+    {
+        // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR 設定時に usingCustomDataDir=true とカスタム表示を返す
+        var original = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
+        Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", @"C:\CustomData");
+        try
+        {
+            var client = await CreateClientAsync();
+
+            var response = await client.GetAsync("/api/system/paths");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeTrue();
+            body.GetProperty("dataDirectory").GetString().Should().Be("カスタム（MIGRATOR_DATA_DIR）");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", original);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GetSystemPaths_WithBlankCustomDir_ReturnsDefaultHints(string envVal)
+    {
+        // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR が空文字/空白の場合は既定ヒントにフォールバックする
+        var original = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
+        Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", envVal);
+        try
+        {
+            var client = await CreateClientAsync();
+
+            var response = await client.GetAsync("/api/system/paths");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeFalse();
+            body.GetProperty("dataDirectory").GetString().Should().Be("AppData/CloudMigrator/");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", original);
+        }
     }
 }
 

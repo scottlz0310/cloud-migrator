@@ -303,12 +303,21 @@ public static class DashboardServer
         });
 
         // GET /api/system/paths  → AppData データパス情報
-        app.MapGet("/api/system/paths", () => Results.Json(new
+        // セキュリティ: 絶対パスはホスト構成次第で情報露出になるため返却しない。
+        // ユーザーが保存先を把握できるよう、固定ヒント文字列と MIGRATOR_DATA_DIR 使用有無を返す。
+        // プラットフォーム非依存のスラッシュ区切り相対表記を使用する。
+        app.MapGet("/api/system/paths", () =>
         {
-            dataDirectory = AppDataPaths.DataDirectory,
-            configFile = AppDataPaths.ConfigFile,
-            logsDirectory = AppDataPaths.LogsDirectory,
-        }, ApiJsonOptions));
+            var customDir = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
+            var usingCustom = !string.IsNullOrWhiteSpace(customDir);
+            return Results.Json(new
+            {
+                dataDirectory = usingCustom ? "カスタム（MIGRATOR_DATA_DIR）" : "AppData/CloudMigrator/",
+                configFile = "configs/config.json",
+                logsDirectory = "logs/",
+                usingCustomDataDir = usingCustom,
+            }, ApiJsonOptions);
+        });
 
         // POST /api/setup/doctor  → Graph 認証・SharePoint 疎通確認（同期実行、最大 30 秒）
         app.MapPost("/api/setup/doctor", async (ISetupDoctorService docSvc, CancellationToken ct) =>
