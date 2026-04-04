@@ -9,6 +9,17 @@
 
 ---
 
+## [0.2.1] - 2026-04-04
+
+### Added
+- `cloud-migrator setup` サブコマンドを追加: `bootstrap` / `init` / `doctor` / `verify` を `cloud-migrator.exe` から直接実行可能に
+  - `CloudMigrator.Setup.Cli` を `CloudMigrator.Cli` の依存関係に追加
+  - `SetupCommand.cs` 新設（`CloudMigrator.Cli.Commands`）
+  - `AssemblyInfo.cs` に `InternalsVisibleTo("cloud-migrator")` を追加
+  - `SetupCommandTests.cs` 追加: サブコマンド名・件数を検証するユニットテスト 6 件
+
+---
+
 ## [0.2.0] - 2026-04-04
 
 ### Added
