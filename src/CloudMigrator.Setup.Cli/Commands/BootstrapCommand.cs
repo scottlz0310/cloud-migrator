@@ -22,7 +22,7 @@ internal static class BootstrapCommand
         var configPathOpt = new Option<string>("--config-path")
         {
             Description = "config.json の出力先",
-            DefaultValueFactory = _ => AppDataPaths.ConfigFile,
+            DefaultValueFactory = _ => "configs/config.json",
         };
         var envPathOpt = new Option<string>("--env-path")
         {
@@ -50,7 +50,7 @@ internal static class BootstrapCommand
 
         cmd.SetAction(async (parseResult, ct) =>
         {
-            var configPath = parseResult.GetValue(configPathOpt) ?? AppDataPaths.ConfigFile;
+            var configPath = parseResult.GetValue(configPathOpt) ?? "configs/config.json";
             var envPath = parseResult.GetValue(envPathOpt) ?? ".env";
             var force = parseResult.GetValue(forceOpt);
             var noVerify = parseResult.GetValue(noVerifyOpt);
@@ -167,7 +167,7 @@ internal static class BootstrapCommand
         var cfgPresetCount = cfgPresets.Count(x => x.HasValue);
         if (cfgPresetCount > 0)
         {
-            console.WriteLine($"ℹ️  {configPath} から {cfgPresetCount} 件の設定を読み込みました。Enter で前回値を使用できます。");
+            console.WriteLine($"ℹ️  configs/config.json から {cfgPresetCount} 件の設定を読み込みました。Enter で前回値を使用できます。");
             foreach (var (name, _) in cfgPresets.Where(x => x.HasValue))
                 console.WriteLine($"     ✓ {name}");
             console.WriteLine();
@@ -846,7 +846,7 @@ internal static class BootstrapCommand
         {
             // 壊れた config.json はウィザードを止めず、前回値なしとして続行する
             Console.Error.WriteLine(
-                $"[WARN] {configPath} の解析に失敗しました（前回値は使用しません）: {ex.Message}");
+                $"[WARN] configs/config.json の解析に失敗しました（前回値は使用しません）: {ex.Message}");
             return new MigratorOptions();
         }
     }

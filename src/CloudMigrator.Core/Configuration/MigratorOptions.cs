@@ -86,18 +86,18 @@ public sealed class WatchdogOptions
 
 public sealed class PathOptions
 {
-    public string SkipList { get; set; } = AppDataPaths.LogFile("skip_list.json");
-    public string OneDriveCache { get; set; } = AppDataPaths.LogFile("onedrive_files.json");
-    public string SharePointCache { get; set; } = AppDataPaths.LogFile("sharepoint_current_files.json");
-    public string DropboxCache { get; set; } = AppDataPaths.LogFile("dropbox_files.json");
-    public string TransferLog { get; set; } = AppDataPaths.LogFile("transfer.log");
-    public string ConfigHash { get; set; } = AppDataPaths.LogFile("config_hash.txt");
+    public string SkipList { get; set; } = "logs/skip_list.json";
+    public string OneDriveCache { get; set; } = "logs/onedrive_files.json";
+    public string SharePointCache { get; set; } = "logs/sharepoint_current_files.json";
+    public string DropboxCache { get; set; } = "logs/dropbox_files.json";
+    public string TransferLog { get; set; } = "logs/transfer.log";
+    public string ConfigHash { get; set; } = "logs/config_hash.txt";
 
     /// <summary>Dropbox 移行の SQLite 状態 DB ファイルパス。</summary>
-    public string DropboxStateDb { get; set; } = AppDataPaths.LogFile("dropbox_transfer_state.db");
+    public string DropboxStateDb { get; set; } = "logs/dropbox_transfer_state.db";
 
     /// <summary>SharePoint 移行の SQLite 状態 DB ファイルパス。</summary>
-    public string SharePointStateDb { get; set; } = AppDataPaths.LogFile("sharepoint_transfer_state.db");
+    public string SharePointStateDb { get; set; } = "logs/sharepoint_transfer_state.db";
 }
 
 /// <summary>

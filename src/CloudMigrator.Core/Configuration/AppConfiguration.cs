@@ -64,26 +64,19 @@ public static class AppConfiguration
         => Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__CLIENTSECRET") ?? string.Empty;
 
     /// <summary>
-    /// config.json を探す。
+    /// configs/config.json を探す。
     /// 優先順位:
-    ///   1. %APPDATA%\CloudMigrator\configs\config.json（AppDataPaths.ConfigFile）
-    ///   2. 現在のワーキングディレクトリ（開発時: dotnet run はリポジトリルートから実行されることが多い）
-    ///   3. AppContext.BaseDirectory から最大 6 階層上まで遡って検索
+    ///   1. 現在のワーキングディレクトリ（dotnet run はリポジトリルートから実行されることが多い）
+    ///   2. AppContext.BaseDirectory から最大 6 階層上まで遡って検索
     ///      （dotnet run 時は bin/Debug/net10.0/ が起点となるため、リポジトリルートに届くよう余裕を持たせる）
     /// </summary>
     public static string ResolveConfigPath()
     {
-        // 1. AppData を最優先（バイナリ配布時の標準パス）
-        var appDataCandidate = AppDataPaths.ConfigFile;
-        if (File.Exists(appDataCandidate))
-            return appDataCandidate;
-
-        // 2. ワーキングディレクトリ（開発時フォールバック）
+        // ワーキングディレクトリを最優先で確認
         var cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), "configs", "config.json");
         if (File.Exists(cwdCandidate))
             return cwdCandidate;
 
-        // 3. BaseDirectory 遡り
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 6; i++)
         {
@@ -96,42 +89,7 @@ public static class AppConfiguration
                 break;
             dir = parent.FullName;
         }
-
-        // 見つからない場合は AppData パスを返す（optional: true なので起動は継続する）
-        return appDataCandidate;
-    }
-
-    /// <summary>
-    /// 既存の ./configs/config.json を AppData へ自動移行する（初回起動時）。
-    /// 条件:
-    ///   - ./configs/config.json が存在する
-    ///   - %APPDATA%\CloudMigrator\configs\config.json が存在しない
-    /// 上記を満たす場合のみ AppData 側へコピーし、結果を返す。
-    /// Console への直接出力は行わない（ログは呼び出し元で構造化出力すること）。
-    /// </summary>
-    /// <returns>
-    ///   Migrated: コピーが実行された場合 true。
-    ///   SourcePath / DestPath: コピー元・コピー先のフルパス。
-    ///   Error: コピー失敗時の例外（null = 成功またはスキップ）。
-    /// </returns>
-    public static (bool Migrated, string SourcePath, string DestPath, Exception? Error)
-        MigrateConfigIfNeeded()
-    {
-        var srcPath = Path.Combine(Directory.GetCurrentDirectory(), "configs", "config.json");
-        var destPath = AppDataPaths.ConfigFile;
-
-        if (!File.Exists(srcPath) || File.Exists(destPath))
-            return (false, srcPath, destPath, null);
-
-        try
-        {
-            AppDataPaths.EnsureDirectoriesExist();
-            File.Copy(srcPath, destPath, overwrite: false);
-            return (true, srcPath, destPath, null);
-        }
-        catch (Exception ex)
-        {
-            return (false, srcPath, destPath, ex);
-        }
+        // 見つからない場合はワーキングディレクトリ基準の標準パスを返す（optional: true なので起動は継続する）
+        return cwdCandidate;
     }
 }
