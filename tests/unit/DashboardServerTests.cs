@@ -581,23 +581,32 @@ public sealed class DashboardServerTests : IAsyncDisposable
     public async Task GetSystemPaths_WithoutCustomDir_ReturnsDefaultHints()
     {
         // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR 未設定時に固定ヒント文字列と usingCustomDataDir=false を返す
+        var original = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
         Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", null);
-        var client = await CreateClientAsync();
+        try
+        {
+            var client = await CreateClientAsync();
 
-        var response = await client.GetAsync("/api/system/paths");
+            var response = await client.GetAsync("/api/system/paths");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeFalse();
-        body.GetProperty("dataDirectory").GetString().Should().Be("AppData/CloudMigrator/");
-        body.GetProperty("configFile").GetString().Should().Be("configs/config.json");
-        body.GetProperty("logsDirectory").GetString().Should().Be("logs/");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeFalse();
+            body.GetProperty("dataDirectory").GetString().Should().Be("AppData/CloudMigrator/");
+            body.GetProperty("configFile").GetString().Should().Be("configs/config.json");
+            body.GetProperty("logsDirectory").GetString().Should().Be("logs/");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", original);
+        }
     }
 
     [Fact]
     public async Task GetSystemPaths_WithCustomDir_ReturnsCustomHint()
     {
         // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR 設定時に usingCustomDataDir=true とカスタム表示を返す
+        var original = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
         Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", @"C:\CustomData");
         try
         {
@@ -612,7 +621,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
         }
         finally
         {
-            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", null);
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", original);
         }
     }
 
@@ -622,6 +631,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
     public async Task GetSystemPaths_WithBlankCustomDir_ReturnsDefaultHints(string envVal)
     {
         // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR が空文字/空白の場合は既定ヒントにフォールバックする
+        var original = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
         Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", envVal);
         try
         {
@@ -636,7 +646,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
         }
         finally
         {
-            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", null);
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", original);
         }
     }
 }
