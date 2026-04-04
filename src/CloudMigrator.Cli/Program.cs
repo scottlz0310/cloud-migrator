@@ -5,6 +5,15 @@ using CloudMigrator.Core.Configuration;
 using CloudMigrator.Dashboard;
 using Microsoft.Extensions.Configuration;
 
+// 初回起動時: ./configs/config.json → AppData へ自動移行
+var migration = AppConfiguration.MigrateConfigIfNeeded();
+if (migration.Migrated)
+    Console.WriteLine($"[INFO] 設定ファイルを AppData へ移行しました: {migration.SourcePath} → {migration.DestPath}");
+else if (migration.Error is not null)
+    Console.Error.WriteLine($"[WARN] 設定ファイルの移行に失敗しました: {migration.Error.Message}");
+// AppData ディレクトリを確実に作成
+AppDataPaths.EnsureDirectoriesExist();
+
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
 {
