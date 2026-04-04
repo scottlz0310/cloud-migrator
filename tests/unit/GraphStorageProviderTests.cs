@@ -306,7 +306,7 @@ public class GraphStorageProviderTests
     }
 
     [Fact]
-    public async Task ServerSideCopyAsync_ShouldComplete_WhenFolderCacheIsMissAndEnsureFolderSucceeds()
+    public async Task ServerSideCopyAsync_ShouldComplete_WhenFolderCacheMissOccursAndEnsureFolderSucceeds()
     {
         // 検証対象: CopyToSharePointAsync のキャッシュミスパス
         // 目的: インプロセスキャッシュが空のとき EnsureFolderAsync でフォルダ ID を補完し、コピーが完了すること
