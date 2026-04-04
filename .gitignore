@@ -55,6 +55,7 @@ nunit-*.xml
 # .NET ビルド成果物
 bin/
 obj/
+publish/
 *.user
 *.suo
 .vs/

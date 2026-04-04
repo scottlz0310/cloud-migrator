@@ -9,6 +9,7 @@ namespace CloudMigrator.Dashboard;
 /// </summary>
 public sealed record ConfigDto(
     int MaxParallelTransfers,
+    int MaxParallelFolderCreations,
     int ChunkSizeMb,
     int LargeFileThresholdMb,
     int RetryCount,
@@ -21,6 +22,7 @@ public sealed record ConfigDto(
 /// </summary>
 public sealed record ConfigUpdateDto(
     int? MaxParallelTransfers = null,
+    int? MaxParallelFolderCreations = null,
     int? ChunkSizeMb = null,
     int? LargeFileThresholdMb = null,
     int? RetryCount = null,
@@ -65,6 +67,7 @@ public sealed class ConfigurationService : IConfigurationService
 
         return new ConfigDto(
             MaxParallelTransfers: GetInt(m, "maxParallelTransfers", 4),
+            MaxParallelFolderCreations: GetInt(m, "maxParallelFolderCreations", 4),
             ChunkSizeMb: GetInt(m, "chunkSizeMb", 5),
             LargeFileThresholdMb: GetInt(m, "largeFileThresholdMb", 4),
             RetryCount: GetInt(m, "retryCount", 3),
@@ -86,6 +89,7 @@ public sealed class ConfigurationService : IConfigurationService
                 ?? throw new InvalidOperationException("config.json に migrator セクションが存在しません。");
 
             if (update.MaxParallelTransfers.HasValue) m["maxParallelTransfers"] = update.MaxParallelTransfers.Value;
+            if (update.MaxParallelFolderCreations.HasValue) m["maxParallelFolderCreations"] = update.MaxParallelFolderCreations.Value;
             if (update.ChunkSizeMb.HasValue) m["chunkSizeMb"] = update.ChunkSizeMb.Value;
             if (update.LargeFileThresholdMb.HasValue) m["largeFileThresholdMb"] = update.LargeFileThresholdMb.Value;
             if (update.RetryCount.HasValue) m["retryCount"] = update.RetryCount.Value;

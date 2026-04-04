@@ -203,6 +203,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
         // 検証対象: GET /api/config  目的: IConfigurationService から ConfigDto を取得して 200 OK を返す
         var dto = new ConfigDto(
             MaxParallelTransfers: 20,
+            MaxParallelFolderCreations: 4,
             ChunkSizeMb: 5,
             LargeFileThresholdMb: 4,
             RetryCount: 3,
@@ -276,6 +277,21 @@ public sealed class DashboardServerTests : IAsyncDisposable
             chunkSizeMb = chunkSize,
             retryCount
         });
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await client.PutAsync("/api/config", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData(0)]   // maxParallelFolderCreations=0 → 下限違反
+    [InlineData(33)]  // maxParallelFolderCreations=33 → 上限違反
+    public async Task PutConfig_WithOutOfRangeMaxParallelFolderCreations_Returns400(int maxParallelFolderCreations)
+    {
+        // 検証対象: PUT /api/config  目的: maxParallelFolderCreations の範囲外値は 400 BadRequest
+        var client = await CreateClientAsync();
+
+        var json = JsonSerializer.Serialize(new { maxParallelFolderCreations });
         var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/api/config", content);
 

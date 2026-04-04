@@ -266,7 +266,7 @@ public sealed class SetupInitCommandTests : IDisposable
         // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: 両パラメーターが null の場合はテンプレートをそのまま返すこと
         var original = InitCommand.BuildDefaultConfigTemplate();
 
-        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(original, null, null);
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(original, null, null, null);
 
         result.Should().Be(original);
     }
@@ -277,7 +277,7 @@ public sealed class SetupInitCommandTests : IDisposable
         // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: maxParallelTransfers が config.json に反映されること
         var template = InitCommand.BuildDefaultConfigTemplate();
 
-        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, maxParallelTransfers: 8, null);
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, maxParallelTransfers: 8, null, null);
 
         using var doc = System.Text.Json.JsonDocument.Parse(result);
         doc.RootElement
@@ -293,7 +293,7 @@ public sealed class SetupInitCommandTests : IDisposable
         // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: adaptiveConcurrency.enabled が true に設定されること
         var template = InitCommand.BuildDefaultConfigTemplate();
 
-        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, null, adaptiveConcurrencyEnabled: true);
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, null, null, adaptiveConcurrencyEnabled: true);
 
         using var doc = System.Text.Json.JsonDocument.Parse(result);
         doc.RootElement
@@ -311,12 +311,28 @@ public sealed class SetupInitCommandTests : IDisposable
         // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: maxParallelTransfers と adaptiveConcurrency.enabled を同時に設定できること
         var template = InitCommand.BuildDefaultConfigTemplate();
 
-        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, maxParallelTransfers: 6, adaptiveConcurrencyEnabled: true);
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, maxParallelTransfers: 6, null, adaptiveConcurrencyEnabled: true);
 
         using var doc = System.Text.Json.JsonDocument.Parse(result);
         var migrator = doc.RootElement.GetProperty("migrator");
         migrator.GetProperty("maxParallelTransfers").GetInt32().Should().Be(6);
         migrator.GetProperty("adaptiveConcurrency").GetProperty("default").GetProperty("enabled").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public void ApplyPerformanceValuesToConfigTemplate_ShouldSetMaxParallelFolderCreations()
+    {
+        // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: maxParallelFolderCreations が config.json に反映されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, null, maxParallelFolderCreations: 8, null);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        doc.RootElement
+            .GetProperty("migrator")
+            .GetProperty("maxParallelFolderCreations")
+            .GetInt32()
+            .Should().Be(8);
     }
 
     // ===== ApplyDropboxValuesToConfigTemplate =====
