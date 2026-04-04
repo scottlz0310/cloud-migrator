@@ -8,6 +8,19 @@
 ## [Unreleased]
 
 ### Added
+- **Studio Ph-4: 接続テスト UI + `POST /api/setup/doctor`** (Issue #84)
+  - `DoctorCheck` record 新設（`CloudMigrator.Dashboard`）: name / status (Pass|Warning|Fail) / detail
+  - `DoctorResult` record 新設（`CloudMigrator.Dashboard`）: overallStatus (Healthy|Degraded|Unhealthy) / checks
+  - `DoctorOptions` record 新設: ClientId / TenantId / ClientSecret / SiteId / DriveId / DestinationRoot
+  - `ISetupDoctorService` / `SetupDoctorService` 新設: Graph 認証（client_credentials フロー）・SharePoint サイト到達確認・ドキュメントライブラリ確認を各 10 秒タイムアウトで順次実行
+  - `POST /api/setup/doctor` エンドポイント追加: 3 チェック結果 + overallStatus を JSON で返す
+  - Alpine.js「診断」タブ追加（5 タブ構成: 監視・実行・設定・ログ・診断）
+    - 「テスト実行」ボタン・スピナー表示・全体判定バナー（Healthy/Degraded/Unhealthy）
+    - チェック項目ごとに ✅ Pass / ⚠️ Warning / ❌ Fail を色付きカードで表示
+    - エラーメッセージをインラインボックスで表示
+  - `SetupDoctorServiceTests.cs` 新設 (9 テスト): 全チェック Pass / 認証失敗・後続スキップ / 資格情報未設定 / サイト 404 / SiteId 未設定 / DriveId 未設定 / 部分 Fail / `access_token` 空 / `DestinationRoot` 正規化
+  - `DashboardServerTests.cs` に `POST /api/setup/doctor` テスト 2 件追加
+
 - **Studio Ph-3: ログストリーミング SSE + ログビューア UI** (Issue #83)
   - `LogEntry` record 新設（`CloudMigrator.Observability`）: timestamp (UTC) / level / message
   - `LogStreamSink` 新設（`CloudMigrator.Observability`）: `ILogEventSink` 実装。リングバッファ 500 件 + 複数 SSE クライアントへのブロードキャスト
