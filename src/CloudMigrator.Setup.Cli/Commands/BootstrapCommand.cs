@@ -198,11 +198,11 @@ internal static class BootstrapCommand
         var maxParallelTransfers = int.TryParse(maxParallelTransfersInput, out var mpt) && mpt >= 1
             ? mpt
             : Math.Max(1, cfgOptions.MaxParallelTransfers);
-        console.WriteLine("  ヒント: 並列フォルダ作成数は Phase C のフォルダ先行作成の並列度です。SharePoint スロットリング状況により 2【16 表度が安定します。");
+        console.WriteLine("  ヒント: 並列フォルダ作成数は Phase C のフォルダ先行作成の並列度です。SharePoint スロットリング状況により 2【16 程度が安定します。");
         var maxParallelFolderCreationsInput = console.Prompt("並列フォルダ作成数", cfgOptions.MaxParallelFolderCreations.ToString());
-        var maxParallelFolderCreations = int.TryParse(maxParallelFolderCreationsInput, out var mpfc) && mpfc >= 1
+        var maxParallelFolderCreations = int.TryParse(maxParallelFolderCreationsInput, out var mpfc) && mpfc is >= 1 and <= 32
             ? mpfc
-            : Math.Max(1, cfgOptions.MaxParallelFolderCreations);
+            : Math.Clamp(cfgOptions.MaxParallelFolderCreations, 1, 32);
         var adaptiveConcurrencyEnabled = console.PromptBool(
             "レート制限に応じた動的並列度制御（AdaptiveConcurrency）を有効にしますか？",
             defaultValue: cfgOptions.GetAdaptiveConcurrency("default").Enabled);

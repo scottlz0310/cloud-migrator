@@ -319,6 +319,22 @@ public sealed class SetupInitCommandTests : IDisposable
         migrator.GetProperty("adaptiveConcurrency").GetProperty("default").GetProperty("enabled").GetBoolean().Should().BeTrue();
     }
 
+    [Fact]
+    public void ApplyPerformanceValuesToConfigTemplate_ShouldSetMaxParallelFolderCreations()
+    {
+        // 検証対象: ApplyPerformanceValuesToConfigTemplate  目的: maxParallelFolderCreations が config.json に反映されること
+        var template = InitCommand.BuildDefaultConfigTemplate();
+
+        var result = InitCommand.ApplyPerformanceValuesToConfigTemplate(template, null, maxParallelFolderCreations: 8, null);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        doc.RootElement
+            .GetProperty("migrator")
+            .GetProperty("maxParallelFolderCreations")
+            .GetInt32()
+            .Should().Be(8);
+    }
+
     // ===== ApplyDropboxValuesToConfigTemplate =====
 
     [Fact]

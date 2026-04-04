@@ -347,8 +347,8 @@ internal static class InitCommand
         }
         if (maxParallelFolderCreations is not null)
         {
-            if (maxParallelFolderCreations.Value < 1)
-                throw new ArgumentOutOfRangeException(nameof(maxParallelFolderCreations), "並列フォルダ作成数は 1 以上でなければなりません。");
+            if (maxParallelFolderCreations.Value < 1 || maxParallelFolderCreations.Value > 32)
+                throw new ArgumentOutOfRangeException(nameof(maxParallelFolderCreations), "並列フォルダ作成数は 1 以上 32 以下でなければなりません。");
             root.Migrator.MaxParallelFolderCreations = maxParallelFolderCreations.Value;
         }
         if (adaptiveConcurrencyEnabled is not null)
