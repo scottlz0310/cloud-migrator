@@ -69,6 +69,7 @@ rootCmd.Add(QualityMetricsCommand.Build());
 rootCmd.Add(SecurityScanCommand.Build());
 rootCmd.Add(FileCrawlerCommand.Build());
 rootCmd.Add(DashboardCommand.Build());
+rootCmd.Add(SetupCommand.Build());
 
 return await rootCmd.Parse(args).InvokeAsync(new InvocationConfiguration(), cts.Token);
 
