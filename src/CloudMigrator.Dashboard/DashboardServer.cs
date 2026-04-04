@@ -56,7 +56,10 @@ public static class DashboardServer
         LogStreamSink? logStreamSink = null)
     {
         var builder = WebApplication.CreateBuilder();
-        builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
+        // アプリログ（ILogger）は Information 以上を通し、フレームワーク固有のノイズ（Microsoft.* / System.*）のみ Warning に絞る
+        builder.Logging.SetMinimumLevel(LogLevel.Information);
+        builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
+        builder.Logging.AddFilter("System", LogLevel.Warning);
         builder.Services.AddSingleton(db);
         // configService 未指定時は既定実装を生成し登録（/api/config の定常稼働を保証）
         var resolvedConfigService = configService ?? new ConfigurationService();
