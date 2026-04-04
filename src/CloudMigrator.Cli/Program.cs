@@ -5,6 +5,11 @@ using CloudMigrator.Core.Configuration;
 using CloudMigrator.Dashboard;
 using Microsoft.Extensions.Configuration;
 
+// 初回起動時: ./configs/config.json → AppData へ自動移行
+AppConfiguration.MigrateConfigIfNeeded();
+// AppData ディレクトリを確実に作成
+AppDataPaths.EnsureDirectoriesExist();
+
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
 {

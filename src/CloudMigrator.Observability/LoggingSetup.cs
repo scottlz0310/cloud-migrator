@@ -41,7 +41,9 @@ public static class LoggingSetup
                 formatter,
                 logFilePath,
                 rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 30,
+                fileSizeLimitBytes: 10 * 1024 * 1024,
+                rollOnFileSizeLimit: true,
+                retainedFileCountLimit: 5,
                 shared: false);
 
         if (logStreamSink is not null)
