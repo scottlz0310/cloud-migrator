@@ -44,6 +44,14 @@ public sealed class SetupDoctorServiceTests
         return new HttpClient(handler.Object);
     }
 
+    private static IHttpClientFactory BuildHttpFactory(params (string UrlContains, HttpStatusCode StatusCode, string Body)[] responses)
+    {
+        var client = BuildHttpClient(responses);
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(client);
+        return factory.Object;
+    }
+
     private static string TokenJson(string token = "dummy-token") =>
         JsonSerializer.Serialize(new { access_token = token });
 
@@ -56,7 +64,7 @@ public sealed class SetupDoctorServiceTests
     public async Task RunAsync_AllChecksPass_ReturnsHealthy()
     {
         // 検証対象: RunAsync  目的: 3 チェックすべて成功時に Healthy を返す
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
             ("/sites/", HttpStatusCode.OK, SiteJson()),
             ("/drives/", HttpStatusCode.OK, "{}"));
@@ -74,7 +82,7 @@ public sealed class SetupDoctorServiceTests
     public async Task RunAsync_AuthFails_ReturnsUnhealthyAndSkipsOtherChecks()
     {
         // 検証対象: RunAsync（認証失敗）  目的: 認証失敗時に後続チェックをスキップして Unhealthy を返す
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.Unauthorized, "{}"));
 
         var svc = new SetupDoctorService(ValidOptions(), http);
@@ -101,7 +109,9 @@ public sealed class SetupDoctorServiceTests
             SiteId: "site",
             DriveId: "drive",
             DestinationRoot: "");
-        var svc = new SetupDoctorService(opts, new HttpClient());
+        var emptyFactory = new Mock<IHttpClientFactory>();
+        emptyFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+        var svc = new SetupDoctorService(opts, emptyFactory.Object);
 
         var result = await svc.RunAsync();
 
@@ -116,7 +126,7 @@ public sealed class SetupDoctorServiceTests
     public async Task RunAsync_SiteFails_ReturnsUnhealthy()
     {
         // 検証対象: CheckSiteAsync  目的: サイト取得が 404 の場合 Unhealthy を返す
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
             ("/sites/", HttpStatusCode.NotFound, "{}"),
             ("/drives/", HttpStatusCode.OK, "{}"));
@@ -136,7 +146,7 @@ public sealed class SetupDoctorServiceTests
         // 検証対象: CheckSiteAsync（SiteId 未設定）  目的: SiteId が空の場合 Fail を返す
         var opts = ValidOptions() with { SiteId = "" };
         // SiteIdが空なのでサイトは確認しないが driveIdは設定済み
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
             ("/drives/", HttpStatusCode.OK, "{}"));
         var svc = new SetupDoctorService(opts, http);
@@ -154,7 +164,7 @@ public sealed class SetupDoctorServiceTests
     {
         // 検証対象: CheckDriveAsync（DestinationRoot が見つからない）
         // 目的: destinationRoot が見つからない 404 の場合に詳細メッセージを返す
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
             ("/sites/", HttpStatusCode.OK, SiteJson()),
             ("/drives/", HttpStatusCode.NotFound, "{}"));
@@ -174,7 +184,7 @@ public sealed class SetupDoctorServiceTests
     {
         // 検証対象: CheckDriveAsync（DriveId 未設定）  目的: DriveId が空の場合 Fail を返す
         var opts = ValidOptions() with { DriveId = "" };
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
             ("/sites/", HttpStatusCode.OK, SiteJson()));
         var svc = new SetupDoctorService(opts, http);
@@ -189,7 +199,7 @@ public sealed class SetupDoctorServiceTests
     public async Task RunAsync_AuthPassSitePassDriveFail_ReturnsUnhealthy()
     {
         // 検証対象: BuildResult（一部 Fail）  目的: 一部 Fail があれば Unhealthy になる
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
             ("/sites/", HttpStatusCode.OK, SiteJson()),
             ("/drives/", HttpStatusCode.Forbidden, "{}"));
@@ -208,7 +218,7 @@ public sealed class SetupDoctorServiceTests
     public async Task RunAsync_AccessTokenNullOrEmpty_ReturnsAuthFail()
     {
         // 検証対象: CheckAuthAsync（access_token null）  目的: 200 OK でも access_token が空の場合は Fail を返す
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, "{\"access_token\":\"\"}"));
 
         var svc = new SetupDoctorService(ValidOptions(), http);
@@ -226,7 +236,7 @@ public sealed class SetupDoctorServiceTests
     public async Task RunAsync_DestinationRootWithDoubleSlash_NormalizesPath()
     {
         // 検証対象: CheckDriveAsync（DestinationRoot 正規化）  目的: // を含むパスが正規化され 404 にならずに Pass する
-        var http = BuildHttpClient(
+        var http = BuildHttpFactory(
             ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
             ("/sites/", HttpStatusCode.OK, SiteJson()),
             ("/drives/", HttpStatusCode.OK, "{}"));

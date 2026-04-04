@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Dashboard;
 
@@ -31,32 +32,31 @@ public interface ISetupDoctorService
 /// Graph API への HTTP 呼び出しで接続疎通を確認する <see cref="ISetupDoctorService"/> 実装。
 /// 各チェックのタイムアウトは <see cref="CheckTimeoutSeconds"/> 秒。
 /// </summary>
-public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
+public sealed class SetupDoctorService : ISetupDoctorService
 {
     private const int CheckTimeoutSeconds = 10;
 
     private readonly DoctorOptions _options;
-    private readonly HttpClient _http;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<SetupDoctorService>? _logger;
 
     /// <param name="options">診断に必要な資格情報・設定値。</param>
-    /// <param name="httpClient">呼び出し元で管理される共有 HttpClient（IHttpClientFactory 経由で注入）。</param>
-    public SetupDoctorService(DoctorOptions options, HttpClient httpClient)
+    /// <param name="httpClientFactory">HttpClient ファクトリー（RunAsync 毎にクライアントを生成しハンドラープールを再利用）。</param>
+    /// <param name="logger">ロガー（省略可。null の場合はサーバーログへの出力が行われない）。</param>
+    public SetupDoctorService(DoctorOptions options, IHttpClientFactory httpClientFactory, ILogger<SetupDoctorService>? logger = null)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(httpClientFactory);
         _options = options;
-        _http = httpClient;
-    }
-
-    /// <inheritdoc/>
-    public void Dispose()
-    {
-        // 注入された HttpClient のライフサイクルは呼び出し元（IHttpClientFactory）が管理する。
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
     public async Task<DoctorResult> RunAsync(CancellationToken ct = default)
     {
-        var (token, authCheck) = await CheckAuthAsync(ct).ConfigureAwait(false);
+        using var http = _httpClientFactory.CreateClient("SetupDoctor");
+
+        var (token, authCheck) = await CheckAuthAsync(http, ct).ConfigureAwait(false);
 
         if (authCheck.Status == DoctorStatus.Fail)
         {
@@ -69,8 +69,8 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
             ]);
         }
 
-        var siteCheck = await CheckSiteAsync(token!, ct).ConfigureAwait(false);
-        var driveCheck = await CheckDriveAsync(token!, ct).ConfigureAwait(false);
+        var siteCheck = await CheckSiteAsync(http, token!, ct).ConfigureAwait(false);
+        var driveCheck = await CheckDriveAsync(http, token!, ct).ConfigureAwait(false);
 
         return BuildResult([authCheck, siteCheck, driveCheck]);
     }
@@ -78,7 +78,7 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
     // ── 各チェック ────────────────────────────────────────────────────────
 
     /// <summary>クライアント資格情報フローでアクセストークンを取得する。</summary>
-    private async Task<(string? Token, DoctorCheck Check)> CheckAuthAsync(CancellationToken ct)
+    private async Task<(string? Token, DoctorCheck Check)> CheckAuthAsync(HttpClient http, CancellationToken ct)
     {
         const string CheckName = "Graph 認証";
 
@@ -103,7 +103,7 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
                 new KeyValuePair<string, string>("scope", "https://graph.microsoft.com/.default"),
             ]);
 
-            using var res = await _http.PostAsync(
+            using var res = await http.PostAsync(
                 $"https://login.microsoftonline.com/{Uri.EscapeDataString(_options.TenantId)}/oauth2/v2.0/token",
                 form, cts.Token).ConfigureAwait(false);
 
@@ -130,15 +130,14 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            System.Diagnostics.Trace.TraceError(
-                "Graph 認証中に例外が発生しました。ClientId: {0}, TenantId: {1}, Exception: {2}",
-                _options.ClientId, _options.TenantId, ex.ToString());
+            _logger?.LogError(ex, "Graph 認証中に例外が発生しました。ClientId: {ClientId}, TenantId: {TenantId}",
+                _options.ClientId, _options.TenantId);
             return (null, new DoctorCheck(CheckName, DoctorStatus.Fail, "Graph 認証中に予期しないエラーが発生しました。"));
         }
     }
 
     /// <summary>GET /sites/{siteId} で SharePoint サイトの存在・権限を確認する。</summary>
-    private async Task<DoctorCheck> CheckSiteAsync(string token, CancellationToken ct)
+    private async Task<DoctorCheck> CheckSiteAsync(HttpClient http, string token, CancellationToken ct)
     {
         const string CheckName = "SharePoint サイト";
 
@@ -154,7 +153,7 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
                 $"https://graph.microsoft.com/v1.0/sites/{Uri.EscapeDataString(_options.SiteId)}");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-            using var res = await _http.SendAsync(req, cts.Token).ConfigureAwait(false);
+            using var res = await http.SendAsync(req, cts.Token).ConfigureAwait(false);
 
             if (!res.IsSuccessStatusCode)
             {
@@ -174,9 +173,7 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            System.Diagnostics.Trace.TraceError(
-                "SharePoint サイト確認中に例外が発生しました。SiteId: {0}, Exception: {1}",
-                _options.SiteId, ex.ToString());
+            _logger?.LogError(ex, "SharePoint サイト確認中に例外が発生しました。SiteId: {SiteId}", _options.SiteId);
             return new DoctorCheck(CheckName, DoctorStatus.Fail, "サイト確認中に予期しないエラーが発生しました。");
         }
     }
@@ -185,7 +182,7 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
     /// ドライブ（ドキュメントライブラリ）の存在確認。
     /// DestinationRoot が設定されている場合はそのパスの存在も確認する。
     /// </summary>
-    private async Task<DoctorCheck> CheckDriveAsync(string token, CancellationToken ct)
+    private async Task<DoctorCheck> CheckDriveAsync(HttpClient http, string token, CancellationToken ct)
     {
         const string CheckName = "ドキュメントライブラリ";
 
@@ -197,8 +194,9 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
 
         try
         {
-            // バックスラッシュ・連続スラッシュを含む Windows パス表記を正規化する（空セグメントを除去）
+            // 前後空白・バックスラッシュ・予分なスラッシュを除去してパス表記を正規化する
             var root = string.Join('/', _options.DestinationRoot
+                .Trim()
                 .Replace('\\', '/')
                 .Split('/', StringSplitOptions.RemoveEmptyEntries));
             var url = string.IsNullOrWhiteSpace(root)
@@ -208,7 +206,7 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-            using var res = await _http.SendAsync(req, cts.Token).ConfigureAwait(false);
+            using var res = await http.SendAsync(req, cts.Token).ConfigureAwait(false);
 
             if (res.StatusCode == System.Net.HttpStatusCode.NotFound && !string.IsNullOrWhiteSpace(root))
             {
@@ -230,9 +228,8 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            System.Diagnostics.Trace.TraceError(
-                "ドキュメントライブラリ確認中に例外が発生しました。DriveId: {0}, DestinationRoot: {1}, Exception: {2}",
-                _options.DriveId, _options.DestinationRoot, ex.ToString());
+            _logger?.LogError(ex, "ドキュメントライブラリ確認中に例外が発生しました。DriveId: {DriveId}, DestinationRoot: {DestinationRoot}",
+                _options.DriveId, _options.DestinationRoot);
             return new DoctorCheck(CheckName, DoctorStatus.Fail, "ライブラリ確認中に予期しないエラーが発生しました。");
         }
     }
