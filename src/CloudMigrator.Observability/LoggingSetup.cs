@@ -18,9 +18,14 @@ public static class LoggingSetup
     /// </summary>
     /// <param name="logFilePath">ログファイルパス</param>
     /// <param name="minimumLevel">最小ログレベル</param>
+    /// <param name="logStreamSink">
+    /// オプション: SSE ブロードキャスト用シンク。
+    /// 非 null の場合は Serilog パイプラインに追加される。
+    /// </param>
     public static ILoggerFactory CreateLoggerFactory(
         string logFilePath = "logs/transfer.log",
-        Serilog.Events.LogEventLevel minimumLevel = Serilog.Events.LogEventLevel.Information)
+        Serilog.Events.LogEventLevel minimumLevel = Serilog.Events.LogEventLevel.Information,
+        LogStreamSink? logStreamSink = null)
     {
         var dir = Path.GetDirectoryName(logFilePath);
         if (!string.IsNullOrEmpty(dir))
@@ -28,7 +33,7 @@ public static class LoggingSetup
 
         var formatter = new UtcCompactJsonFormatter();
 
-        var serilogLogger = new LoggerConfiguration()
+        var config = new LoggerConfiguration()
             .MinimumLevel.Is(minimumLevel)
             .Enrich.FromLogContext()
             .WriteTo.Console(formatter)
@@ -37,8 +42,12 @@ public static class LoggingSetup
                 logFilePath,
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 30,
-                shared: false)
-            .CreateLogger();
+                shared: false);
+
+        if (logStreamSink is not null)
+            config = config.WriteTo.Sink(logStreamSink);
+
+        var serilogLogger = config.CreateLogger();
 
         return LoggerFactory.Create(builder =>
             builder.AddSerilog(serilogLogger, dispose: true));

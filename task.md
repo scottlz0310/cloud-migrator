@@ -3,7 +3,7 @@
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
 前フェーズ履歴: [task-archive-20260323.md](task-archive-20260323.md)
 
-## 現在の状態: Studio Ph-2 実装完了（PR 作成済み）
+## 現在の状態: Studio Ph-3 実装完了（PR 作成済み）
 
 ---
 
@@ -13,7 +13,7 @@
 |----------|------|-------|------|
 | **Ph-1** | `GET/PUT /api/config` + 設定タブ UI | #81 | ✅ 完了 |
 | **Ph-2** | 転送開始/停止 UI | #82 | ✅ 完了 |
-| **Ph-3** | ログストリーミング SSE | #83 | 未着手 |
+| **Ph-3** | ログストリーミング SSE | #83 | ✅ 完了 |
 | **Ph-4** | 接続テスト UI | #84 | 未着手 |
 | **Ph-5** | デフォルト起動 Studio | #85 | 未着手 |
 
