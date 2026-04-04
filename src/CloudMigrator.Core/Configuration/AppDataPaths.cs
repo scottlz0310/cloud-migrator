@@ -21,13 +21,24 @@ public static class AppDataPaths
         {
             var envVal = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
             if (!string.IsNullOrWhiteSpace(envVal))
-                return Path.GetFullPath(envVal);
+            {
+                try
+                {
+                    return Path.GetFullPath(envVal);
+                }
+                catch (ArgumentException) { }
+                catch (NotSupportedException) { }
+                catch (PathTooLongException) { }
+            }
 
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "CloudMigrator");
+            return GetDefaultDataDirectory();
         }
     }
+
+    private static string GetDefaultDataDirectory() =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "CloudMigrator");
 
     /// <summary>ログ・DB 格納ディレクトリ: {DataDirectory}\logs\</summary>
     public static string LogsDirectory => Path.Combine(DataDirectory, "logs");

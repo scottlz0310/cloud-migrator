@@ -303,11 +303,12 @@ public static class DashboardServer
         });
 
         // GET /api/system/paths  → AppData データパス情報
+        // セキュリティ: 絶対パスはホスト構成次第で情報露出になるため返却しない。
         app.MapGet("/api/system/paths", () => Results.Json(new
         {
-            dataDirectory = AppDataPaths.DataDirectory,
-            configFile = AppDataPaths.ConfigFile,
-            logsDirectory = AppDataPaths.LogsDirectory,
+            dataDirectory = "[masked]",
+            configFile = System.IO.Path.GetFileName(AppDataPaths.ConfigFile),
+            logsDirectory = "[masked]",
         }, ApiJsonOptions));
 
         // POST /api/setup/doctor  → Graph 認証・SharePoint 疎通確認（同期実行、最大 30 秒）

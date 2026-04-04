@@ -6,7 +6,7 @@ using CloudMigrator.Dashboard;
 using Microsoft.Extensions.Configuration;
 
 // 初回起動時: ./configs/config.json → AppData へ自動移行
-// stdout は Serilog の JSON ログが占有するため、移行メッセージは stderr に出力する
+// 移行メッセージは JSON ログ（stdout）との混在を避けるため stderr に出力する
 var migration = AppConfiguration.MigrateConfigIfNeeded();
 if (migration.Migrated)
     Console.Error.WriteLine($"[INFO] 設定ファイルを AppData へ移行しました: {migration.SourcePath} → {migration.DestPath}");
