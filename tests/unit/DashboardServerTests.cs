@@ -397,5 +397,74 @@ public sealed class DashboardServerTests : IAsyncDisposable
             s => s.StreamAsync(It.IsAny<Microsoft.AspNetCore.Http.HttpContext>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    // ── POST /api/setup/doctor ────────────────────────────────────────────
+
+    [Fact]
+    public async Task PostDoctor_ReturnsOkWithDoctorResult()
+    {
+        // 検証対象: POST /api/setup/doctor  目的: ISetupDoctorService.RunAsync を呼び出し 200 OK と結果を返す
+        var expectedResult = new DoctorResult(
+            OverallStatus.Healthy,
+            [
+                new DoctorCheck("Graph 認証", DoctorStatus.Pass, null),
+                new DoctorCheck("SharePoint サイト", DoctorStatus.Pass, "sites/abc,xyz"),
+                new DoctorCheck("ドキュメントライブラリ", DoctorStatus.Pass, null),
+            ]);
+        var mockDoctorSvc = new Mock<ISetupDoctorService>(MockBehavior.Strict);
+        mockDoctorSvc
+            .Setup(s => s.RunAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResult);
+        _app = DashboardServer.BuildApp(
+            _mockDb.Object,
+            wb => wb.UseTestServer(),
+            _mockConfigService.Object,
+            _mockJobService.Object,
+            doctorService: mockDoctorSvc.Object);
+        await _app.StartAsync();
+        var client = _app.GetTestClient();
+
+        var response = await client.PostAsync("/api/setup/doctor", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        mockDoctorSvc.Verify(s => s.RunAsync(It.IsAny<CancellationToken>()), Times.Once);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Healthy");
+        body.Should().Contain("Graph 認証");
+        body.Should().Contain("Pass");
+    }
+
+    [Fact]
+    public async Task PostDoctor_WhenUnhealthy_ReturnsOkWithUnhealthyStatus()
+    {
+        // 検証対象: POST /api/setup/doctor（Unhealthy）
+        // 目的: 認証失敗時に 200 OK かつ overallStatus=Unhealthy を返すことを確認する
+        var failResult = new DoctorResult(
+            OverallStatus.Unhealthy,
+            [
+                new DoctorCheck("Graph 認証", DoctorStatus.Fail, "トークン取得失敗 (HTTP 401)"),
+                new DoctorCheck("SharePoint サイト", DoctorStatus.Fail, "認証失敗のためスキップ"),
+                new DoctorCheck("ドキュメントライブラリ", DoctorStatus.Fail, "認証失敗のためスキップ"),
+            ]);
+        var mockDoctorSvc = new Mock<ISetupDoctorService>(MockBehavior.Strict);
+        mockDoctorSvc
+            .Setup(s => s.RunAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(failResult);
+        _app = DashboardServer.BuildApp(
+            _mockDb.Object,
+            wb => wb.UseTestServer(),
+            _mockConfigService.Object,
+            _mockJobService.Object,
+            doctorService: mockDoctorSvc.Object);
+        await _app.StartAsync();
+        var client = _app.GetTestClient();
+
+        var response = await client.PostAsync("/api/setup/doctor", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Unhealthy");
+        body.Should().Contain("Fail");
+    }
 }
 

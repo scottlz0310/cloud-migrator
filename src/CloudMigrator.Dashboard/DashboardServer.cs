@@ -1,8 +1,10 @@
 using System.Text.Json;
+using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using CloudMigrator.Observability;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Serilog;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -53,7 +55,8 @@ public static class DashboardServer
         IConfigurationService? configService = null,
         ITransferJobService? jobService = null,
         ILogStreamService? logStreamService = null,
-        LogStreamSink? logStreamSink = null)
+        LogStreamSink? logStreamSink = null,
+        ISetupDoctorService? doctorService = null)
     {
         var builder = WebApplication.CreateBuilder();
         // アプリログ（ILogger）は Information 以上を通し、フレームワーク固有のノイズ（Microsoft.* / System.*）のみ Warning に絞る
@@ -86,6 +89,28 @@ public static class DashboardServer
                 .CreateLogger();
             builder.Logging.AddSerilog(serilogLogger, dispose: true);
         }
+        // doctorService 登録: 指定された場合はそのまま使用、未指定時は AppConfiguration から生成
+        if (doctorService is not null)
+        {
+            builder.Services.AddSingleton<ISetupDoctorService>(doctorService);
+        }
+        else
+        {
+            builder.Services.AddSingleton<ISetupDoctorService>(_ =>
+            {
+                var cfg = AppConfiguration.Build();
+                var migratorOpts = cfg.GetSection(MigratorOptions.SectionName)
+                    .Get<MigratorOptions>() ?? new();
+                return new SetupDoctorService(new DoctorOptions(
+                    migratorOpts.Graph.ClientId,
+                    migratorOpts.Graph.TenantId,
+                    AppConfiguration.GetGraphClientSecret(),
+                    migratorOpts.Graph.SharePointSiteId,
+                    migratorOpts.Graph.SharePointDriveId,
+                    migratorOpts.DestinationRoot));
+            });
+        }
+
         configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
@@ -225,6 +250,13 @@ public static class DashboardServer
             await logSvc.StreamAsync(ctx, ct).ConfigureAwait(false);
         });
 
+        // POST /api/setup/doctor  → Graph 認証・SharePoint 疎通確認（同期実行、最大 30 秒）
+        app.MapPost("/api/setup/doctor", async (ISetupDoctorService docSvc, CancellationToken ct) =>
+        {
+            var result = await docSvc.RunAsync(ct).ConfigureAwait(false);
+            return Results.Json(result, DoctorJsonOptions);
+        });
+
         // GET /  → ダッシュボード HTML
         app.MapGet("/", () => Results.Content(IndexHtml, "text/html; charset=utf-8"));
 
@@ -234,6 +266,13 @@ public static class DashboardServer
     // ── API ヘルパー ──────────────────────────────────────────────────────────
 
     private static readonly JsonSerializerOptions ApiJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>診断結果専用: enum を文字列（PascalCase）にシリアライズし、日本語をエスケープしない。</summary>
+    private static readonly JsonSerializerOptions DoctorJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     private static readonly string[] SecretKeyPatterns = ["secret", "password", "token", "apikey", "api_key"];
 
@@ -412,6 +451,24 @@ public static class DashboardServer
             .auto-scroll-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: .74rem; color: #555; border-top: 1px solid #2a2a4a; padding-top: 8px; }
             .btn-scroll-bottom { background: #2a2a4a; border: 1px solid #4a4a6a; border-radius: 6px; color: #aaa; padding: 3px 10px; cursor: pointer; font-size: .72rem; }
             .btn-scroll-bottom:hover { background: #3a3a5a; color: #e2e2e5; }
+            /* 診断タブ */
+            .doctor-section { background: #1a1a2e; border-radius: 12px; padding: 24px; border: 1px solid #2a2a4a; }
+            .btn-doctor { background: #0e7490; border: none; color: #fff; padding: 10px 28px; border-radius: 8px; cursor: pointer; font-size: .95rem; font-weight: 600; transition: opacity .15s; }
+            .btn-doctor:disabled { opacity: .4; cursor: not-allowed; }
+            .btn-doctor:hover:not(:disabled) { opacity: .85; }
+            .overall-banner { border-radius: 10px; padding: 14px 20px; margin-top: 20px; font-weight: 700; font-size: .95rem; }
+            .banner-healthy   { background: #0a1f0e; border: 2px solid #22c55e; color: #86efac; }
+            .banner-degraded  { background: #2c1f00; border: 2px solid #f59e0b; color: #fcd34d; }
+            .banner-unhealthy { background: #1a0505; border: 2px solid #ef4444; color: #fca5a5; }
+            .checks-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+            .check-item { display: grid; grid-template-columns: 28px 1fr; gap: 12px; background: #0f0f10; border: 1px solid #2a2a4a; border-radius: 8px; padding: 12px 16px; align-items: start; }
+            .check-icon { font-size: 1.1rem; line-height: 1.6; }
+            .check-body { display: flex; flex-direction: column; gap: 4px; }
+            .check-name { font-size: .88rem; font-weight: 600; color: #e2e2e5; }
+            .check-detail { font-size: .78rem; color: #aaa; word-break: break-all; }
+            .check-item.pass   { border-color: #16a34a; }
+            .check-item.warn   { border-color: #d97706; }
+            .check-item.fail   { border-color: #b91c1c; }
           </style>
         </head>
         <body x-data="{ tab: 'monitor' }">
@@ -424,6 +481,7 @@ public static class DashboardServer
               <button class="tab-btn" :class="tab === 'run' ? 'active' : ''" @click="tab='run'">&#9654;&#65039; 実行</button>
               <button class="tab-btn" :class="tab === 'config' ? 'active' : ''" @click="tab='config'">&#9881;&#65039; 設定</button>
               <button class="tab-btn" :class="tab === 'logs' ? 'active' : ''" @click="tab='logs'">&#128203; ログ</button>
+              <button class="tab-btn" :class="tab === 'doctor' ? 'active' : ''" @click="tab='doctor'">&#128269; 診断</button>
             </nav>
             <span class="refresh-indicator" id="refreshTxt" x-show="tab === 'monitor'">次回更新まで 5s</span>
           </header>
@@ -664,6 +722,43 @@ public static class DashboardServer
             </main>
           </div>
           </template>
+
+          <!-- 診断タブ -->
+          <div x-show="tab === 'doctor'" x-data="doctorTab()">
+            <main style="max-width:700px;margin:0 auto;padding:24px 16px;">
+              <section class="doctor-section">
+                <h3 class="config-group-title" style="margin-bottom:8px;">接続テスト</h3>
+                <p style="font-size:.82rem;color:#888;margin-bottom:20px;">Graph 認証・SharePoint サイト・ドキュメントライブラリの疎通を確認します。</p>
+                <button class="btn-doctor" @click="run()" :disabled="running">
+                  <span x-show="!running">&#128269; テスト実行</span>
+                  <span x-show="running"><span class="spinner"></span>確認中...</span>
+                </button>
+
+                <!-- 全体判定バナー -->
+                <div x-show="result !== null" class="overall-banner"
+                  :class="result &amp;&amp; result.overallStatus === 'Healthy' ? 'banner-healthy' : result &amp;&amp; result.overallStatus === 'Degraded' ? 'banner-degraded' : 'banner-unhealthy'">
+                  <span x-text="overallLabel()"></span>
+                </div>
+
+                <!-- チェック一覧 -->
+                <div x-show="result !== null" class="checks-list">
+                  <template x-for="c in (result ? result.checks : [])" :key="c.name">
+                    <div class="check-item" :class="c.status.toLowerCase()">
+                      <span class="check-icon" x-text="statusIcon(c.status)"></span>
+                      <div class="check-body">
+                        <span class="check-name" x-text="c.name"></span>
+                        <span class="check-detail" x-show="c.detail" x-text="c.detail"></span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- エラー表示 -->
+                <div x-show="error !== null" class="toast error" style="position:static;margin-top:16px;pointer-events:auto;"
+                  x-text="error"></div>
+              </section>
+            </main>
+          </div>
 
           <script>
             const POLL_INTERVAL = 5000; // ms
@@ -1330,6 +1425,47 @@ public static class DashboardServer
                 }
               };
             }
+            // 診断タブ Alpine.js コンポーネント
+            function doctorTab() {
+              return {
+                running: false,
+                result: null,
+                error: null,
+
+                async run() {
+                  this.running = true;
+                  this.result = null;
+                  this.error = null;
+                  try {
+                    const res = await fetch('/api/setup/doctor', { method: 'POST' });
+                    if (res.ok) {
+                      this.result = await res.json();
+                    } else {
+                      this.error = 'テスト実行に失敗しました (HTTP ' + res.status + ')';
+                    }
+                  } catch (e) {
+                    this.error = 'ネットワークエラー: ' + e.message;
+                  } finally {
+                    this.running = false;
+                  }
+                },
+
+                overallLabel() {
+                  if (!this.result) return '';
+                  const s = this.result.overallStatus;
+                  if (s === 'Healthy')   return '✅ すべて正常 (Healthy)';
+                  if (s === 'Degraded')  return '⚠️ 一部警告あり (Degraded)';
+                  return '❌ 接続エラーあり (Unhealthy)';
+                },
+
+                statusIcon(status) {
+                  if (status === 'Pass')    return '✅';
+                  if (status === 'Warning') return '⚠️';
+                  return '❌';
+                }
+              };
+            }
+
           </script>
         </body>
         </html>
