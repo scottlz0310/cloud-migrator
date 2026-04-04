@@ -476,5 +476,87 @@ public sealed class DashboardServerTests : IAsyncDisposable
         result!.OverallStatus.Should().Be(OverallStatus.Unhealthy);
         result.Checks.Should().AllSatisfy(c => c.Status.Should().Be(DoctorStatus.Fail));
     }
+
+    // ── /api/db-status ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDbStatus_WithDb_ReturnsConnectedTrue()
+    {
+        // 検証対象: GET /api/db-status  目的: 実 DB 使用時に connected=true・ requiresRestart=false を返す
+        var summary = new TransferDbSummary();
+        _mockDb.Setup(d => d.GetSummaryAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(summary);
+        var client = await CreateClientAsync();
+
+        var response = await client.GetAsync("/api/db-status");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        json.Should().Contain("\"connected\":true");
+        json.Should().Contain("\"requiresRestart\":false");
+    }
+
+    [Fact]
+    public async Task GetDbStatus_WithoutDb_ReturnsConnectedFalse_RequiresRestartFalse()
+    {
+        // 検証対象: GET /api/db-status  目的: NullTransferStateDb かつ DB ファイルなしの場合
+        // connected=false・ requiresRestart=false (ファイルがまだ存在しない)を返す
+        _app = DashboardServer.BuildApp(
+            NullTransferStateDb.Instance,
+            wb => wb.UseTestServer(),
+            _mockConfigService.Object,
+            _mockJobService.Object,
+            dbPath: "/nonexistent/path/state.db");
+        await _app.StartAsync();
+        var client = _app.GetTestClient();
+
+        var response = await client.GetAsync("/api/db-status");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        json.Should().Contain("\"connected\":false");
+        json.Should().Contain("\"requiresRestart\":false");
+    }
+
+    [Fact]
+    public async Task GetStatus_WithoutDb_ReturnsEmptySummary()
+    {
+        // 検証対象: GET /api/status（DB なしモード）
+        // 目的: NullTransferStateDb 使用時に全ゼロのサマリーを 200 OK で返す
+        _app = DashboardServer.BuildApp(
+            NullTransferStateDb.Instance,
+            wb => wb.UseTestServer(),
+            _mockConfigService.Object,
+            _mockJobService.Object);
+        await _app.StartAsync();
+        var client = _app.GetTestClient();
+
+        var response = await client.GetAsync("/api/status");
+        var body = await response.Content.ReadFromJsonAsync<TransferDbSummary>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body!.Total.Should().Be(0);
+        body.Done.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetMetrics_WithoutDb_ReturnsEmptyList()
+    {
+        // 検証対象: GET /api/metrics（DB なしモード）
+        // 目的: NullTransferStateDb 使用時に空リストを 200 OK で返す
+        _app = DashboardServer.BuildApp(
+            NullTransferStateDb.Instance,
+            wb => wb.UseTestServer(),
+            _mockConfigService.Object,
+            _mockJobService.Object);
+        await _app.StartAsync();
+        var client = _app.GetTestClient();
+
+        var response = await client.GetAsync("/api/metrics");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadAsStringAsync();
+        json.Should().Be("[]");
+    }
 }
 

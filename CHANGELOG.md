@@ -8,7 +8,18 @@
 ## [Unreleased]
 
 ### Added
-- **Studio Ph-4: 接続テスト UI + `POST /api/setup/doctor`** (Issue #84)
+- **Studio Ph-5: 引数なしデフォルト起動 + DB なしモード** (Issue #85)
+  - `NullTransferStateDb` 新設（`CloudMigrator.Core.State`）: Null Object パターンで `ITransferStateDb` を実装。DB なし起動時に全読み込みメソッドは空/ゼロ値を返し、書き込みは無視する
+  - `DashboardServer.RunAsync` のシグネチャ変更: `string dbPath` → `string? dbPath`（nullable）。DB ファイルが存在しない場合は `NullTransferStateDb.Instance` で代替起動
+  - `DashboardServer.BuildApp` に `hasDb` パラメータ追加（デフォルト `true`）
+  - `GET /api/db-status` エンドポイント追加: `{ "connected": bool, "requiresRestart": bool }` を返す。リクエスト時点で実際に DB が使用可能か確認し、DB なしモードでファイルが後から作成された場合は `requiresRestart: true` で再起動を案内
+  - 監視タブに「DB 未接続」バナー追加（Alpine.js で `/api/db-status` をポーリングし、DB なし時に黄〜橙系バナーを表示）
+  - `cloud-migrator`（引数なし）で Studio を起動: `--port`・`--no-browser` トップレベルオプション対応
+  - `cloud-migrator dashboard` コマンドが DB なしでも起動するよう変更（`File.Exists` エラー終了を廃止）
+  - 起動メッセージ改善: `「CloudMigrator Studio 起動中: http://localhost:5050」` + DB なし時は `「DB : なし — transfer 実行後、DB が作成されたら再起動してください」`
+  - `DashboardServerTests.cs` に DB-less モードテスト 4 件追加: `/api/db-status` (connected=true/false) / `/api/status` 空サマリー / `/api/metrics` 空リスト
+
+
   - `DoctorCheck` record 新設（`CloudMigrator.Dashboard`）: name / status (Pass|Warning|Fail) / detail
   - `DoctorResult` record 新設（`CloudMigrator.Dashboard`）: overallStatus (Healthy|Degraded|Unhealthy) / checks
   - `DoctorOptions` record 新設: ClientId / TenantId / ClientSecret / SiteId / DriveId / DestinationRoot
