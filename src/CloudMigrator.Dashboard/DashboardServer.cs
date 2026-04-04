@@ -302,6 +302,14 @@ public static class DashboardServer
             await logSvc.StreamAsync(ctx, ct).ConfigureAwait(false);
         });
 
+        // GET /api/system/paths  → AppData データパス情報
+        app.MapGet("/api/system/paths", () => Results.Json(new
+        {
+            dataDirectory = AppDataPaths.DataDirectory,
+            configFile = AppDataPaths.ConfigFile,
+            logsDirectory = AppDataPaths.LogsDirectory,
+        }, ApiJsonOptions));
+
         // POST /api/setup/doctor  → Graph 認証・SharePoint 疎通確認（同期実行、最大 30 秒）
         app.MapPost("/api/setup/doctor", async (ISetupDoctorService docSvc, CancellationToken ct) =>
         {
@@ -753,6 +761,19 @@ public static class DashboardServer
           <template x-if="tab === 'logs'">
             <div x-data="logTab()" x-init="init()">
             <main style="max-width:1200px;margin:0 auto;padding:24px 16px;">
+              <!-- データパス情報 -->
+              <section class="config-section" style="margin-bottom:16px;">
+                <h3 class="config-group-title" style="margin-bottom:8px;">&#128194; データファイルの場所</h3>
+                <div x-data="{ paths: null }" x-init="fetch('/api/system/paths').then(r=>r.json()).then(d=>paths=d)">
+                  <template x-if="paths">
+                    <table style="font-size:.82rem;border-collapse:collapse;width:100%;">
+                      <tr><td style="padding:3px 8px;color:#888;white-space:nowrap;">設定ファイル</td><td style="padding:3px 8px;font-family:monospace;" x-text="paths.configFile"></td></tr>
+                      <tr><td style="padding:3px 8px;color:#888;white-space:nowrap;">ログディレクトリ</td><td style="padding:3px 8px;font-family:monospace;" x-text="paths.logsDirectory"></td></tr>
+                      <tr><td style="padding:3px 8px;color:#888;white-space:nowrap;">データルート</td><td style="padding:3px 8px;font-family:monospace;" x-text="paths.dataDirectory"></td></tr>
+                    </table>
+                  </template>
+                </div>
+              </section>
               <section class="log-section">
                 <div class="log-toolbar">
                   <div class="log-filters">

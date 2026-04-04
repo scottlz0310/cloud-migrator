@@ -21,7 +21,7 @@ internal static class InitCommand
         var configPathOpt = new Option<string>("--config-path")
         {
             Description = "config.json の出力先",
-            DefaultValueFactory = _ => "configs/config.json",
+            DefaultValueFactory = _ => AppDataPaths.ConfigFile,
         };
         var envPathOpt = new Option<string>("--env-path")
         {
@@ -94,7 +94,7 @@ internal static class InitCommand
 
         cmd.SetAction(async (parseResult, ct) =>
         {
-            var configPath = parseResult.GetValue(configPathOpt) ?? "configs/config.json";
+            var configPath = parseResult.GetValue(configPathOpt) ?? AppDataPaths.ConfigFile;
             var envPath = parseResult.GetValue(envPathOpt) ?? ".env";
             var force = parseResult.GetValue(forceOpt);
             var oneDriveUserId = parseResult.GetValue(oneDriveUserIdOpt);
