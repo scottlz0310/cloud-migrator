@@ -69,6 +69,10 @@ internal static class InitCommand
         {
             Description = "最大並列転送数（省略時は変更しない。新規テンプレートでは 4）",
         };
+        var maxParallelFolderCreationsOpt = new Option<int?>("--max-parallel-folder-creations")
+        {
+            Description = "並列フォルダ作成数（省略時は変更しない。新規テンプレートでは 4）",
+        };
         var adaptiveConcurrencyOpt = new Option<bool?>("--adaptive-concurrency")
         {
             Description = "レート制限に応じた動的並列度制御を有効にするかどうか（デフォルト: false）",
@@ -85,6 +89,7 @@ internal static class InitCommand
         cmd.Add(oneDriveSourceFolderOpt);
         cmd.Add(destinationRootOpt);
         cmd.Add(maxParallelTransfersOpt);
+        cmd.Add(maxParallelFolderCreationsOpt);
         cmd.Add(adaptiveConcurrencyOpt);
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -101,6 +106,7 @@ internal static class InitCommand
             var oneDriveSourceFolder = parseResult.GetValue(oneDriveSourceFolderOpt);
             var destinationRoot = parseResult.GetValue(destinationRootOpt);
             var maxParallelTransfers = parseResult.GetValue(maxParallelTransfersOpt);
+            var maxParallelFolderCreations = parseResult.GetValue(maxParallelFolderCreationsOpt);
             var adaptiveConcurrency = parseResult.GetValue(adaptiveConcurrencyOpt);
 
             await RunAsync(
@@ -116,6 +122,7 @@ internal static class InitCommand
                 oneDriveSourceFolder,
                 destinationRoot,
                 maxParallelTransfers,
+                maxParallelFolderCreations,
                 adaptiveConcurrency,
                 ct).ConfigureAwait(false);
         });
@@ -141,6 +148,7 @@ internal static class InitCommand
             oneDriveSourceFolder: null,
             destinationRoot: null,
             maxParallelTransfers: null,
+            maxParallelFolderCreations: null,
             adaptiveConcurrencyEnabled: null,
             ct: ct);
 
@@ -157,6 +165,7 @@ internal static class InitCommand
         string? oneDriveSourceFolder,
         string? destinationRoot,
         int? maxParallelTransfers,
+        int? maxParallelFolderCreations,
         bool? adaptiveConcurrencyEnabled,
         CancellationToken ct)
     {
@@ -203,6 +212,7 @@ internal static class InitCommand
         configTemplate = ApplyPerformanceValuesToConfigTemplate(
             configTemplate,
             maxParallelTransfers,
+            maxParallelFolderCreations,
             adaptiveConcurrencyEnabled);
 
         envTemplate = ApplyGraphValuesToEnvTemplate(
@@ -318,9 +328,10 @@ internal static class InitCommand
     internal static string ApplyPerformanceValuesToConfigTemplate(
         string configTemplate,
         int? maxParallelTransfers,
+        int? maxParallelFolderCreations,
         bool? adaptiveConcurrencyEnabled)
     {
-        if (maxParallelTransfers is null && adaptiveConcurrencyEnabled is null)
+        if (maxParallelTransfers is null && maxParallelFolderCreations is null && adaptiveConcurrencyEnabled is null)
             return configTemplate;
 
         var root = JsonSerializer.Deserialize<MigratorConfigRoot>(
@@ -333,6 +344,12 @@ internal static class InitCommand
             if (maxParallelTransfers.Value < 1)
                 throw new ArgumentOutOfRangeException(nameof(maxParallelTransfers), "最大並列転送数は 1 以上でなければなりません。");
             root.Migrator.MaxParallelTransfers = maxParallelTransfers.Value;
+        }
+        if (maxParallelFolderCreations is not null)
+        {
+            if (maxParallelFolderCreations.Value < 1)
+                throw new ArgumentOutOfRangeException(nameof(maxParallelFolderCreations), "並列フォルダ作成数は 1 以上でなければなりません。");
+            root.Migrator.MaxParallelFolderCreations = maxParallelFolderCreations.Value;
         }
         if (adaptiveConcurrencyEnabled is not null)
             root.Migrator.GetAdaptiveConcurrency("default").Enabled = adaptiveConcurrencyEnabled.Value;

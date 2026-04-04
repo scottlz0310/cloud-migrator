@@ -203,6 +203,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
         // 検証対象: GET /api/config  目的: IConfigurationService から ConfigDto を取得して 200 OK を返す
         var dto = new ConfigDto(
             MaxParallelTransfers: 20,
+            MaxParallelFolderCreations: 4,
             ChunkSizeMb: 5,
             LargeFileThresholdMb: 4,
             RetryCount: 3,

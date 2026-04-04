@@ -255,6 +255,8 @@ public static class DashboardServer
 
             if (update.MaxParallelTransfers is < 1 or > 100)
                 return Results.BadRequest("maxParallelTransfers は 1〜100 の範囲で指定してください。");
+            if (update.MaxParallelFolderCreations is < 1 or > 32)
+                return Results.BadRequest("maxParallelFolderCreations は 1〜32 の範囲で指定してください。");
             if (update.ChunkSizeMb is < 1 or > 100)
                 return Results.BadRequest("chunkSizeMb は 1〜100 の範囲で指定してください。");
             if (update.RetryCount is < 0 or > 20)
@@ -633,6 +635,10 @@ public static class DashboardServer
                     <div class="field">
                       <label>並列転送数 (maxParallelTransfers)</label>
                       <input type="number" x-model.number="config.maxParallelTransfers" min="1" max="100" />
+                    </div>
+                    <div class="field">
+                      <label>並列フォルダ作成数 (maxParallelFolderCreations)</label>
+                      <input type="number" x-model.number="config.maxParallelFolderCreations" min="1" max="32" />
                     </div>
                     <div class="field">
                       <label>チャンクサイズ MB (chunkSizeMb)</label>
