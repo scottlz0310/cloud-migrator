@@ -305,15 +305,16 @@ public static class DashboardServer
         // GET /api/system/paths  → AppData データパス情報
         // セキュリティ: 絶対パスはホスト構成次第で情報露出になるため返却しない。
         // ユーザーが保存先を把握できるよう、固定ヒント文字列と MIGRATOR_DATA_DIR 使用有無を返す。
+        // プラットフォーム非依存のスラッシュ区切り相対表記を使用する。
         app.MapGet("/api/system/paths", () =>
         {
             var customDir = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
             var usingCustom = !string.IsNullOrWhiteSpace(customDir);
             return Results.Json(new
             {
-                dataDirectory = usingCustom ? "カスタム（MIGRATOR_DATA_DIR）" : @"%APPDATA%\CloudMigrator\",
-                configFile = @"configs\config.json",
-                logsDirectory = @"logs\",
+                dataDirectory = usingCustom ? "カスタム（MIGRATOR_DATA_DIR）" : "AppData/CloudMigrator/",
+                configFile = "configs/config.json",
+                logsDirectory = "logs/",
                 usingCustomDataDir = usingCustom,
             }, ApiJsonOptions);
         });
