@@ -482,26 +482,32 @@ public sealed class DashboardServerTests : IAsyncDisposable
     [Fact]
     public async Task GetDbStatus_WithDb_ReturnsConnectedTrue()
     {
-        // 検証対象: GET /api/db-status  目的: hasDb=true 時に { connected: true } を返す
-        var client = await CreateClientAsync(); // デフォルト hasDb=true
+        // 検証対象: GET /api/db-status  目的: 実 DB 使用時に connected=true・ requiresRestart=false を返す
+        var summary = new TransferDbSummary();
+        _mockDb.Setup(d => d.GetSummaryAsync(It.IsAny<CancellationToken>()))
+               .ReturnsAsync(summary);
+        var client = await CreateClientAsync();
 
         var response = await client.GetAsync("/api/db-status");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadAsStringAsync();
         json.Should().Contain("\"connected\":true");
+        json.Should().Contain("\"requiresRestart\":false");
     }
 
     [Fact]
-    public async Task GetDbStatus_WithoutDb_ReturnsConnectedFalse()
+    public async Task GetDbStatus_WithoutDb_ReturnsConnectedFalse_RequiresRestartFalse()
     {
-        // 検証対象: GET /api/db-status  目的: hasDb=false 時に { connected: false } を返す
+        // 検証対象: GET /api/db-status  目的: NullTransferStateDb かつ DB ファイルなしの場合
+        // connected=false・ requiresRestart=false (ファイルがまだ存在しない)を返す
         _app = DashboardServer.BuildApp(
             NullTransferStateDb.Instance,
             wb => wb.UseTestServer(),
             _mockConfigService.Object,
             _mockJobService.Object,
-            hasDb: false);
+            hasDb: false,
+            dbPath: "/nonexistent/path/state.db");
         await _app.StartAsync();
         var client = _app.GetTestClient();
 
@@ -510,6 +516,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadAsStringAsync();
         json.Should().Contain("\"connected\":false");
+        json.Should().Contain("\"requiresRestart\":false");
     }
 
     [Fact]

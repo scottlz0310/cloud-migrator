@@ -34,7 +34,15 @@ public static class DashboardServer
         if (hasDb)
         {
             var sqliteDb = new SqliteTransferStateDb(dbPath!);
-            await sqliteDb.InitializeAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await sqliteDb.InitializeAsync(ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                await sqliteDb.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
             db = sqliteDb;
         }
         else
@@ -44,7 +52,7 @@ public static class DashboardServer
 
         var configService = new ConfigurationService();
         var jobService = new TransferJobService();
-        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamSink: logStreamSink, hasDb: hasDb);
+        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamSink: logStreamSink, hasDb: hasDb, dbPath: dbPath);
         app.Urls.Add($"http://localhost:{port}");
         try
         {
@@ -71,7 +79,8 @@ public static class DashboardServer
         ILogStreamService? logStreamService = null,
         LogStreamSink? logStreamSink = null,
         ISetupDoctorService? doctorService = null,
-        bool hasDb = true)
+        bool hasDb = true,
+        string? dbPath = null)
     {
         var builder = WebApplication.CreateBuilder();
         // アプリログ（ILogger）は Information 以上を通し、フレームワーク固有のノイズ（Microsoft.* / System.*）のみ Warning に絞る
@@ -137,8 +146,28 @@ public static class DashboardServer
 
         // ── API エンドポイント ────────────────────────────────────────────────
 
-        // GET /api/db-status  → DB 接続状態（DB なしモード判定用）
-        app.MapGet("/api/db-status", () => Results.Ok(new { connected = hasDb }));
+        // GET /api/db-status  → DB 接続状態（リクエスト時点の実状態を返す）
+        // NullTransferStateDb の場合は「DB なし」として扱い、DB ファイルが後から作成された場合は
+        // requiresRestart=true で再起動が必要なことをクライアントに通知する。
+        app.MapGet("/api/db-status", async (
+            ITransferStateDb stateDb,
+            CancellationToken cancellationToken) =>
+        {
+            if (stateDb is NullTransferStateDb)
+            {
+                bool fileAppeared = dbPath is not null && File.Exists(dbPath);
+                return Results.Ok(new { connected = false, requiresRestart = fileAppeared });
+            }
+            try
+            {
+                await stateDb.GetSummaryAsync(cancellationToken).ConfigureAwait(false);
+                return Results.Ok(new { connected = true, requiresRestart = false });
+            }
+            catch
+            {
+                return Results.Ok(new { connected = false, requiresRestart = false });
+            }
+        });
 
         // GET /api/status  → ステータス別件数・完了率・バイト数
         app.MapGet("/api/status", async (
@@ -511,7 +540,7 @@ public static class DashboardServer
           <div x-show="tab === 'monitor'">
           <!-- DB なしバナー（転送未開始時に表示） -->
           <div id="noDbBanner" style="display:none;margin:16px 24px;padding:14px 18px;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;color:#fcd34d;">
-            <strong>&#9432; DB 未接続</strong> — まだ転送が開始されていません。<code>transfer</code> コマンドを実行すると自動的に接続されます。
+            <strong>&#9432; DB 未接続</strong> — <span id="noDbBannerMsg">まだ転送が開始されていません。<code>transfer</code> コマンドを実行すると自動的に接続されます。</span>
           </div>
           <main>
             <section class="cards">
@@ -1196,9 +1225,15 @@ public static class DashboardServer
               try {
                 const res = await fetch('/api/db-status');
                 if (!res.ok) return;
-                const { connected } = await res.json();
+                const { connected, requiresRestart } = await res.json();
                 const banner = document.getElementById('noDbBanner');
+                const msg = document.getElementById('noDbBannerMsg');
                 if (banner) banner.style.display = connected ? 'none' : 'block';
+                if (msg && !connected) {
+                  msg.innerHTML = requiresRestart
+                    ? 'DB ファイルが検出されました。ダッシュボードを再起動してください。'
+                    : 'まだ転送が開始されていません。<code>transfer</code> コマンドを実行すると自動的に接続されます。';
+                }
               } catch { /* ネットワークエラーは無視 */ }
             }
 
