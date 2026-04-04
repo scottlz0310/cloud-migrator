@@ -4,8 +4,15 @@ using FluentAssertions;
 namespace CloudMigrator.Tests.Unit;
 
 /// <summary>
+/// 環境変数 MIGRATOR_DATA_DIR を変更するため、並列実行を無効化する。
+/// </summary>
+[CollectionDefinition(nameof(AppDataPathsTests), DisableParallelization = true)]
+public sealed class AppDataPathsCollection { }
+
+/// <summary>
 /// AppDataPaths および AppConfiguration の AppData 関連ロジックを検証するユニットテスト。
 /// </summary>
+[Collection(nameof(AppDataPathsTests))]
 public sealed class AppDataPathsTests : IDisposable
 {
     private readonly string _tempDir;

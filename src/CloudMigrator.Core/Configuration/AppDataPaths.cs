@@ -15,11 +15,19 @@ public static class AppDataPaths
     /// MIGRATOR_DATA_DIR 環境変数が設定されている場合はその値を使用する。
     /// 未設定の場合は %APPDATA%\CloudMigrator\。
     /// </summary>
-    public static string DataDirectory =>
-        Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR")
-        ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "CloudMigrator");
+    public static string DataDirectory
+    {
+        get
+        {
+            var envVal = Environment.GetEnvironmentVariable("MIGRATOR_DATA_DIR");
+            if (!string.IsNullOrWhiteSpace(envVal))
+                return Path.GetFullPath(envVal);
+
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "CloudMigrator");
+        }
+    }
 
     /// <summary>ログ・DB 格納ディレクトリ: {DataDirectory}\logs\</summary>
     public static string LogsDirectory => Path.Combine(DataDirectory, "logs");
