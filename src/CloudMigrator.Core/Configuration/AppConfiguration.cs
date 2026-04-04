@@ -106,25 +106,32 @@ public static class AppConfiguration
     /// 条件:
     ///   - ./configs/config.json が存在する
     ///   - %APPDATA%\CloudMigrator\configs\config.json が存在しない
-    /// 上記を満たす場合のみ AppData 側へコピーし、ログを出力する。
+    /// 上記を満たす場合のみ AppData 側へコピーし、結果を返す。
+    /// Console への直接出力は行わない（ログは呼び出し元で構造化出力すること）。
     /// </summary>
-    public static void MigrateConfigIfNeeded()
+    /// <returns>
+    ///   Migrated: コピーが実行された場合 true。
+    ///   SourcePath / DestPath: コピー元・コピー先のフルパス。
+    ///   Error: コピー失敗時の例外（null = 成功またはスキップ）。
+    /// </returns>
+    public static (bool Migrated, string SourcePath, string DestPath, Exception? Error)
+        MigrateConfigIfNeeded()
     {
         var srcPath = Path.Combine(Directory.GetCurrentDirectory(), "configs", "config.json");
         var destPath = AppDataPaths.ConfigFile;
 
         if (!File.Exists(srcPath) || File.Exists(destPath))
-            return;
+            return (false, srcPath, destPath, null);
 
         try
         {
             AppDataPaths.EnsureDirectoriesExist();
             File.Copy(srcPath, destPath, overwrite: false);
-            Console.WriteLine($"[INFO] config migrated: {srcPath} → {destPath}");
+            return (true, srcPath, destPath, null);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[WARN] config migration failed: {ex.Message}");
+            return (false, srcPath, destPath, ex);
         }
     }
 }
