@@ -819,11 +819,24 @@ public sealed class GraphStorageProvider : IStorageProvider
         }
         else
         {
-            var cacheKey = $"{_options.SharePointDriveId}:{destinationFolderPath.TrimStart('/')}";
+            // EnsureFolderAsync と同じロジック（Split + Join で '/' 統一）でパスを正規化し、
+            // キャッシュキーの不一致（'\\'混入・二重スラッシュ等）を防ぐ。
+            var normalizedPath = string.Join(
+                '/',
+                destinationFolderPath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries));
+            var cacheKey = $"{_options.SharePointDriveId}:{normalizedPath}";
             if (!_folderIdCache.TryGetValue(cacheKey, out destFolderId!))
-                throw new InvalidOperationException(
-                    $"転送先フォルダ ID がキャッシュに見つかりません: {destinationFolderPath}" +
-                    " Phase C のフォルダ先行作成が完了していない可能性があります。");
+            {
+                // キャッシュミス: Phase C スキップ後の再実行などでインプロセスキャッシュが空の場合。
+                // EnsureFolderAsync を呼んでフォルダ存在確認 + キャッシュを補完してからリトライする。
+                _logger.LogDebug(
+                    "フォルダ ID キャッシュミス。EnsureFolderAsync でキャッシュを補完します: {FolderPath}",
+                    destinationFolderPath);
+                await EnsureFolderAsync(destinationFolderPath, ct).ConfigureAwait(false);
+                if (!_folderIdCache.TryGetValue(cacheKey, out destFolderId!))
+                    throw new InvalidOperationException(
+                        $"EnsureFolderAsync 後もフォルダ ID がキャッシュに見つかりません: {destinationFolderPath}");
+            }
         }
 
         var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
@@ -939,6 +952,7 @@ public sealed class GraphStorageProvider : IStorageProvider
 
                 string? status = null;
                 string? errorMessage = null;
+                string? errorCode = null;
                 try
                 {
                     await using var stream = await pollResponse.Content
@@ -949,9 +963,13 @@ public sealed class GraphStorageProvider : IStorageProvider
                     if (doc.RootElement.TryGetProperty("status", out var statusProp))
                         status = statusProp.GetString();
 
-                    if (doc.RootElement.TryGetProperty("error", out var errorProp)
-                        && errorProp.TryGetProperty("message", out var msgProp))
-                        errorMessage = msgProp.GetString();
+                    if (doc.RootElement.TryGetProperty("error", out var errorProp))
+                    {
+                        if (errorProp.TryGetProperty("message", out var msgProp))
+                            errorMessage = msgProp.GetString();
+                        if (errorProp.TryGetProperty("code", out var codeProp))
+                            errorCode = codeProp.GetString();
+                    }
                 }
                 catch (JsonException ex)
                 {
@@ -967,6 +985,20 @@ public sealed class GraphStorageProvider : IStorageProvider
                         return;
 
                     case "failed":
+                        // 再実行時などで宛先に同名ファイルが既に存在する場合、/copy API は "nameAlreadyExists" で失敗する。
+                        // error.code（"nameAlreadyExists"）を一次判定し、message 文言への依存を最小限にする。
+                        var isNameAlreadyExists =
+                            string.Equals(errorCode, "nameAlreadyExists", StringComparison.OrdinalIgnoreCase)
+                            || (errorMessage is not null
+                                && errorMessage.Contains("Name already exists", StringComparison.OrdinalIgnoreCase));
+                        if (isNameAlreadyExists)
+                        {
+                            _logger.LogDebug(
+                                "サーバーサイドコピー: 宛先に同名ファイルが既存のためスキップ (転送済み扱い): {FileName}",
+                                fileName);
+                            return;
+                        }
+
                         throw new InvalidOperationException(
                             $"サーバーサイドコピーがサーバー側で失敗しました: SourceId={sourceItemId}, " +
                             $"FileName={fileName}, Error={errorMessage}");
