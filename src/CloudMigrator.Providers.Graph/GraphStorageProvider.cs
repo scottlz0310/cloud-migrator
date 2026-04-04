@@ -821,9 +821,17 @@ public sealed class GraphStorageProvider : IStorageProvider
         {
             var cacheKey = $"{_options.SharePointDriveId}:{destinationFolderPath.TrimStart('/')}";
             if (!_folderIdCache.TryGetValue(cacheKey, out destFolderId!))
-                throw new InvalidOperationException(
-                    $"転送先フォルダ ID がキャッシュに見つかりません: {destinationFolderPath}" +
-                    " Phase C のフォルダ先行作成が完了していない可能性があります。");
+            {
+                // キャッシュミス: Phase C スキップ後の再実行などでインプロセスキャッシュが空の場合。
+                // EnsureFolderAsync を呼んでフォルダ存在確認 + キャッシュを補完してからリトライする。
+                _logger.LogDebug(
+                    "フォルダ ID キャッシュミス。EnsureFolderAsync でキャッシュを補完します: {FolderPath}",
+                    destinationFolderPath);
+                await EnsureFolderAsync(destinationFolderPath, ct).ConfigureAwait(false);
+                if (!_folderIdCache.TryGetValue(cacheKey, out destFolderId!))
+                    throw new InvalidOperationException(
+                        $"EnsureFolderAsync 後もフォルダ ID がキャッシュに見つかりません: {destinationFolderPath}");
+            }
         }
 
         var oneDriveId = await GetOneDriveDriveIdAsync(ct).ConfigureAwait(false);
