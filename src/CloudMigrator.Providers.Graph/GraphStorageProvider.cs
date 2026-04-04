@@ -819,7 +819,12 @@ public sealed class GraphStorageProvider : IStorageProvider
         }
         else
         {
-            var cacheKey = $"{_options.SharePointDriveId}:{destinationFolderPath.TrimStart('/')}";
+            // EnsureFolderAsync と同じロジック（Split + Join で '/' 統一）でパスを正規化し、
+            // キャッシュキーの不一致（'\\'混入・二重スラッシュ等）を防ぐ。
+            var normalizedPath = string.Join(
+                '/',
+                destinationFolderPath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries));
+            var cacheKey = $"{_options.SharePointDriveId}:{normalizedPath}";
             if (!_folderIdCache.TryGetValue(cacheKey, out destFolderId!))
             {
                 // キャッシュミス: Phase C スキップ後の再実行などでインプロセスキャッシュが空の場合。
@@ -947,6 +952,7 @@ public sealed class GraphStorageProvider : IStorageProvider
 
                 string? status = null;
                 string? errorMessage = null;
+                string? errorCode = null;
                 try
                 {
                     await using var stream = await pollResponse.Content
@@ -957,9 +963,13 @@ public sealed class GraphStorageProvider : IStorageProvider
                     if (doc.RootElement.TryGetProperty("status", out var statusProp))
                         status = statusProp.GetString();
 
-                    if (doc.RootElement.TryGetProperty("error", out var errorProp)
-                        && errorProp.TryGetProperty("message", out var msgProp))
-                        errorMessage = msgProp.GetString();
+                    if (doc.RootElement.TryGetProperty("error", out var errorProp))
+                    {
+                        if (errorProp.TryGetProperty("message", out var msgProp))
+                            errorMessage = msgProp.GetString();
+                        if (errorProp.TryGetProperty("code", out var codeProp))
+                            errorCode = codeProp.GetString();
+                    }
                 }
                 catch (JsonException ex)
                 {
@@ -976,9 +986,12 @@ public sealed class GraphStorageProvider : IStorageProvider
 
                     case "failed":
                         // 再実行時などで宛先に同名ファイルが既に存在する場合、/copy API は "nameAlreadyExists" で失敗する。
-                        // 既存ファイル = 転送済みとみなしてスキップし、クライアント経由の二重転送を回避する。
-                        if (errorMessage is not null
-                            && errorMessage.Contains("Name already exists", StringComparison.OrdinalIgnoreCase))
+                        // error.code（"nameAlreadyExists"）を一次判定し、message 文言への依存を最小限にする。
+                        var isNameAlreadyExists =
+                            string.Equals(errorCode, "nameAlreadyExists", StringComparison.OrdinalIgnoreCase)
+                            || (errorMessage is not null
+                                && errorMessage.Contains("Name already exists", StringComparison.OrdinalIgnoreCase));
+                        if (isNameAlreadyExists)
                         {
                             _logger.LogDebug(
                                 "サーバーサイドコピー: 宛先に同名ファイルが既存のためスキップ (転送済み扱い): {FileName}",

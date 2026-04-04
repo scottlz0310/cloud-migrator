@@ -271,6 +271,90 @@ public class GraphStorageProviderTests
         monitorServer.RequestCount.Should().Be(2);
     }
 
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldComplete_WhenMonitorReturnsFailedWithNameAlreadyExistsCode()
+    {
+        // 検証対象: PollCopyOperationAsync の error.code 一次判定
+        // 目的: error.code = "nameAlreadyExists" のとき例外なく成功扱いになること
+        await using var monitorServer = new LoopbackMonitorServer(
+            new MonitorResponse(HttpStatusCode.OK,
+                """{"status":"failed","error":{"code":"nameAlreadyExists","message":"Name already exists"}}"""));
+        var (copyCapture, client) = CreateHttpServerSideCopyClient(monitorServer.Url);
+        var provider = CreateServerSideCopyProvider(client, copyCapture, timeoutSec: 2);
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        monitorServer.RequestCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldComplete_WhenMonitorReturnsFailedWithNameAlreadyExistsMessageOnly()
+    {
+        // 検証対象: PollCopyOperationAsync の error.message フォールバック判定
+        // 目的: error.code がなくても error.message に "Name already exists" を含む場合に成功扱いになること
+        await using var monitorServer = new LoopbackMonitorServer(
+            new MonitorResponse(HttpStatusCode.OK,
+                """{"status":"failed","error":{"message":"Name already exists"}}"""));
+        var (copyCapture, client) = CreateHttpServerSideCopyClient(monitorServer.Url);
+        var provider = CreateServerSideCopyProvider(client, copyCapture, timeoutSec: 2);
+
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        monitorServer.RequestCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ServerSideCopyAsync_ShouldComplete_WhenFolderCacheIsMissAndEnsureFolderSucceeds()
+    {
+        // 検証対象: CopyToSharePointAsync のキャッシュミスパス
+        // 目的: インプロセスキャッシュが空のとき EnsureFolderAsync でフォルダ ID を補完し、コピーが完了すること
+        await using var monitorServer = new LoopbackMonitorServer(
+            new MonitorResponse(HttpStatusCode.OK, """{"status":"completed"}"""));
+
+        var copyCapture = new CopyLocationCaptureHandler();
+        var transport = new StubGraphTransportHandler(request =>
+        {
+            // OneDrive ドライブ ID 取得
+            if (request.Method == HttpMethod.Get
+                && request.RequestUri?.AbsoluteUri.Contains("/users/user1/drive", StringComparison.OrdinalIgnoreCase) == true)
+                return JsonResponse(HttpStatusCode.OK, """{"id":"source-drive-id"}""");
+
+            // EnsureFolderAsync: 既存フォルダの GET による確認
+            if (request.Method == HttpMethod.Get
+                && request.RequestUri?.AbsoluteUri.Contains("/drives/sharepoint-drive/", StringComparison.OrdinalIgnoreCase) == true)
+                return JsonResponse(HttpStatusCode.OK, """{"id":"folder-abc","name":"destfolder"}""");
+
+            // /copy POST → 202 Accepted + monitor URL
+            if (request.Method == HttpMethod.Post
+                && request.RequestUri?.AbsolutePath.EndsWith("/copy", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                var accepted = new HttpResponseMessage(HttpStatusCode.Accepted);
+                accepted.Headers.Location = monitorServer.Url;
+                return accepted;
+            }
+
+            throw new InvalidOperationException($"Unexpected: {request.Method} {request.RequestUri}");
+        });
+        copyCapture.InnerHandler = transport;
+
+        var httpClient = new HttpClient(copyCapture);
+        var authProvider = new BaseBearerTokenAuthenticationProvider(new FakeAccessTokenProvider());
+        var adapter = new HttpClientRequestAdapter(authProvider, httpClient: httpClient)
+        {
+            BaseUrl = "https://graph.microsoft.com/v1.0",
+        };
+        var client = new GraphServiceClient(adapter);
+        var provider = CreateServerSideCopyProvider(client, copyCapture, timeoutSec: 2);
+
+        // キャッシュは空 → "destfolder" のフォルダ ID がキャッシュミス → EnsureFolderAsync 補完 → コピー完了
+        var act = async () => await provider.ServerSideCopyAsync("source-item", "destfolder", "file.txt");
+
+        await act.Should().NotThrowAsync();
+        monitorServer.RequestCount.Should().Be(1);
+    }
+
     // ── Phase 3 クロール挙動テスト ─────────────────────────────────────
 
     private static (Mock<IRequestAdapter> adapter, GraphServiceClient client) CreateMockClient(
