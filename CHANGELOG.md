@@ -9,6 +9,17 @@
 
 ---
 
+## [0.2.1] - 2026-04-04
+
+### Added
+- `cloud-migrator setup` サブコマンドを追加: `bootstrap` / `init` / `doctor` / `verify` を `cloud-migrator.exe` から直接実行可能に
+  - `CloudMigrator.Setup.Cli` を `CloudMigrator.Cli` の依存関係に追加
+  - `SetupCommand.cs` 新設（`CloudMigrator.Cli.Commands`）
+  - `AssemblyInfo.cs` に `InternalsVisibleTo("cloud-migrator")` を追加
+  - `SetupCommandTests.cs` 追加: サブコマンド名・件数を検証するユニットテスト 6 件
+
+---
+
 ## [0.2.0] - 2026-04-04
 
 ### Added
@@ -524,6 +535,7 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/scottlz0310/cloud-migrator/releases/tag/v0.1.0
