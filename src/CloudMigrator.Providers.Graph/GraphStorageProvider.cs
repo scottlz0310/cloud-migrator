@@ -975,6 +975,17 @@ public sealed class GraphStorageProvider : IStorageProvider
                         return;
 
                     case "failed":
+                        // 再実行時などで宛先に同名ファイルが既に存在する場合、/copy API は "nameAlreadyExists" で失敗する。
+                        // 既存ファイル = 転送済みとみなしてスキップし、クライアント経由の二重転送を回避する。
+                        if (errorMessage is not null
+                            && errorMessage.Contains("Name already exists", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogDebug(
+                                "サーバーサイドコピー: 宛先に同名ファイルが既存のためスキップ (転送済み扱い): {FileName}",
+                                fileName);
+                            return;
+                        }
+
                         throw new InvalidOperationException(
                             $"サーバーサイドコピーがサーバー側で失敗しました: SourceId={sourceItemId}, " +
                             $"FileName={fileName}, Error={errorMessage}");
