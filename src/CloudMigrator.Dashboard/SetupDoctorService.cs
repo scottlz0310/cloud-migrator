@@ -118,6 +118,11 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cts.Token).ConfigureAwait(false);
 
             var token = doc.RootElement.GetProperty("access_token").GetString();
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return (null, new DoctorCheck(CheckName, DoctorStatus.Fail, "access_token が取得できませんでした。"));
+            }
+
             return (token, new DoctorCheck(CheckName, DoctorStatus.Pass, null));
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -187,8 +192,10 @@ public sealed class SetupDoctorService : ISetupDoctorService, IDisposable
 
         try
         {
-            // バックスラッシュ・二重スラッシュを含む Windows パス表記に備え、/ に統一してから Trim する
-            var root = _options.DestinationRoot.Replace('\\', '/').Trim('/');
+            // バックスラッシュ・連続スラッシュを含む Windows パス表記を正規化する（空セグメントを除去）
+            var root = string.Join('/', _options.DestinationRoot
+                .Replace('\\', '/')
+                .Split('/', StringSplitOptions.RemoveEmptyEntries));
             var url = string.IsNullOrWhiteSpace(root)
                 ? $"https://graph.microsoft.com/v1.0/drives/{Uri.EscapeDataString(_options.DriveId)}"
                 : $"https://graph.microsoft.com/v1.0/drives/{Uri.EscapeDataString(_options.DriveId)}/root:/{BuildEncodedPath(root)}";

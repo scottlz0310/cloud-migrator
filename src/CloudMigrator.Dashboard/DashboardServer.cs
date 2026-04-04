@@ -96,7 +96,8 @@ public static class DashboardServer
         }
         else
         {
-            builder.Services.AddSingleton<ISetupDoctorService>(_ =>
+            // Transient 登録: /api/config 更新後の接続テストで最新設定を反映するため毎リクエスト生成する
+            builder.Services.AddTransient<ISetupDoctorService>(_ =>
             {
                 var cfg = AppConfiguration.Build();
                 var migratorOpts = cfg.GetSection(MigratorOptions.SectionName)

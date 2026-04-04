@@ -203,4 +203,40 @@ public sealed class SetupDoctorServiceTests
         result.Checks[1].Status.Should().Be(DoctorStatus.Pass);
         result.Checks[2].Status.Should().Be(DoctorStatus.Fail);
     }
+
+    [Fact]
+    public async Task RunAsync_AccessTokenNullOrEmpty_ReturnsAuthFail()
+    {
+        // 検証対象: CheckAuthAsync（access_token null）  目的: 200 OK でも access_token が空の場合は Fail を返す
+        var http = BuildHttpClient(
+            ("oauth2/v2.0/token", HttpStatusCode.OK, "{\"access_token\":\"\"}"));
+
+        var svc = new SetupDoctorService(ValidOptions(), http);
+
+        var result = await svc.RunAsync();
+
+        result.OverallStatus.Should().Be(OverallStatus.Unhealthy);
+        result.Checks[0].Status.Should().Be(DoctorStatus.Fail);
+        result.Checks[0].Detail.Should().Contain("access_token");
+        result.Checks[1].Detail.Should().Contain("スキップ");
+        result.Checks[2].Detail.Should().Contain("スキップ");
+    }
+
+    [Fact]
+    public async Task RunAsync_DestinationRootWithDoubleSlash_NormalizesPath()
+    {
+        // 検証対象: CheckDriveAsync（DestinationRoot 正規化）  目的: // を含むパスが正規化され 404 にならずに Pass する
+        var http = BuildHttpClient(
+            ("oauth2/v2.0/token", HttpStatusCode.OK, TokenJson()),
+            ("/sites/", HttpStatusCode.OK, SiteJson()),
+            ("/drives/", HttpStatusCode.OK, "{}"));
+
+        var opts = ValidOptions(destinationRoot: "Migration//2026");
+        var svc = new SetupDoctorService(opts, http);
+
+        var result = await svc.RunAsync();
+
+        result.OverallStatus.Should().Be(OverallStatus.Healthy);
+        result.Checks.Should().AllSatisfy(c => c.Status.Should().Be(DoctorStatus.Pass));
+    }
 }
