@@ -16,7 +16,7 @@
   - 監視タブに「DB 未接続」バナー追加（Alpine.js で `/api/db-status` をポーリングし、DB なし時に黄〜橙系バナーを表示）
   - `cloud-migrator`（引数なし）で Studio を起動: `--port`・`--no-browser` トップレベルオプション対応
   - `cloud-migrator dashboard` コマンドが DB なしでも起動するよう変更（`File.Exists` エラー終了を廃止）
-  - 起動メッセージ改善: `「CloudMigrator Studio 起動中: http://localhost:5050」` + DB なし時は `「DB : なし — 転送後に自動接続されます」`
+  - 起動メッセージ改善: `「CloudMigrator Studio 起動中: http://localhost:5050」` + DB なし時は `「DB : なし — transfer 実行後、DB が作成されたら再起動してください」`
   - `DashboardServerTests.cs` に DB-less モードテスト 4 件追加: `/api/db-status` (connected=true/false) / `/api/status` 空サマリー / `/api/metrics` 空リスト
 
 

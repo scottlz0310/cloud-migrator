@@ -15,14 +15,15 @@ Console.CancelKeyPress += (_, e) =>
 var rootCmd = new RootCommand("CloudMigrator - OneDrive から SharePoint へのファイル移行ツール");
 
 // トップレベルオプション（引数なし起動で Studio を開く際に使用）
-var portOption = new Option<int>("--port")
+// dashboard サブコマンドの --port / --no-browser と名前が衝突しないよう --studio-* プレフィックスを付ける
+var portOption = new Option<int>("--studio-port")
 {
-    Description = "Studio のポート番号",
+    Description = "引数なし起動時に使用する Studio のポート番号",
     DefaultValueFactory = _ => 5050,
 };
-var noBrowserOption = new Option<bool>("--no-browser")
+var noBrowserOption = new Option<bool>("--studio-no-browser")
 {
-    Description = "ブラウザを自動起動しない",
+    Description = "引数なし起動時にブラウザを自動起動しない",
 };
 rootCmd.Add(portOption);
 rootCmd.Add(noBrowserOption);
