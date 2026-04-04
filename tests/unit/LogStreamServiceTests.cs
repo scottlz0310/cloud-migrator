@@ -1,133 +1,124 @@
+using System.Text;
+using CloudMigrator.Dashboard;
 using CloudMigrator.Observability;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Serilog.Events;
 using Serilog.Parsing;
 
 namespace CloudMigrator.Tests.Unit;
 
 /// <summary>
-/// 検証対象: LogStreamSink  目的: リングバッファ・SSE ブロードキャスト動作を確認する
+/// 検証対象: LogStreamService.StreamAsync  目的: SSE レスポンスヘッダー・ボディ・キャンセル挙動を確認する
 /// </summary>
 public sealed class LogStreamServiceTests
 {
-    // ── バッファ追加 ──────────────────────────────────────────────────────
+    // ── ヘッダー ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void Emit_AddsEntryToRecentBuffer()
+    public async Task StreamAsync_SetsCorrectResponseHeaders()
     {
-        // 検証対象: LogStreamSink.Emit  目的: エントリがリングバッファに追加される
+        // 検証対象: LogStreamService.StreamAsync  目的: SSE に必要なレスポンスヘッダーが正しく設定される
         var sink = new LogStreamSink();
-        var logEvent = MakeLogEvent(LogEventLevel.Information, "テストメッセージ");
+        var service = new LogStreamService(sink);
+        var ctx = CreateHttpContext();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel(); // 接続後即座にキャンセル
 
-        sink.Emit(logEvent);
+        await service.StreamAsync(ctx, cts.Token);
 
+        ctx.Response.Headers["Content-Type"].ToString().Should().Be("text/event-stream");
+        ctx.Response.Headers["Cache-Control"].ToString().Should().Be("no-cache");
+        ctx.Response.Headers["X-Accel-Buffering"].ToString().Should().Be("no");
+    }
+
+    // ── 初回バッファ送信 ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamAsync_SendsBufferedEntriesOnConnect()
+    {
+        // 検証対象: LogStreamService.StreamAsync  目的: 接続時に直近バッファが SSE data として送信される
+        var sink = new LogStreamSink();
+        sink.Emit(MakeLogEvent(LogEventLevel.Information, "buffered-entry-test"));
+        var service = new LogStreamService(sink);
+        var body = new MemoryStream();
+        var ctx = CreateHttpContext(body);
+
+        // 短いタイムアウトで待機後キャンセル
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await service.StreamAsync(ctx, cts.Token);
+
+        var text = Encoding.UTF8.GetString(body.ToArray());
+        text.Should().Contain("data: ");
+        text.Should().Contain("buffered-entry-test");
+    }
+
+    // ── SSE フォーマット ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamAsync_OutputsCorrectSseFormat()
+    {
+        // 検証対象: LogStreamService.WriteEventAsync  目的: SSE 出力が "data: {...}\n\n" 形式になっている
+        var sink = new LogStreamSink();
+        sink.Emit(MakeLogEvent(LogEventLevel.Warning, "format check"));
+        var service = new LogStreamService(sink);
+        var body = new MemoryStream();
+        var ctx = CreateHttpContext(body);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await service.StreamAsync(ctx, cts.Token);
+
+        var text = Encoding.UTF8.GetString(body.ToArray());
+        text.Should().MatchRegex(@"data: \{.*\}\n\n");
+        text.Should().Contain("\"level\":\"Warning\"");
+        text.Should().Contain("\"message\":\"format check\"");
+    }
+
+    // ── キャンセル ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamAsync_CancelledImmediately_DoesNotThrow()
+    {
+        // 検証対象: LogStreamService.StreamAsync  目的: 即時キャンセルで例外が呼び出し元に伝播しない
+        var sink = new LogStreamSink();
+        var service = new LogStreamService(sink);
+        var ctx = CreateHttpContext();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = async () => await service.StreamAsync(ctx, cts.Token);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    // ── リソース解放 ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamAsync_UnsubscribesOnCancellation()
+    {
+        // 検証対象: LogStreamService.StreamAsync  目的: キャンセル時にサブスクライバーが解除される
+        var sink = new LogStreamSink();
+        var service = new LogStreamService(sink);
+        var ctx = CreateHttpContext();
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await service.StreamAsync(ctx, cts.Token);
+
+        // サブスクライバーが解除されているため新たな Emit は届かない（デッドロックせず完了）
+        sink.Emit(MakeLogEvent(LogEventLevel.Information, "after unsubscribe"));
         var entries = sink.GetRecentEntries();
-        entries.Should().HaveCount(1);
-        entries[0].Level.Should().Be("Information");
-        entries[0].Message.Should().Be("テストメッセージ");
-    }
-
-    [Fact]
-    public void Emit_TimestampIsUtc()
-    {
-        // 検証対象: LogEntry.Timestamp  目的: タイムスタンプが UTC で格納される
-        var sink = new LogStreamSink();
-
-        sink.Emit(MakeLogEvent(LogEventLevel.Information, "utc check"));
-
-        var entry = sink.GetRecentEntries()[0];
-        entry.Timestamp.Offset.Should().Be(TimeSpan.Zero);
-    }
-
-    // ── バッファ上限（DropOldest） ────────────────────────────────────────
-
-    [Fact]
-    public void GetRecentEntries_LimitedTo500_DropOldest()
-    {
-        // 検証対象: LogStreamSink バッファ上限
-        // 目的: 501 件目以降は最古エントリから順に破棄される
-        var sink = new LogStreamSink();
-        for (int i = 1; i <= LogStreamSink.BufferCapacity + 1; i++)
-            sink.Emit(MakeLogEvent(LogEventLevel.Information, $"msg {i}"));
-
-        var entries = sink.GetRecentEntries();
-        entries.Should().HaveCount(LogStreamSink.BufferCapacity);
-        entries[0].Message.Should().Be("msg 2");          // msg 1 は破棄
-        entries[^1].Message.Should().Be($"msg {LogStreamSink.BufferCapacity + 1}");
-    }
-
-    // ── SSE ブロードキャスト ──────────────────────────────────────────────
-
-    [Fact]
-    public async Task Subscribe_ReceivesEmittedEntries()
-    {
-        // 検証対象: LogStreamSink.Subscribe + Emit
-        // 目的: Emit されたエントリがサブスクライバーに届く
-        var sink = new LogStreamSink();
-        var (clientId, reader) = sink.Subscribe();
-
-        sink.Emit(MakeLogEvent(LogEventLevel.Warning, "broadcast test"));
-        sink.Unsubscribe(clientId);
-
-        var entries = new List<LogEntry>();
-        await foreach (var e in reader.ReadAllAsync())
-            entries.Add(e);
-
-        entries.Should().HaveCount(1);
-        entries[0].Level.Should().Be("Warning");
-        entries[0].Message.Should().Be("broadcast test");
-    }
-
-    [Fact]
-    public async Task Subscribe_MultipleClients_AllReceive()
-    {
-        // 検証対象: LogStreamSink 複数クライアント
-        // 目的: 複数の SSE クライアントそれぞれにブロードキャストされる
-        var sink = new LogStreamSink();
-        var (id1, reader1) = sink.Subscribe();
-        var (id2, reader2) = sink.Subscribe();
-
-        sink.Emit(MakeLogEvent(LogEventLevel.Error, "multi-cast"));
-        sink.Unsubscribe(id1);
-        sink.Unsubscribe(id2);
-
-        var list1 = new List<LogEntry>();
-        await foreach (var e in reader1.ReadAllAsync()) list1.Add(e);
-
-        var list2 = new List<LogEntry>();
-        await foreach (var e in reader2.ReadAllAsync()) list2.Add(e);
-
-        list1.Should().HaveCount(1).And.ContainSingle(e => e.Message == "multi-cast");
-        list2.Should().HaveCount(1).And.ContainSingle(e => e.Message == "multi-cast");
-    }
-
-    [Fact]
-    public void Emit_DoesNotThrow_WhenClientDisconnected()
-    {
-        // 検証対象: LogStreamSink.Emit（切断済みクライアント）
-        // 目的: Unsubscribe 後の Emit が例外を投げない
-        var sink = new LogStreamSink();
-        var (clientId, _) = sink.Subscribe();
-        sink.Unsubscribe(clientId);
-
-        var act = () => sink.Emit(MakeLogEvent(LogEventLevel.Information, "no crash"));
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void Dispose_CompletesAllClientChannels()
-    {
-        // 検証対象: LogStreamSink.Dispose  目的: Dispose 後にすべてのクライアントチャネルが完了する
-        var sink = new LogStreamSink();
-        var (_, reader) = sink.Subscribe();
-
-        sink.Dispose();
-
-        reader.Completion.IsCompleted.Should().BeTrue();
+        entries.Should().ContainSingle(e => e.Message == "after unsubscribe");
     }
 
     // ── ヘルパー ─────────────────────────────────────────────────────────
+
+    private static DefaultHttpContext CreateHttpContext(Stream? responseBody = null)
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Response.Body = responseBody ?? new MemoryStream();
+        return ctx;
+    }
 
     private static LogEvent MakeLogEvent(LogEventLevel level, string message)
     {

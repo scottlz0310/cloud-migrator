@@ -3,6 +3,7 @@ using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.State;
 using CloudMigrator.Observability;
 using Microsoft.AspNetCore.Builder;
+using Serilog;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,9 +30,7 @@ public static class DashboardServer
         await db.InitializeAsync(ct).ConfigureAwait(false);
         var configService = new ConfigurationService();
         var jobService = new TransferJobService();
-        var sink = logStreamSink ?? new LogStreamSink();
-        var logStreamService = new LogStreamService(sink);
-        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamService: logStreamService);
+        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamSink: logStreamSink);
         app.Urls.Add($"http://localhost:{port}");
         try
         {
@@ -53,7 +52,8 @@ public static class DashboardServer
         Action<IWebHostBuilder>? configureWebHost = null,
         IConfigurationService? configService = null,
         ITransferJobService? jobService = null,
-        ILogStreamService? logStreamService = null)
+        ILogStreamService? logStreamService = null,
+        LogStreamSink? logStreamSink = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning); // ダッシュボード固有のノイズを抑制
@@ -64,9 +64,25 @@ public static class DashboardServer
         // jobService 未指定時は既定実装を生成し登録（/api/transfer/* の定常稼働を保証）
         var resolvedJobService = jobService ?? new TransferJobService();
         builder.Services.AddSingleton<ITransferJobService>(resolvedJobService);
-        // logStreamService 未指定時は空シンクを持つ既定実装を生成し登録
-        var resolvedLogStreamService = logStreamService ?? new LogStreamService(new LogStreamSink());
-        builder.Services.AddSingleton<ILogStreamService>(resolvedLogStreamService);
+        // logStreamService 未指定時は DI 管理の共有シンクを使う既定実装を登録（Thread 2: Serilog にも接続）。
+        // logStreamService が指定された場合（テスト等）はそのまま使用し Serilog は構成しない。
+        if (logStreamService is not null)
+        {
+            builder.Services.AddSingleton<ILogStreamService>(logStreamService);
+        }
+        else
+        {
+            var sink = logStreamSink ?? new LogStreamSink();
+            builder.Services.AddSingleton<LogStreamSink>(sink);
+            builder.Services.AddSingleton<ILogStreamService>(sp =>
+                new LogStreamService(sp.GetRequiredService<LogStreamSink>()));
+            // ASP.NET Core ログを Serilog 経由でシンクへルーティングし SSE が受信できるようにする
+            var serilogLogger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.Sink(sink)
+                .CreateLogger();
+            builder.Logging.AddSerilog(serilogLogger, dispose: true);
+        }
         configureWebHost?.Invoke(builder.WebHost);
 
         var app = builder.Build();
@@ -613,8 +629,9 @@ public static class DashboardServer
             <div class="toast" x-show="toast !== null" :class="toast &amp;&amp; toast.type" x-text="toast &amp;&amp; toast.msg" style="display:none;"></div>
           </div>
 
-          <!-- ログタブ -->
-          <div x-show="tab === 'logs'" x-data="logTab()" x-init="init()">
+          <!-- ログタブ: x-if でタブ選択時のみ DOM/EventSource を生成；タブ非表示で自動切断 -->
+          <template x-if="tab === 'logs'">
+            <div x-data="logTab()" x-init="init()">
             <main style="max-width:1200px;margin:0 auto;padding:24px 16px;">
               <section class="log-section">
                 <div class="log-toolbar">
@@ -643,6 +660,7 @@ public static class DashboardServer
               </section>
             </main>
           </div>
+          </template>
 
           <script>
             const POLL_INTERVAL = 5000; // ms
@@ -1073,6 +1091,11 @@ public static class DashboardServer
                 filter: { Info: true, Warn: true, Error: true },
                 autoScroll: true,
                 es: null,
+
+                destroy() {
+                  // x-if による DOM 破棄時（タブ非表示 / ページ離脱）に EventSource を切断
+                  if (this.es) { this.es.close(); this.es = null; }
+                },
 
                 get filteredLogs() {
                   return this.logs.filter(e => {

@@ -31,15 +31,18 @@ public sealed class LogStreamSink : ILogEventSink, IDisposable
     /// <summary>
     /// SSE クライアントを登録してリーダーを返す。
     /// 切断時は <see cref="Unsubscribe"/> を呼び出すこと。
+    /// チャネルは Bounded（容量 <see cref="BufferCapacity"/>）で、
+    /// 読み取りが追いつかない場合は最古エントリを破棄する（DropOldest）。
     /// </summary>
     public (Guid ClientId, System.Threading.Channels.ChannelReader<LogEntry> Reader) Subscribe()
     {
         var id = Guid.NewGuid();
-        var ch = System.Threading.Channels.Channel.CreateUnbounded<LogEntry>(
-            new System.Threading.Channels.UnboundedChannelOptions
+        var ch = System.Threading.Channels.Channel.CreateBounded<LogEntry>(
+            new System.Threading.Channels.BoundedChannelOptions(BufferCapacity)
             {
                 SingleReader = true,
                 SingleWriter = false,
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest,
             });
         _clients[id] = ch;
         return (id, ch.Reader);

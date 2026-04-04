@@ -46,15 +46,18 @@ public sealed class LogStreamService : ILogStreamService
         ctx.Response.Headers["Cache-Control"] = "no-cache";
         ctx.Response.Headers["X-Accel-Buffering"] = "no";
 
-        // 接続時: 直近バッファを初回送信
-        foreach (var entry in _sink.GetRecentEntries())
-            await WriteEventAsync(ctx.Response, entry, ct).ConfigureAwait(false);
-        await ctx.Response.Body.FlushAsync(ct).ConfigureAwait(false);
-
-        // リアルタイム: 新しいログを継続送信
+        // Subscribe を先に行ってリアルタイム受信を開始し、その後バッファを送信する。
+        // こうすることでスナップショット取得〜Subscribe 完了の間のログ取りこぼしを防ぐ
+        // （重複は許容する）。
         var (clientId, reader) = _sink.Subscribe();
         try
         {
+            // 接続時: 直近バッファを初回送信
+            foreach (var entry in _sink.GetRecentEntries())
+                await WriteEventAsync(ctx.Response, entry, ct).ConfigureAwait(false);
+            await ctx.Response.Body.FlushAsync(ct).ConfigureAwait(false);
+
+            // リアルタイム: 新しいログを継続送信
             await foreach (var entry in reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 await WriteEventAsync(ctx.Response, entry, ct).ConfigureAwait(false);
@@ -64,6 +67,10 @@ public sealed class LogStreamService : ILogStreamService
         catch (OperationCanceledException)
         {
             // クライアント切断またはサーバーシャットダウン — 正常終了
+        }
+        catch (IOException)
+        {
+            // broken pipe 等によるクライアント切断 — 正常終了
         }
         finally
         {
