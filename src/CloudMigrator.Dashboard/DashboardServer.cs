@@ -52,7 +52,7 @@ public static class DashboardServer
 
         var configService = new ConfigurationService();
         var jobService = new TransferJobService();
-        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamSink: logStreamSink, hasDb: hasDb, dbPath: dbPath);
+        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamSink: logStreamSink, dbPath: dbPath);
         app.Urls.Add($"http://localhost:{port}");
         try
         {
@@ -60,7 +60,7 @@ public static class DashboardServer
         }
         finally
         {
-            if (hasDb)
+            if (db is not NullTransferStateDb)
                 await db.DisposeAsync().ConfigureAwait(false);
         }
     }
@@ -69,7 +69,6 @@ public static class DashboardServer
     /// 全エンドポイントをマップした <see cref="WebApplication"/> を生成する。
     /// <paramref name="configureWebHost"/> に <c>wb =&gt; wb.UseTestServer()</c> を渡すと
     /// インプロセスの TestServer として使用できる（単体テスト向け）。
-    /// <paramref name="hasDb"/> が <c>false</c> の場合は DB なしモードで起動する（監視 API は空レスポンスを返す）。
     /// </summary>
     internal static WebApplication BuildApp(
         ITransferStateDb db,
@@ -79,7 +78,6 @@ public static class DashboardServer
         ILogStreamService? logStreamService = null,
         LogStreamSink? logStreamSink = null,
         ISetupDoctorService? doctorService = null,
-        bool hasDb = true,
         string? dbPath = null)
     {
         var builder = WebApplication.CreateBuilder();
@@ -540,7 +538,7 @@ public static class DashboardServer
           <div x-show="tab === 'monitor'">
           <!-- DB なしバナー（転送未開始時に表示） -->
           <div id="noDbBanner" style="display:none;margin:16px 24px;padding:14px 18px;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;color:#fcd34d;">
-            <strong>&#9432; DB 未接続</strong> — <span id="noDbBannerMsg">まだ転送が開始されていません。<code>transfer</code> コマンドを実行すると自動的に接続されます。</span>
+            <strong>&#9432; DB 未接続</strong> — <span id="noDbBannerMsg">まだ転送が開始されていません。<code>transfer</code> コマンドを実行し、DB が作成されたら再起動してください。</span>
           </div>
           <main>
             <section class="cards">
@@ -1232,7 +1230,7 @@ public static class DashboardServer
                 if (msg && !connected) {
                   msg.innerHTML = requiresRestart
                     ? 'DB ファイルが検出されました。ダッシュボードを再起動してください。'
-                    : 'まだ転送が開始されていません。<code>transfer</code> コマンドを実行すると自動的に接続されます。';
+                    : 'まだ転送が開始されていません。<code>transfer</code> コマンドを実行し、DB が作成されたら再起動してください。';
                 }
               } catch { /* ネットワークエラーは無視 */ }
             }

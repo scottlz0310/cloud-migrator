@@ -506,7 +506,6 @@ public sealed class DashboardServerTests : IAsyncDisposable
             wb => wb.UseTestServer(),
             _mockConfigService.Object,
             _mockJobService.Object,
-            hasDb: false,
             dbPath: "/nonexistent/path/state.db");
         await _app.StartAsync();
         var client = _app.GetTestClient();
@@ -528,8 +527,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
             NullTransferStateDb.Instance,
             wb => wb.UseTestServer(),
             _mockConfigService.Object,
-            _mockJobService.Object,
-            hasDb: false);
+            _mockJobService.Object);
         await _app.StartAsync();
         var client = _app.GetTestClient();
 
@@ -550,8 +548,7 @@ public sealed class DashboardServerTests : IAsyncDisposable
             NullTransferStateDb.Instance,
             wb => wb.UseTestServer(),
             _mockConfigService.Object,
-            _mockJobService.Object,
-            hasDb: false);
+            _mockJobService.Object);
         await _app.StartAsync();
         var client = _app.GetTestClient();
 

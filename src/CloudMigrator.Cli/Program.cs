@@ -41,14 +41,14 @@ rootCmd.SetAction(async (parseResult, ct) =>
     var defaultDbPath = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase)
         ? options.Paths.DropboxStateDb
         : options.Paths.SharePointStateDb;
-    bool dbExists = !string.IsNullOrEmpty(defaultDbPath) && File.Exists(defaultDbPath);
-    string? activeDbPath = dbExists ? defaultDbPath : null;
+    bool dbExists = !string.IsNullOrWhiteSpace(defaultDbPath) && File.Exists(defaultDbPath);
+    string? activeDbPath = string.IsNullOrWhiteSpace(defaultDbPath) ? null : defaultDbPath;
 
     Console.WriteLine($"CloudMigrator Studio 起動中: {url}");
     if (dbExists)
         Console.WriteLine($"DB          : {defaultDbPath}");
     else
-        Console.WriteLine("DB          : なし — 転送後に自動接続されます");
+        Console.WriteLine("DB          : なし — transfer 実行後、DB が作成されたら再起動してください");
     Console.WriteLine("終了するには Ctrl+C を押してください。");
 
     if (!noBrowser)

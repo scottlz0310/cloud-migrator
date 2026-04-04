@@ -48,15 +48,15 @@ internal static class DashboardCommand
             var url = $"http://localhost:{port}";
 
             // DB ファイルが存在する場合は接続して起動。存在しない場合は DB なしモードで起動。
-            // DB なしモードでも UI は表示され、転送開始後に自動的に接続される旨をガイドする。
+            // DB なしモードでも UI は表示され、DB が作成されたら再起動するよう案内する。
             bool dbExists = !string.IsNullOrEmpty(dbPath) && File.Exists(dbPath);
-            string? activeDbPath = dbExists ? dbPath : null;
+            string? activeDbPath = string.IsNullOrEmpty(dbPath) ? null : dbPath;
 
             Console.WriteLine($"CloudMigrator Studio 起動中: {url}");
             if (dbExists)
                 Console.WriteLine($"DB          : {dbPath}");
             else
-                Console.WriteLine("DB          : なし — 転送後に自動接続されます");
+                Console.WriteLine("DB          : なし — transfer 実行後、DB が作成されたら再起動してください");
             Console.WriteLine("終了するには Ctrl+C を押してください。");
 
             if (!noBrowser)
