@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2026-04-04
+
 ### Added
 - **Studio Ph-5: 引数なしデフォルト起動 + DB なしモード** (Issue #85)
   - `NullTransferStateDb` 新設（`CloudMigrator.Core.State`）: Null Object パターンで `ITransferStateDb` を実装。DB なし起動時に全読み込みメソッドは空/ゼロ値を返し、書き込みは無視する
@@ -520,5 +524,6 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/scottlz0310/cloud-migrator/releases/tag/v0.1.0
