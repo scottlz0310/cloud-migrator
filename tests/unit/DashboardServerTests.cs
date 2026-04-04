@@ -574,5 +574,70 @@ public sealed class DashboardServerTests : IAsyncDisposable
         var json = await response.Content.ReadAsStringAsync();
         json.Should().Be("[]");
     }
+
+    // ── /api/system/paths ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSystemPaths_WithoutCustomDir_ReturnsDefaultHints()
+    {
+        // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR 未設定時に固定ヒント文字列と usingCustomDataDir=false を返す
+        Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", null);
+        var client = await CreateClientAsync();
+
+        var response = await client.GetAsync("/api/system/paths");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeFalse();
+        body.GetProperty("dataDirectory").GetString().Should().Be("AppData/CloudMigrator/");
+        body.GetProperty("configFile").GetString().Should().Be("configs/config.json");
+        body.GetProperty("logsDirectory").GetString().Should().Be("logs/");
+    }
+
+    [Fact]
+    public async Task GetSystemPaths_WithCustomDir_ReturnsCustomHint()
+    {
+        // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR 設定時に usingCustomDataDir=true とカスタム表示を返す
+        Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", @"C:\CustomData");
+        try
+        {
+            var client = await CreateClientAsync();
+
+            var response = await client.GetAsync("/api/system/paths");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeTrue();
+            body.GetProperty("dataDirectory").GetString().Should().Be("カスタム（MIGRATOR_DATA_DIR）");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", null);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GetSystemPaths_WithBlankCustomDir_ReturnsDefaultHints(string envVal)
+    {
+        // 検証対象: GET /api/system/paths  目的: MIGRATOR_DATA_DIR が空文字/空白の場合は既定ヒントにフォールバックする
+        Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", envVal);
+        try
+        {
+            var client = await CreateClientAsync();
+
+            var response = await client.GetAsync("/api/system/paths");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("usingCustomDataDir").GetBoolean().Should().BeFalse();
+            body.GetProperty("dataDirectory").GetString().Should().Be("AppData/CloudMigrator/");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR_DATA_DIR", null);
+        }
+    }
 }
 
