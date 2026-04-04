@@ -47,21 +47,22 @@ internal static class DashboardCommand
             var noBrowser = parseResult.GetValue(noBrowserOption);
             var url = $"http://localhost:{port}";
 
-            if (!File.Exists(dbPath))
-            {
-                Console.Error.WriteLine($"エラー: DB ファイルが見つかりません: {dbPath}");
-                Console.Error.WriteLine("--db オプションで正しいパスを指定してください。");
-                return;
-            }
+            // DB ファイルが存在する場合は接続して起動。存在しない場合は DB なしモードで起動。
+            // DB なしモードでも UI は表示され、転送開始後に自動的に接続される旨をガイドする。
+            bool dbExists = !string.IsNullOrEmpty(dbPath) && File.Exists(dbPath);
+            string? activeDbPath = dbExists ? dbPath : null;
 
-            Console.WriteLine($"ダッシュボード起動: {url}");
-            Console.WriteLine($"DB          : {dbPath}");
+            Console.WriteLine($"CloudMigrator Studio 起動中: {url}");
+            if (dbExists)
+                Console.WriteLine($"DB          : {dbPath}");
+            else
+                Console.WriteLine("DB          : なし — 転送後に自動接続されます");
             Console.WriteLine("終了するには Ctrl+C を押してください。");
 
             if (!noBrowser)
                 TryOpenBrowser(url);
 
-            await DashboardServer.RunAsync(dbPath, port, ct).ConfigureAwait(false);
+            await DashboardServer.RunAsync(activeDbPath, port, ct).ConfigureAwait(false);
         });
 
         return cmd;

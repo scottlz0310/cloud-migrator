@@ -22,17 +22,29 @@ public static class DashboardServer
 {
     /// <summary>
     /// ダッシュボードサーバーを起動する。
+    /// <paramref name="dbPath"/> が null またはファイルが存在しない場合は DB なしモードで起動する。
     /// <paramref name="ct"/> がキャンセルされると Graceful Shutdown する。
     /// </summary>
-    public static async Task RunAsync(string dbPath, int port, CancellationToken ct, LogStreamSink? logStreamSink = null)
+    public static async Task RunAsync(string? dbPath, int port, CancellationToken ct, LogStreamSink? logStreamSink = null)
     {
-        // SqliteTransferStateDb は DI に渡すが、インスタンスを外部から渡す場合は
-        // DI コンテナが DisposeAsync を呼ばないため finally で明示的に解放する。
-        var db = new SqliteTransferStateDb(dbPath);
-        await db.InitializeAsync(ct).ConfigureAwait(false);
+        // DB ファイルが存在する場合のみ SqliteTransferStateDb を生成する。
+        // 存在しない場合は NullTransferStateDb (Null Object) で代替する。
+        ITransferStateDb db;
+        bool hasDb = dbPath is not null && File.Exists(dbPath);
+        if (hasDb)
+        {
+            var sqliteDb = new SqliteTransferStateDb(dbPath!);
+            await sqliteDb.InitializeAsync(ct).ConfigureAwait(false);
+            db = sqliteDb;
+        }
+        else
+        {
+            db = NullTransferStateDb.Instance;
+        }
+
         var configService = new ConfigurationService();
         var jobService = new TransferJobService();
-        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamSink: logStreamSink);
+        var app = BuildApp(db, configService: configService, jobService: jobService, logStreamSink: logStreamSink, hasDb: hasDb);
         app.Urls.Add($"http://localhost:{port}");
         try
         {
@@ -40,7 +52,8 @@ public static class DashboardServer
         }
         finally
         {
-            await db.DisposeAsync().ConfigureAwait(false);
+            if (hasDb)
+                await db.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -48,6 +61,7 @@ public static class DashboardServer
     /// 全エンドポイントをマップした <see cref="WebApplication"/> を生成する。
     /// <paramref name="configureWebHost"/> に <c>wb =&gt; wb.UseTestServer()</c> を渡すと
     /// インプロセスの TestServer として使用できる（単体テスト向け）。
+    /// <paramref name="hasDb"/> が <c>false</c> の場合は DB なしモードで起動する（監視 API は空レスポンスを返す）。
     /// </summary>
     internal static WebApplication BuildApp(
         ITransferStateDb db,
@@ -56,7 +70,8 @@ public static class DashboardServer
         ITransferJobService? jobService = null,
         ILogStreamService? logStreamService = null,
         LogStreamSink? logStreamSink = null,
-        ISetupDoctorService? doctorService = null)
+        ISetupDoctorService? doctorService = null,
+        bool hasDb = true)
     {
         var builder = WebApplication.CreateBuilder();
         // アプリログ（ILogger）は Information 以上を通し、フレームワーク固有のノイズ（Microsoft.* / System.*）のみ Warning に絞る
@@ -121,6 +136,9 @@ public static class DashboardServer
         var app = builder.Build();
 
         // ── API エンドポイント ────────────────────────────────────────────────
+
+        // GET /api/db-status  → DB 接続状態（DB なしモード判定用）
+        app.MapGet("/api/db-status", () => Results.Ok(new { connected = hasDb }));
 
         // GET /api/status  → ステータス別件数・完了率・バイト数
         app.MapGet("/api/status", async (
@@ -491,6 +509,10 @@ public static class DashboardServer
           </header>
           <!-- 監視タブ -->
           <div x-show="tab === 'monitor'">
+          <!-- DB なしバナー（転送未開始時に表示） -->
+          <div id="noDbBanner" style="display:none;margin:16px 24px;padding:14px 18px;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;color:#fcd34d;">
+            <strong>&#9432; DB 未接続</strong> — まだ転送が開始されていません。<code>transfer</code> コマンドを実行すると自動的に接続されます。
+          </div>
           <main>
             <section class="cards">
               <div class="card done"><div class="label">完了</div><div class="value" id="c-done">—</div></div>
@@ -1170,8 +1192,18 @@ public static class DashboardServer
               });
             }
 
+            async function refreshDbStatus() {
+              try {
+                const res = await fetch('/api/db-status');
+                if (!res.ok) return;
+                const { connected } = await res.json();
+                const banner = document.getElementById('noDbBanner');
+                if (banner) banner.style.display = connected ? 'none' : 'block';
+              } catch { /* ネットワークエラーは無視 */ }
+            }
+
             async function refresh() {
-              await Promise.allSettled([refreshStatus(), refreshMetrics(), refreshErrors(), refreshPhase()]);
+              await Promise.allSettled([refreshStatus(), refreshMetrics(), refreshErrors(), refreshPhase(), refreshDbStatus()]);
             }
 
             // カウントダウン表示
