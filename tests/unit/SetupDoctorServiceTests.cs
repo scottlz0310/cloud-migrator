@@ -35,7 +35,7 @@ public sealed class SetupDoctorServiceTests
                     "SendAsync",
                     ItExpr.Is<HttpRequestMessage>(r => r.RequestUri!.ToString().Contains(urlContains)),
                     ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage(statusCode)
+                .ReturnsAsync(() => new HttpResponseMessage(statusCode)
                 {
                     Content = new StringContent(body, Encoding.UTF8, "application/json")
                 });

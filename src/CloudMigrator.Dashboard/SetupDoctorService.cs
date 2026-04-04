@@ -194,7 +194,7 @@ public sealed class SetupDoctorService : ISetupDoctorService
 
         try
         {
-            // 前後空白・バックスラッシュ・予分なスラッシュを除去してパス表記を正規化する
+            // 前後空白・バックスラッシュ・余分なスラッシュを除去してパス表記を正規化する
             var root = string.Join('/', _options.DestinationRoot
                 .Trim()
                 .Replace('\\', '/')
