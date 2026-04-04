@@ -14,10 +14,17 @@ using Moq;
 namespace CloudMigrator.Tests.Unit;
 
 /// <summary>
+/// 環境変数 MIGRATOR_DATA_DIR を変更するテストを含むため、並列実行を無効化する。
+/// </summary>
+[CollectionDefinition(nameof(DashboardServerTests), DisableParallelization = true)]
+public sealed class DashboardServerTestsCollection { }
+
+/// <summary>
 /// 検証対象: DashboardServer API エンドポイント
 /// 目的: 各エンドポイントが ITransferStateDb を正しく呼び出し、
 ///       適切な HTTP レスポンスを返すことを確認する
 /// </summary>
+[Collection(nameof(DashboardServerTests))]
 public sealed class DashboardServerTests : IAsyncDisposable
 {
     private readonly Mock<ITransferStateDb> _mockDb = new(MockBehavior.Loose);
