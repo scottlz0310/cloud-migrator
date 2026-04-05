@@ -171,8 +171,8 @@ cloud-migrator file-crawler explore --source sharepoint --top 30
 ```powershell
 # --db / --port 省略時は設定値を使用
 # DB 既定パスは転送先プロバイダーにより切り替わります:
-#   SharePoint（既定）: %APPDATA%\CloudMigrator\logs\sharepoint_transfer_state.db
-#   Dropbox          : %APPDATA%\CloudMigrator\logs\dropbox_transfer_state.db
+#   SharePoint（既定）: $env:APPDATA\CloudMigrator\logs\sharepoint_transfer_state.db
+#   Dropbox          : $env:APPDATA\CloudMigrator\logs\dropbox_transfer_state.db
 cloud-migrator dashboard
 
 # DB パスとポートを明示指定（SharePoint の場合）
@@ -568,9 +568,6 @@ Remove-Item "$logsDir\onedrive_files.json", "$logsDir\sharepoint_current_files.j
 ```bash
 # キャッシュ・スキップリストをクリアしてフルスキャン＆全件転送
 cloud-migrator transfer --full-rebuild
-
-# キャッシュはそのままでスキップリストのみ再構築（転送はしない）
-cloud-migrator rebuild-skiplist
 ```
 
 ### 7.6 転送後の検証
