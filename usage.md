@@ -50,9 +50,13 @@ mkdir -p ~/.local/bin/cloud-migrator
 tar -xzf cloud-migrator-{version}-linux-x64.tar.gz -C ~/.local/bin/cloud-migrator
 chmod +x ~/.local/bin/cloud-migrator/cloud-migrator
 
-# PATH に追加（~/.bashrc または ~/.zshrc に追記）
-echo 'export PATH="$HOME/.local/bin/cloud-migrator:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+# PATH に追加（使用中のシェルに応じて ~/.bashrc または ~/.zshrc に追記）
+shell_rc=~/.bashrc
+if [ "$(basename "$SHELL")" = "zsh" ]; then
+  shell_rc=~/.zshrc
+fi
+echo 'export PATH="$HOME/.local/bin/cloud-migrator:$PATH"' >> "$shell_rc"
+source "$shell_rc"
 ```
 
 インストールを確認します:
@@ -73,20 +77,20 @@ cloud-migrator --help
 - インストール後は `cloud-migrator` が PATH に自動追加されます
 
 > **アップグレード**: 新しい MSI をダウンロードして実行するだけでアップグレードできます（既存の設定・ログは保持されます）。  
-> **アンインストール**: Windows の「アプリと機能」または `%LOCALAPPDATA%\Programs\CloudMigrator\uninstall.exe` から実行します。
+> **アンインストール**: Windows の「アプリと機能」から実行します。必要に応じて `msiexec /x` も利用できます。
 
 ## 2. データパス
 
-インストール後、設定ファイル・ログ・DB は以下の AppData 配下に格納されます。
+インストール後、設定ファイル・ログ・DB は OS ごとの既定のアプリケーションデータディレクトリ配下に格納されます。
 
-| 項目 | パス |
-|------|------|
-| 設定ファイル | `%APPDATA%\CloudMigrator\configs\config.json` |
-| ログ・DB ディレクトリ | `%APPDATA%\CloudMigrator\logs\` |
+| 項目 | Windows | Linux | macOS |
+|------|---------|-------|-------|
+| 設定ファイル | `%APPDATA%\CloudMigrator\configs\config.json` | `~/.config/CloudMigrator/configs/config.json` | `~/Library/Application Support/CloudMigrator/configs/config.json` |
+| ログ・DB ディレクトリ | `%APPDATA%\CloudMigrator\logs\` | `~/.config/CloudMigrator/logs/` | `~/Library/Application Support/CloudMigrator/logs/` |
 
 - 初回起動時にディレクトリが自動作成されます
-- 旧バージョンの `./configs/config.json`（リポジトリ直下）が存在する場合、初回起動時に AppData へ自動移行されます
-- `MIGRATOR_DATA_DIR` 環境変数を設定すると、`%APPDATA%\CloudMigrator\` の代わりにそのパスをデータルートとして使用できます（CI・テスト環境向け）
+- 旧バージョンの `./configs/config.json`（リポジトリ直下）が存在する場合、初回起動時に既定のデータディレクトリへ自動移行されます
+- `MIGRATOR_DATA_DIR` 環境変数を設定すると、OS 既定のデータルートの代わりにそのパスを使用できます（CI・テスト環境向け）
 
 ## 3. 前提条件
 
