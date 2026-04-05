@@ -32,7 +32,7 @@ if ($pathEntries -notcontains $installDir) {
 新しい PowerShell セッションを開いてインストールを確認します:
 
 ```powershell
-cloud-migrator --version
+cloud-migrator --help
 ```
 
 > **.NET ランタイム不要**: ZIP バイナリはセルフコンテインド形式です。.NET SDK / ランタイムのインストールは不要です。
@@ -137,13 +137,10 @@ cloud-migrator transfer --auto-retry 5 --full-rebuild
 
 > **注意**: 失敗ファイルは次回の `transfer` 実行で必ず再試行されます（永続的に放置されません）。
 
-### rebuild-skiplist
+### rebuild-skiplist（廃止済み）
 
-SharePoint を再クロールし、`skip_list` を再構築します（転送なし）。
-
-```bash
-cloud-migrator rebuild-skiplist
-```
+> **⚠️ このコマンドは廃止されました。** 実行すると警告が出力され、`ExitCode=1` で終了します。  
+> 代わりに `cloud-migrator transfer --full-rebuild` を使用してください。
 
 ### watchdog
 
@@ -172,11 +169,14 @@ cloud-migrator file-crawler explore --source sharepoint --top 30
 転送状況をブラウザでリアルタイム監視します。転送実行中または実行後に使用します。
 
 ```powershell
-# --db / --port 省略時は設定値を使用（DB: 設定値のパス［既定: %APPDATA%\CloudMigrator\logs\dropbox_transfer_state.db］、ポート: 設定値のポート［既定: 5050］）
+# --db / --port 省略時は設定値を使用
+# DB 既定パスは転送先プロバイダーにより切り替わります:
+#   SharePoint（既定）: %APPDATA%\CloudMigrator\logs\sharepoint_transfer_state.db
+#   Dropbox          : %APPDATA%\CloudMigrator\logs\dropbox_transfer_state.db
 cloud-migrator dashboard
 
-# DB パスとポートを指定
-cloud-migrator dashboard --db "$env:APPDATA\CloudMigrator\logs\dropbox_transfer_state.db" --port 8080
+# DB パスとポートを明示指定（SharePoint の場合）
+cloud-migrator dashboard --db "$env:APPDATA\CloudMigrator\logs\sharepoint_transfer_state.db" --port 8080
 
 # ブラウザを自動で開かない
 cloud-migrator dashboard --no-browser
