@@ -24,6 +24,12 @@
     <!-- 旧バージョンを自動アンインストールしてから新バージョンをインストール -->
     <MajorUpgrade DowngradeErrorMessage="より新しいバージョンの Cloud Migrator がインストール済みです。" />
 
+    <!--
+      ADDTOPATH: PATH への追加を制御するプロパティ（既定: 1 = 有効）
+      無効にする場合: msiexec /i cloud-migrator-setup.msi ADDTOPATH=0
+    -->
+    <Property Id="ADDTOPATH" Value="1" />
+
     <MediaTemplate EmbedCab="yes" />
 
     <!-- インストール先: %LOCALAPPDATA%\Programs\CloudMigrator\ -->
@@ -38,9 +44,9 @@
       <Directory Id="AppMenuFolder" Name="Cloud Migrator" />
     </StandardDirectory>
 
-    <!-- メイン実行ファイル -->
+    <!-- メイン実行ファイル（Guid 固定: アップグレード/修復時のコンポーネント追跡を安定させる） -->
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
-      <Component Id="MainExecutable" Guid="*">
+      <Component Id="MainExecutable" Guid="EA5F2D8B-1C3A-4E7F-9B0D-6A2C4E8F1B3D">
         <File Id="cloud_migrator_exe"
               Source="$(var.BinDir)\cloud-migrator.exe"
               KeyPath="yes" />
@@ -67,9 +73,11 @@
       </Component>
     </ComponentGroup>
 
-    <!-- PATH へ追加（ユーザー環境変数 / アンインストール時に自動削除） -->
+    <!-- PATH へ追加（ユーザー環境変数 / アンインストール時に自動削除）
+         Guid 固定: アップグレード時の PATH エントリ追跡を安定させる
+         ADDTOPATH=0 を渡すとインストールをスキップ（既定: 1 = 有効） -->
     <ComponentGroup Id="PathComponents" Directory="INSTALLFOLDER">
-      <Component Id="PathEntry" Guid="*">
+      <Component Id="PathEntry" Guid="3F7A9C1E-5B2D-4F8A-0C6E-8B1D3F5A7C9E" Condition="ADDTOPATH">
         <Environment Id="UserPath"
                      Name="PATH"
                      Value="[INSTALLFOLDER]"

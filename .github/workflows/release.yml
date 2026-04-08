@@ -131,7 +131,7 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0'
+          dotnet-version: '10.0.201'
 
       - name: WiX Toolset v4 インストール
         run: dotnet tool install wix --version 4.0.5 --global
@@ -142,11 +142,17 @@ jobs:
           name: publish-win-x64
           path: published/win-x64
 
-      - name: バージョン文字列を抽出（v プレフィックス除去）
+      - name: MSI 用バージョン文字列を抽出
         id: version
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
+          $tag = "${{ github.ref_name }}"
+
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "無効なリリースタグ形式です。SemVer 形式のタグ（例: v1.2.3, v1.2.3.4, v1.2.3-rc.1, v1.2.3+build.1）を使用してください: $tag"
+          }
+
+          $version = $Matches['version']
           "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: MSI ビルド
