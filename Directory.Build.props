@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      デフォルトバージョン（開発ビルド用）。
+      リリースビルドは GitHub Actions でタグから -p:Version=x.y.z を渡して上書きする。
+    -->
+    <Version>0.3.0</Version>
+  </PropertyGroup>
+</Project>
