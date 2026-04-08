@@ -37,7 +37,14 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0'
+          dotnet-version: '10.0.201'
+
+      - name: バージョン文字列を抽出（v プレフィックス除去）
+        id: version
+        shell: bash
+        run: |
+          version="${{ github.ref_name }}"
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
 
       - name: 依存関係の復元（RID 付き）
         # self-contained publish に必要な runtime pack を正しく復元するため
@@ -57,6 +64,7 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
+          -p:Version=${{ steps.version.outputs.version }}
           --no-restore
           --output publish/${{ matrix.rid }}
 

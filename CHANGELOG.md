@@ -9,6 +9,35 @@
 
 ---
 
+## [0.3.0] - 2026-04-08
+
+### Added
+- **データパス移行: `%APPDATA%\CloudMigrator\` への統一** (Issue #98)
+  - 設定ファイル: `%APPDATA%\CloudMigrator\configs\config.json`
+  - ログディレクトリ: `%APPDATA%\CloudMigrator\logs\`
+  - 初回起動時に旧パス (`./configs/config.json`) を AppData へ自動移行
+  - `setup init` / `setup bootstrap` が AppData ディレクトリを自動作成
+  - Studio「ログ」タブにデータパス（設定・ログ）を表示
+- **WiX MSI インストーラー** (`installer/wix/`) (Issue #100)
+  - インストール先: `%LOCALAPPDATA%\Programs\CloudMigrator\`
+  - ユーザーインストール（UAC 昇格不要、`Scope="perUser"`）
+  - `MajorUpgrade` によるバージョンアップグレード対応（旧バージョン自動アンインストール）
+  - スタートメニューショートカット
+  - PATH への追加（`ADDTOPATH` プロパティでオプション化、既定: 有効）
+- **GitHub Actions Release ワークフロー** (Issue #100)
+  - `v*` タグ push で GitHub Release を自動生成
+  - リリース成果物: `cloud-migrator-v0.3.0-win-x64.zip` / `cloud-migrator-v0.3.0-linux-x64.tar.gz` / `cloud-migrator-v0.3.0-osx-x64.tar.gz` / `cloud-migrator-v0.3.0-osx-arm64.tar.gz` / `cloud-migrator-setup.msi`
+- **`global.json` 追加**: .NET SDK `10.0.201` を `latestPatch` ロールフォワードで固定 (Issue #100)
+- **`Directory.Build.props` 追加**: デフォルトバージョン `0.3.0` を設定し `cloud-migrator --version` の表示を統一
+
+### Changed
+- **`usage.md` 全面更新**: バイナリ配布前提に刷新 (Issue #99)
+  - MSI インストーラー手順 / ZIP・tar.gz インストール手順を追加
+  - `cloud-migrator` バイナリを使ったコマンド例に統一
+  - データパス（AppData）の説明・移行手順を追加
+
+---
+
 ## [0.2.1] - 2026-04-04
 
 ### Added
