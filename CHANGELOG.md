@@ -26,7 +26,7 @@
   - PATH への追加（`ADDTOPATH` プロパティでオプション化、既定: 有効）
 - **GitHub Actions Release ワークフロー** (Issue #100)
   - `v*` タグ push で GitHub Release を自動生成
-  - リリース成果物: `cloud-migrator-win-x64.zip` / `linux-x64.tar.gz` / `osx-x64.tar.gz` / `osx-arm64.tar.gz` / `cloud-migrator-setup.msi`
+  - リリース成果物: `cloud-migrator-v0.3.0-win-x64.zip` / `cloud-migrator-v0.3.0-linux-x64.tar.gz` / `cloud-migrator-v0.3.0-osx-x64.tar.gz` / `cloud-migrator-v0.3.0-osx-arm64.tar.gz` / `cloud-migrator-setup.msi`
 - **`global.json` 追加**: .NET SDK `10.0.201` を `latestPatch` ロールフォワードで固定 (Issue #100)
 - **`Directory.Build.props` 追加**: デフォルトバージョン `0.3.0` を設定し `cloud-migrator --version` の表示を統一
 

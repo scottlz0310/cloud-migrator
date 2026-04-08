@@ -85,7 +85,7 @@ cloud-migrator status
 cloud-migrator dashboard
 ```
 
-> ソースからビルドして実行する場合は、各コマンド先頭を `dotnet run --project src/CloudMigrator.Cli --` に置き換えてください（`setup` コマンドは `src/CloudMigrator.Setup.Cli`）。
+> ソースからビルドして実行する場合は、各コマンド先頭を `dotnet run --project src/CloudMigrator.Cli --` に置き換えてください。たとえば `cloud-migrator setup doctor` は `dotnet run --project src/CloudMigrator.Cli -- setup doctor` です。
 
 ## 主要コマンド
 
