@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Product.wxs - Cloud Migrator MSI インストーラー定義 (WiX Toolset v4)
+
+  インストール先 : %LOCALAPPDATA%\Programs\CloudMigrator\
+  スコープ       : perUser（UAC 昇格不要）
+  UpgradeCode    : 全バージョン共通で固定（変更禁止）
+  ProductCode    : MajorUpgrade により自動管理（Guid="*"）
+
+  ビルド例（CI / ローカル共通）:
+    wix build Product.wxs -arch x64 \
+      -d Version=1.2.3 \
+      -d BinDir=path\to\publish\win-x64 \
+      -o cloud-migrator-setup.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package Name="Cloud Migrator"
+           Manufacturer="scottlz0310"
+           Version="$(var.Version)"
+           UpgradeCode="C8A5F3B2-7E1D-4A9C-B6F0-2D8E3C1A5047"
+           Scope="perUser">
+
+    <!-- 旧バージョンを自動アンインストールしてから新バージョンをインストール -->
+    <MajorUpgrade DowngradeErrorMessage="より新しいバージョンの Cloud Migrator がインストール済みです。" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- インストール先: %LOCALAPPDATA%\Programs\CloudMigrator\ -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="CloudMigrator" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- スタートメニュー -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuFolder" Name="Cloud Migrator" />
+    </StandardDirectory>
+
+    <!-- メイン実行ファイル -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="*">
+        <File Id="cloud_migrator_exe"
+              Source="$(var.BinDir)\cloud-migrator.exe"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- スタートメニューショートカット -->
+    <ComponentGroup Id="ShortcutComponents" Directory="AppMenuFolder">
+      <Component Id="ApplicationShortcut" Guid="*">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="Cloud Migrator"
+                  Target="[INSTALLFOLDER]cloud-migrator.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Description="Cloud storage migration tool" />
+        <RemoveFolder Id="RemoveAppMenuFolder"
+                      Directory="AppMenuFolder"
+                      On="uninstall" />
+        <!-- ショートカットの KeyPath: レジストリで存在チェック -->
+        <RegistryValue Root="HKCU"
+                       Key="Software\CloudMigrator\Shortcuts"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- PATH へ追加（ユーザー環境変数 / アンインストール時に自動削除） -->
+    <ComponentGroup Id="PathComponents" Directory="INSTALLFOLDER">
+      <Component Id="PathEntry" Guid="*">
+        <Environment Id="UserPath"
+                     Name="PATH"
+                     Value="[INSTALLFOLDER]"
+                     Permanent="no"
+                     Part="last"
+                     Action="set"
+                     System="no" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\CloudMigrator\Path"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="ProductFeature" Title="Cloud Migrator" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+      <ComponentGroupRef Id="PathComponents" />
+    </Feature>
+
+  </Package>
+</Wix>

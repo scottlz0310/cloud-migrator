@@ -109,3 +109,56 @@ jobs:
         run: gh release upload ${{ github.ref_name }} "${{ env.ASSET_NAME }}" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Published バイナリをアーティファクトに保存（MSI ビルド用 / win-x64 のみ）
+        if: matrix.rid == 'win-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-win-x64
+          path: publish/win-x64/
+          retention-days: 1
+
+  msi:
+    name: MSI インストーラービルド
+    runs-on: windows-latest
+    needs: publish
+    env:
+      HUSKY: 0
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: .NET セットアップ
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0'
+
+      - name: WiX Toolset v4 インストール
+        run: dotnet tool install wix --version 4.0.5 --global
+
+      - name: win-x64 バイナリをダウンロード
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-win-x64
+          path: published/win-x64
+
+      - name: バージョン文字列を抽出（v プレフィックス除去）
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: MSI ビルド
+        shell: pwsh
+        run: |
+          wix build installer/wix/Product.wxs `
+            -arch x64 `
+            -d Version=${{ steps.version.outputs.version }} `
+            -d "BinDir=${{ github.workspace }}/published/win-x64" `
+            -o cloud-migrator-setup.msi
+
+      - name: MSI をリリースにアップロード
+        run: gh release upload ${{ github.ref_name }} cloud-migrator-setup.msi --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
