@@ -3,6 +3,7 @@ using System.Windows;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.State;
 using CloudMigrator.Observability;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 
@@ -60,16 +61,17 @@ public partial class App : Application
         services.AddSingleton<IConfigurationService, ConfigurationService>();
         services.AddSingleton<ITransferJobService, TransferJobService>();
 
-        // SetupDoctorService: 環境変数から資格情報を読み取る
+        // SetupDoctorService: Core と同じ設定解決順序（環境変数 > config.json > デフォルト値）で資格情報を読み取る
         services.AddSingleton<ISetupDoctorService>(sp =>
         {
+            var configuration = AppConfiguration.Build();
             var opts = new DoctorOptions(
-                ClientId: Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTID") ?? string.Empty,
-                TenantId: Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__TENANTID") ?? string.Empty,
-                ClientSecret: Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET") ?? string.Empty,
-                SiteId: Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__SITEID") ?? string.Empty,
-                DriveId: Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__DRIVEID") ?? string.Empty,
-                DestinationRoot: Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__DESTINATIONROOT") ?? string.Empty);
+                ClientId: configuration["Migrator:Graph:ClientId"] ?? string.Empty,
+                TenantId: configuration["Migrator:Graph:TenantId"] ?? string.Empty,
+                ClientSecret: AppConfiguration.GetGraphClientSecret(),
+                SiteId: configuration["Migrator:Graph:SharePointSiteId"] ?? string.Empty,
+                DriveId: configuration["Migrator:Graph:SharePointDriveId"] ?? string.Empty,
+                DestinationRoot: configuration["Migrator:DestinationRoot"] ?? string.Empty);
             return new SetupDoctorService(opts, sp.GetRequiredService<System.Net.Http.IHttpClientFactory>());
         });
 
@@ -80,7 +82,19 @@ public partial class App : Application
             if (resolvedPath is not null && File.Exists(resolvedPath))
             {
                 var db = new SqliteTransferStateDb(resolvedPath);
-                db.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+                try
+                {
+                    db.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"DB の初期化に失敗しました。DB なしモードで起動します。\n\n{ex.Message}",
+                        "警告",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return NullTransferStateDb.Instance;
+                }
                 return db;
             }
             return NullTransferStateDb.Instance;
@@ -104,16 +118,35 @@ public partial class App : Application
 
     /// <summary>
     /// デフォルトの DB パスを解決する。
-    /// Dropbox DB → SharePoint DB の順で存在確認し、最初に見つかったものを返す。
+    /// 両方の DB が存在する場合はユーザーに選択させる。
     /// </summary>
     private static string? ResolveDefaultDbPath()
     {
-        var candidates = new[]
-        {
-            AppDataPaths.LogFile("dropbox_transfer_state.db"),
-            AppDataPaths.LogFile("sharepoint_transfer_state.db"),
-        };
+        var dropboxDb = AppDataPaths.LogFile("dropbox_transfer_state.db");
+        var sharePointDb = AppDataPaths.LogFile("sharepoint_transfer_state.db");
+        var hasDropbox = File.Exists(dropboxDb);
+        var hasSharePoint = File.Exists(sharePointDb);
 
-        return candidates.FirstOrDefault(File.Exists);
+        if (hasDropbox && hasSharePoint)
+        {
+            var result = MessageBox.Show(
+                "Dropbox 用 DB と SharePoint 用 DB の両方が見つかりました。\n" +
+                "表示する DB を選択してください。\n\n" +
+                "はい: Dropbox\nいいえ: SharePoint\nキャンセル: 選択しない",
+                "DB の選択",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question);
+
+            return result switch
+            {
+                MessageBoxResult.Yes => dropboxDb,
+                MessageBoxResult.No => sharePointDb,
+                _ => null,
+            };
+        }
+
+        if (hasDropbox) return dropboxDb;
+        if (hasSharePoint) return sharePointDb;
+        return null;
     }
 }

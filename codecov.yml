@@ -1,0 +1,18 @@
+coverage:
+  status:
+    patch:
+      default:
+        # Blazor Hybrid（WPF + Razor コンポーネント）は UI テストが困難なため除外する
+        # App.xaml.cs / MainWindow.xaml.cs / WpfDialogService.cs も同様
+        target: auto
+        threshold: 5%
+        ignore_src:
+          - "src/CloudMigrator.Dashboard/**"
+
+ignore:
+  - "src/CloudMigrator.Dashboard/App.xaml.cs"
+  - "src/CloudMigrator.Dashboard/MainWindow.xaml.cs"
+  - "src/CloudMigrator.Dashboard/WpfDialogService.cs"
+  - "src/CloudMigrator.Dashboard/ILogChannel.cs"
+  - "src/CloudMigrator.Dashboard/INativeDialogService.cs"
+  - "src/CloudMigrator.Dashboard/Components/**"

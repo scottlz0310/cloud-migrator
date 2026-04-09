@@ -23,15 +23,11 @@ public partial class MainWindow : Window
         // DI コンテナを BlazorWebView と共有する
         BlazorWebView.Services = _services;
 
-        // ルートコンポーネントを登録
-        // Razor コンポーネントは同アセンブリ内に生成されるため、リフレクションで取得する
-        var appComponentType = GetType().Assembly.GetType("CloudMigrator.Dashboard.Components.DashboardApp")
-            ?? throw new InvalidOperationException("DashboardApp コンポーネントが見つかりません。ビルドを確認してください。");
-
+        // ルートコンポーネントをコンパイル時参照で登録する
         BlazorWebView.RootComponents.Add(new RootComponent
         {
             Selector = "#app",
-            ComponentType = appComponentType,
+            ComponentType = typeof(Components.DashboardApp),
         });
     }
 }

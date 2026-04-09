@@ -72,6 +72,10 @@
             {
                 // 正常終了
             }
+            catch (Exception)
+            {
+                // 想定外例外: 接続断として扱い UI に反映する
+            }
             finally
             {
                 _isConnected = false;

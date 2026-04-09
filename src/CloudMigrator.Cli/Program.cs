@@ -39,9 +39,8 @@ Console.CancelKeyPress += (_, e) =>
 var rootCmd = new RootCommand("CloudMigrator - OneDrive から SharePoint へのファイル移行ツール");
 
 // 引数なし起動: CloudMigrator Dashboard (WPF) を起動する
-rootCmd.SetAction(async (parseResult, ct) =>
+rootCmd.SetAction((parseResult, ct) =>
 {
-    await Task.CompletedTask;
     var config = AppConfiguration.Build();
     var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
         ?? new MigratorOptions();
@@ -56,18 +55,8 @@ rootCmd.SetAction(async (parseResult, ct) =>
     else
         Console.WriteLine("DB          : なし — transfer 実行後、DB が作成されたら再起動してください");
 
-    var exePath = FindDashboardExe();
-    if (exePath is null)
-    {
-        Console.Error.WriteLine("エラー: CloudMigrator.Dashboard.exe が見つかりません。インストールを確認してください。");
-        return;
-    }
-
-    var dbArg = dbExists ? $"--db-path \"{defaultDbPath}\"" : string.Empty;
-    Process.Start(new ProcessStartInfo(exePath, dbArg)
-    {
-        UseShellExecute = true,
-    });
+    DashboardLauncher.Launch(dbExists ? defaultDbPath : null);
+    return Task.CompletedTask;
 });
 
 rootCmd.Add(TransferCommand.Build());
@@ -81,15 +70,3 @@ rootCmd.Add(DashboardCommand.Build());
 rootCmd.Add(SetupCommand.Build());
 
 return await rootCmd.Parse(args).InvokeAsync(new InvocationConfiguration(), cts.Token);
-
-static string? FindDashboardExe()
-{
-    var baseDir = AppContext.BaseDirectory;
-    var candidate = Path.Combine(baseDir, "CloudMigrator.Dashboard.exe");
-    if (File.Exists(candidate))
-        return candidate;
-
-    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    var installCandidate = Path.Combine(localAppData, "Programs", "CloudMigrator", "CloudMigrator.Dashboard.exe");
-    return File.Exists(installCandidate) ? installCandidate : null;
-}

@@ -20,9 +20,8 @@ internal static class DashboardCommand
         var cmd = new Command("dashboard", "移行進捗の Blazor Hybrid ダッシュボードを起動します");
         cmd.Add(dbOption);
 
-        cmd.SetAction(async (parseResult, ct) =>
+        cmd.SetAction((parseResult, ct) =>
         {
-            await Task.CompletedTask;
             var config = AppConfiguration.Build();
             var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
                 ?? new MigratorOptions();
@@ -34,42 +33,52 @@ internal static class DashboardCommand
             var dbPath = parseResult.GetValue(dbOption) ?? defaultDbPath;
 
             Console.WriteLine("CloudMigrator Dashboard を起動しています...");
-
-            // CloudMigrator.Dashboard.exe を独立プロセスとして起動する
-            var exePath = FindDashboardExe();
-            if (exePath is null)
-            {
-                Console.Error.WriteLine("エラー: CloudMigrator.Dashboard.exe が見つかりません。インストールを確認してください。");
-                return;
-            }
-
-            var args = string.IsNullOrEmpty(dbPath) ? string.Empty : $"--db-path \"{dbPath}\"";
-            Process.Start(new ProcessStartInfo(exePath, args)
-            {
-                UseShellExecute = true,
-            });
+            DashboardLauncher.Launch(dbPath);
+            return Task.CompletedTask;
         });
 
         return cmd;
     }
 
-    /// <summary>
-    /// CloudMigrator.Dashboard.exe を探す。
-    /// 現在の実行ファイルと同じディレクトリを優先する。
-    /// </summary>
+}
+
+/// <summary>
+/// CloudMigrator.Dashboard.exe の探索と起動を担う共通ヘルパー。
+/// Program.cs と DashboardCommand.cs の両方から使用する。
+/// </summary>
+internal static class DashboardLauncher
+{
+    /// <summary>Dashboard.exe を探して起動する。失敗時はエラーをコンソールに出力する。</summary>
+    public static void Launch(string? dbPath = null)
+    {
+        var exePath = FindDashboardExe();
+        if (exePath is null)
+        {
+            Console.Error.WriteLine("エラー: CloudMigrator.Dashboard.exe が見つかりません。インストールを確認してください。");
+            return;
+        }
+
+        var args = string.IsNullOrEmpty(dbPath) ? string.Empty : $"--db-path \"{dbPath}\"";
+        try
+        {
+            Process.Start(new ProcessStartInfo(exePath, args) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"エラー: CloudMigrator Dashboard の起動に失敗しました: {ex.Message}");
+            Console.Error.WriteLine($"手動で起動してください: {exePath}");
+        }
+    }
+
+    /// <summary>CloudMigrator.Dashboard.exe のパスを探す。</summary>
     private static string? FindDashboardExe()
     {
-        var baseDir = AppContext.BaseDirectory;
-        var candidate = Path.Combine(baseDir, "CloudMigrator.Dashboard.exe");
+        var candidate = Path.Combine(AppContext.BaseDirectory, "CloudMigrator.Dashboard.exe");
         if (File.Exists(candidate))
             return candidate;
 
-        // インストーラーが Programs フォルダに配置する場合のパス
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var installCandidate = Path.Combine(localAppData, "Programs", "CloudMigrator", "CloudMigrator.Dashboard.exe");
-        if (File.Exists(installCandidate))
-            return installCandidate;
-
-        return null;
+        return File.Exists(installCandidate) ? installCandidate : null;
     }
 }

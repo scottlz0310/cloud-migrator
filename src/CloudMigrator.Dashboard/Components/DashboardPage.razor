@@ -136,17 +136,25 @@ else
     private TransferJobInfo? _currentJob;
     private bool _isJobRunning;
     private CancellationTokenSource? _cts;
-    private Timer? _refreshTimer;
 
     protected override async Task OnInitializedAsync()
     {
         await RefreshAsync();
-        // 5 秒ごとに自動更新
-        _refreshTimer = new Timer(async _ =>
+        _cts = new CancellationTokenSource();
+        // 5 秒ごとに自動更新（PeriodicTimer で再入防止）
+        _ = Task.Run(async () =>
         {
-            await RefreshAsync();
-            await InvokeAsync(StateHasChanged);
-        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(_cts.Token))
+                {
+                    await RefreshAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
     }
 
     private async Task RefreshAsync()
@@ -193,7 +201,6 @@ else
 
     public void Dispose()
     {
-        _refreshTimer?.Dispose();
         _cts?.Cancel();
         _cts?.Dispose();
     }
