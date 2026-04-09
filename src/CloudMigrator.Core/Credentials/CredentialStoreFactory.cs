@@ -1,5 +1,3 @@
-using System.Runtime.Versioning;
-
 namespace CloudMigrator.Core.Credentials;
 
 /// <summary>

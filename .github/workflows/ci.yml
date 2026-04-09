@@ -78,7 +78,7 @@ jobs:
 
   quality-gate:
     name: Quality Gate
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: build-test
     if: github.event_name == 'pull_request'
     env:

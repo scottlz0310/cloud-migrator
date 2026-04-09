@@ -41,6 +41,7 @@ public sealed class CredentialStoreTests
     {
         // 検証対象: EnvironmentCredentialStore.GetAsync  目的: 環境変数に値がある場合にその値を返すこと
         const string expected = "test-secret-value";
+        var original = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET");
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET", expected);
         try
         {
@@ -54,7 +55,7 @@ public sealed class CredentialStoreTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET", null);
+            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET", original);
         }
     }
 
@@ -97,6 +98,7 @@ public sealed class CredentialStoreTests
     public async Task EnvironmentCredentialStore_ExistsAsync_ShouldReturnTrue_WhenEnvVarSet()
     {
         // 検証対象: EnvironmentCredentialStore.ExistsAsync  目的: 設定済みの環境変数に対して true を返すこと
+        var original = Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN");
         Environment.SetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN", "some-token");
         try
         {
@@ -110,7 +112,7 @@ public sealed class CredentialStoreTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN", null);
+            Environment.SetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN", original);
         }
     }
 
