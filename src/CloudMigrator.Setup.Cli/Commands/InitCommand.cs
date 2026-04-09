@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using CloudMigrator.Core.Configuration;
+using CloudMigrator.Core.Credentials;
 using CloudMigrator.Providers.Graph.Auth;
 using Microsoft.Extensions.Configuration;
 
@@ -77,6 +78,10 @@ internal static class InitCommand
         {
             Description = "レート制限に応じた動的並列度制御を有効にするかどうか（デフォルト: false）",
         };
+        var azureClientSecretOpt = new Option<string?>("--azure-client-secret")
+        {
+            Description = "Azure Entra ID クライアントシークレット。指定時は Windows Credential Manager に保存します。",
+        };
         cmd.Add(configPathOpt);
         cmd.Add(envPathOpt);
         cmd.Add(forceOpt);
@@ -91,6 +96,7 @@ internal static class InitCommand
         cmd.Add(maxParallelTransfersOpt);
         cmd.Add(maxParallelFolderCreationsOpt);
         cmd.Add(adaptiveConcurrencyOpt);
+        cmd.Add(azureClientSecretOpt);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
@@ -108,6 +114,7 @@ internal static class InitCommand
             var maxParallelTransfers = parseResult.GetValue(maxParallelTransfersOpt);
             var maxParallelFolderCreations = parseResult.GetValue(maxParallelFolderCreationsOpt);
             var adaptiveConcurrency = parseResult.GetValue(adaptiveConcurrencyOpt);
+            var azureClientSecret = parseResult.GetValue(azureClientSecretOpt);
 
             await RunAsync(
                 configPath,
@@ -124,6 +131,7 @@ internal static class InitCommand
                 maxParallelTransfers,
                 maxParallelFolderCreations,
                 adaptiveConcurrency,
+                azureClientSecret,
                 ct).ConfigureAwait(false);
         });
 
@@ -150,6 +158,7 @@ internal static class InitCommand
             maxParallelTransfers: null,
             maxParallelFolderCreations: null,
             adaptiveConcurrencyEnabled: null,
+            azureClientSecret: null,
             ct: ct);
 
     internal static async Task RunAsync(
@@ -167,6 +176,7 @@ internal static class InitCommand
         int? maxParallelTransfers,
         int? maxParallelFolderCreations,
         bool? adaptiveConcurrencyEnabled,
+        string? azureClientSecret,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -245,6 +255,63 @@ internal static class InitCommand
 
         if (results.Any(r => r.Status == InitFileStatus.Error))
             Environment.ExitCode = 1;
+
+        // Azure クライアントシークレットが指定された場合は Credential Manager に保存する
+        if (!string.IsNullOrWhiteSpace(azureClientSecret))
+        {
+            await SaveCredentialWithConfirmAsync(
+                CredentialKeys.AzureClientSecret,
+                azureClientSecret,
+                "Azure クライアントシークレット",
+                force,
+                ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 指定キーの認証情報を Credential Manager に保存する。
+    /// 既に登録済みの場合は上書き確認を行う（<paramref name="force"/> が true の場合は確認を省略）。
+    /// </summary>
+    internal static Task SaveCredentialWithConfirmAsync(
+        string key,
+        string value,
+        string displayName,
+        bool force,
+        CancellationToken ct)
+        => SaveCredentialWithConfirmAsync(key, value, displayName, force, CredentialStoreFactory.Create(), ct);
+
+    /// <summary>
+    /// テスト可能なオーバーロード。<paramref name="store"/> を外部から注入できる。
+    /// </summary>
+    internal static async Task SaveCredentialWithConfirmAsync(
+        string key,
+        string value,
+        string displayName,
+        bool force,
+        ICredentialStore store,
+        CancellationToken ct)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new NotSupportedException(
+                "Credential Manager への保存は Windows でのみサポートされています。非 Windows 環境ではこのコマンドを使用できません。");
+        }
+
+        var exists = await store.ExistsAsync(key, ct).ConfigureAwait(false);
+        if (exists && !force)
+        {
+            Console.Write($"[WARN] {displayName} は既に Credential Manager に登録されています。上書きしますか？ [y/N]: ");
+            var answer = Console.ReadLine()?.Trim();
+            if (!string.Equals(answer, "y", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(answer, "yes", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[SKIP] {displayName}: 上書きをスキップしました");
+                return;
+            }
+        }
+
+        await store.SaveAsync(key, value, ct).ConfigureAwait(false);
+        Console.WriteLine($"[OK]   {displayName}: Credential Manager に保存しました（キー: {key}）");
     }
 
     internal static async Task WriteTemplateAsync(

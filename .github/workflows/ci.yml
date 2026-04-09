@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest]
         dotnet: ["10.0"]
 
     steps:
@@ -47,7 +47,6 @@ jobs:
           dotnet test tests/integration/CloudMigrator.Tests.Integration.csproj --no-build --configuration Release --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
 
       - name: カバレッジレポートの解決
-        if: matrix.os == 'ubuntu-latest'
         id: coverage
         shell: pwsh
         run: |
@@ -60,7 +59,6 @@ jobs:
           "path=$coverage" >> $env:GITHUB_OUTPUT
 
       - name: Codecov へカバレッジ送信
-        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -80,7 +78,7 @@ jobs:
 
   quality-gate:
     name: Quality Gate
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: build-test
     if: github.event_name == 'pull_request'
     env:

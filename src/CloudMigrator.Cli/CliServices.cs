@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Net;
 using CloudMigrator.Core.Configuration;
+using CloudMigrator.Core.Credentials;
 using CloudMigrator.Core.Storage;
 using CloudMigrator.Core.Transfer;
 using CloudMigrator.Observability;
@@ -104,7 +105,12 @@ internal sealed class CliServices : IDisposable
 
         var loggerFactory = LoggingSetup.CreateLoggerFactory(options.Paths.TransferLog);
 
-        var clientSecret = AppConfiguration.GetGraphClientSecret();
+        // 認証情報ストア: Windows では Credential Manager を優先し、環境変数をフォールバックとして使用する
+        ICredentialStore credentialStore = CreateCredentialStore();
+
+        var clientSecret = credentialStore.GetAsync(CredentialKeys.AzureClientSecret)
+            .GetAwaiter().GetResult()
+            ?? AppConfiguration.GetGraphClientSecret();
         var auth = new GraphAuthenticator(
             options.Graph.ClientId,
             options.Graph.TenantId,
@@ -240,15 +246,25 @@ internal sealed class CliServices : IDisposable
             DefaultRequestVersion = HttpVersion.Version20,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher,
         };
+        var dropboxAccessToken = credentialStore.GetAsync(CredentialKeys.DropboxAccessToken)
+            .GetAwaiter().GetResult()
+            ?? AppConfiguration.GetDropboxAccessToken();
+        var dropboxRefreshToken = credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken)
+            .GetAwaiter().GetResult()
+            ?? AppConfiguration.GetDropboxRefreshToken();
+        var dropboxAppKey = credentialStore.GetAsync(CredentialKeys.DropboxAppKey)
+            .GetAwaiter().GetResult()
+            ?? AppConfiguration.GetDropboxClientId();
+
         var dropboxProvider = new DropboxStorageProvider(
             loggerFactory.CreateLogger<DropboxStorageProvider>(),
-            AppConfiguration.GetDropboxAccessToken(),
+            dropboxAccessToken,
             dropboxOptions,
             dropboxHttpClient,
             options.RetryCount,
             disposeHttpClient: true,
-            refreshToken: AppConfiguration.GetDropboxRefreshToken(),
-            clientId: AppConfiguration.GetDropboxClientId(),
+            refreshToken: dropboxRefreshToken,
+            clientId: dropboxAppKey,
             clientSecret: AppConfiguration.GetDropboxClientSecret(),
             onRateLimit: onRateLimit);
 
@@ -269,6 +285,13 @@ internal sealed class CliServices : IDisposable
             rateLimiter,
             rateStatePath);
     }
+
+    /// <summary>
+    /// プラットフォームに応じた <see cref="ICredentialStore"/> を生成する。
+    /// <see cref="CredentialStoreFactory.Create"/> に委譲する。
+    /// </summary>
+    internal static ICredentialStore CreateCredentialStore()
+        => CredentialStoreFactory.Create();
 
     public void Dispose()
     {

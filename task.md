@@ -1,196 +1,266 @@
 # タスク管理
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
-前フェーズ履歴: [task-archive-20260323.md](task-archive-20260323.md)
+前フェーズ履歴: [task-archive-20260409.md](task-archive-20260409.md)
 
-## 現在の状態: Phase 6 実機テスト・デバッグ完了 ✅
+## 現在の状態: v0.4.0 セットアップUX改善 実装中 🚧
 
----
-
-## CloudMigrator Studio（Issue #80）
-
-| フェーズ | 内容 | Issue | 状態 |
-|----------|------|-------|------|
-| **Ph-1** | `GET/PUT /api/config` + 設定タブ UI | #81 | ✅ 完了 |
-| **Ph-2** | 転送開始/停止 UI | #82 | ✅ 完了 |
-| **Ph-3** | ログストリーミング SSE | #83 | ✅ 完了 |
-| **Ph-4** | 接続テスト UI | #84 | ✅ 完了 |
-| **Ph-5** | デフォルト起動 Studio | #85 | ✅ 完了 |
+Epic ISSUE: [#108 v0.4.0 セットアップUX改善 — オンボーディングウィザード & セキュアクレデンシャル](https://github.com/scottlz0310/cloud-migrator/issues/108)
 
 ---
 
-## SharePoint 版最適化フェーズ
+## v0.4.0 実装計画
 
-### 背景と目標
+### 概要
 
-Dropbox 版の実装（PR #52〜#66）で SQLite 状態管理・ダッシュボード連携・AdaptiveConcurrencyController が確立された。
-SharePoint 版はそれらを持たず、以下の課題がある。
+環境変数依存のセットアップを廃止し、初回起動時のウィザードUI と Windows Credential Manager による安全な認証情報管理を実現する。  
+**v0.4.0 スコープ**: Personal OneDrive → Dropbox 路線のエンド・ツー・エンド対応。  
+**プラットフォーム**: Windows 専用（`net10.0-windows`）。
 
-| 課題 | 現状 | 目標 |
-|------|------|------|
-| ファイル管理 | JSON skip_list + CrawlCache（JSON）| SQLite DB（`ITransferStateDb`）に移行 |
-| クロール方式 | 全件メモリロード（`ListItemsAsync`）| `ListPagedAsync` ページングで SQLite に逐次保存 |
-| フォルダ先行作成 | 全件ロード後に深さソート | **フォルダ作成フェーズ**として明示化・進捗をダッシュボードに表示 |
-| 中断リカバリ | skip_list 再クロールのみ | 4フェーズそれぞれにチェックポイントを持ち再開可能 |
-| ダッシュボード | 未対応 | クロール・フォルダ作成・転送の各フェーズ進捗を表示 |
-| エラー管理 | ログのみ | SQLite に失敗ファイル・リトライ回数を記録 |
-
----
-
-### SharePoint パイプライン設計（4フェーズ構造）
-
-SharePoint は `AutoCreateParentFolders == false` であり、フォルダを深さ順に先行作成しないとアップロードがエラーになる。
-深さソートには全フォルダ一覧が必要なため、**クロール完了後にフォルダ作成フェーズを実行**する構造となる。
-Dropbox 版のような完全なストリーミング（クロール中に並行転送）は取れない。
+### 対応路線（v0.4.0）
 
 ```
-Phase A: リカバリ
-  processing → pending リセット（クラッシュリカバリ）
-
-Phase B: クロール（ページング）
-  ListPagedAsync でページごとに DB へ UpsertPendingIfNotTerminalAsync（N+1 回避）
-  カーソルをチェックポイント保存（中断再開対応）
-  ┌─ ダッシュボード: sp_crawl_pages（累積ページ数）を RecordMetric
-  └─ 完了時: crawl_total / crawl_complete チェックポイント保存
-
-Phase C: フォルダ先行作成
-  DB からフォルダパス一覧を取得 → 全祖先展開（HashSet） → 深さ順ソート → 同一深さを並列 EnsureFolderAsync
-  ┌─ ダッシュボード: sp_folder_done（作成済み件数）を RecordMetric
-  └─ 完了時: folder_creation_complete チェックポイント保存
-
-Phase D: ファイル転送（Consumer）
-  DB の pending/processing/failed レコードを並列転送
-  ┌─ AdaptiveConcurrencyController で動的並列度制御
-  ├─ 100 件ごと / 並列度変化時に current_parallelism を RecordMetric
-  ├─ 100 件ごとに throughput_files_per_min / throughput_bytes_per_sec / rate_limit_pct を RecordMetric
-  └─ pipeline_started_at チェックポイント（初回のみ）
+Personal OneDrive → Dropbox（v0.4.0 でエンド・ツー・エンド対応）
+Personal OneDrive → SharePoint Document Library（v0.5.0 に分離）
 ```
 
-**チェックポイント一覧（SQLite checkpoints テーブル）**
+### 実装順序
 
-| キー | 意味 | 再開時の挙動 |
-|------|------|-------------|
-| `pipeline_started_at` | パイプライン初回開始時刻 | 存在すれば上書きしない |
-| `sp_cursor` | クロールの nextLink | Phase B 再開位置 |
-| `crawl_total` | クロール確定総数（ファイル＋フォルダ） | Phase B 完了後に保存 |
-| `crawl_complete` | クロール完了フラグ | `"true"` なら Phase B スキップ |
-| `folder_total` | 作成対象フォルダ数 | Phase C 開始時に保存（進捗バー用） |
-| `folder_creation_complete` | フォルダ作成完了フラグ | `"true"` なら Phase C スキップ |
-
-> **Phase D の失敗アイテム再試行について**
-> Phase D 中に失敗したアイテムは `failed` 状態で DB に残る。次回実行時の Phase A でリカバリされる（Dropbox 版と同じ設計）。
-> 同一実行内での即時再試行は行わない（複雑性コストが高く、Dropbox 版で実績のあるアプローチで十分）。
-
-**ダッシュボード追加メトリクス（SQLite metrics テーブル）**
-
-| メトリクス名 | タイミング | 意味 |
-|---|---|---|
-| `sp_crawl_pages` | Phase B 各ページ | 発見ページ数の推移 |
-| `sp_folder_done` | Phase C 各フォルダ作成後 | フォルダ作成進捗 |
-| `throughput_files_per_min` | Phase D 100件ごと | 転送スループット |
-| `throughput_bytes_per_sec` | Phase D 100件ごと | 転送バイトレート |
-| `rate_limit_pct` | Phase D 100件ごと | 429 発生率 |
-| `current_parallelism` | Phase D 変化時・100件ごと | 現在の並列度 |
+```
+#109（Credential Store）→ #114（Blazor Hybrid 基盤）→ #112（Dropbox OAuth）→ #113（Wizard Skeleton）
+                                                      ↑
+                              #112 の Spike 1（リダイレクト URI 仕様確認）は #114 と並行して先行調査可能
+```
 
 ---
 
-### ステップ 1: 設定モデル更新
+## ISSUE #109: セキュアクレデンシャルストア
 
-- [x] `PathOptions` に `SharePointStateDb` パスを追加（`src/CloudMigrator.Core/Configuration/MigratorOptions.cs`）
-- [x] `configs/config.json` に `sharePointStateDb` キー追加（デフォルト: `logs/sharepoint_transfer_state.db`）
+**Issue**: [#109 feat: セキュアクレデンシャルストアの実装（Windows Credential Manager / DPAPI）](https://github.com/scottlz0310/cloud-migrator/issues/109)  
+**Milestone**: v0.4.0  
+**依存**: なし（最初に着手可能）
 
----
+### Credential Key 定義（確定・変更不可）
 
-### ステップ 2: SharePoint 専用パイプライン作成
+```
+cloud-migrator/azure/client-secret
+cloud-migrator/azure/access-token
+cloud-migrator/dropbox/app-key
+cloud-migrator/dropbox/access-token
+cloud-migrator/dropbox/refresh-token
+```
 
-現在の `SharePointMigrationPipeline`（`TransferEngine` ラッパー）を廃止し、全面再実装する。
+### 実装タスク
 
-- [x] `SharePointMigrationPipeline.cs` を 4フェーズ構造で再実装
-  - **Phase A**: `ResetProcessingAsync` で processing → pending リセット（クラッシュリカバリ）
-  - **Phase B**: `ListPagedAsync` でページごとに `UpsertPendingIfNotTerminalAsync`（N+1 回避）
-    - カーソルをチェックポイント保存（中断再開対応）
-    - 各ページ処理後に `sp_crawl_pages` を `RecordMetricAsync`
-    - `crawl_complete == "true"` のチェックポイントがあればスキップ（再実行対応）
-  - **Phase C**: DB から `DISTINCT` フォルダパス抽出 → `HashSet` で全祖先展開 → 深さ順ソート → 同一深さを並列 `EnsureFolderAsync`
-    - Phase C 開始時に `folder_total` チェックポイント保存（ダッシュボードの進捗バー用）
-    - 作成都度 `sp_folder_done` を `RecordMetricAsync`
-    - `folder_creation_complete == "true"` があればスキップ（再実行対応）
-  - **Phase D**: `GetPendingStreamAsync` → bounded Channel（容量 1000）→ 並列転送（Dropbox 版 Consumer と同構造）
-    - `AdaptiveConcurrencyController` 動的並列度制御
-    - 100 件ごと / 並列度変化時に metrics 記録
-    - `pipeline_started_at` チェックポイント（初回のみ）
-- [x] `ITransferStateDb` に `ResetProcessingAsync`・`UpsertPendingIfNotTerminalAsync`・`InsertDoneIfNotExistsAsync`・`GetDistinctFolderPathsAsync` を追加
-- [x] `GraphStorageProvider.EnsureFolderAsync` が 409 Conflict を正しく無視することを確認済み
-- [x] `TransferEngine` への依存を除去（`SharePointMigrationPipeline` が直接 `IStorageProvider` を使う）
+- [x] `ICredentialStore` インターフェース定義（`CloudMigrator.Core`）— `GetAsync: Task<string?>（null = 未登録）`、`ExistsAsync: Task<bool>`
+- [x] `WindowsCredentialStore` 実装（`CredWrite` / `CredRead` / `CredDelete` P/Invoke）
+- [x] 障害時ハンドリング実装（Policy 禁止 / ストア破損 / 権限不足 / AV 干渉 / 非 Windows の各ケース）
+- [x] Credential Key 定数クラス（`CredentialKeys.cs`）の定義
+- [x] `EnvironmentCredentialStore` 実装（後方互換・v0.4.x のみ）+ `[Obsolete]` 警告付与
+- [x] 上書き確認ロジック（`ExistsAsync` + ユーザー確認）— ウィザードおよび `init` コマンド両方で適用
+- [x] DI 登録・既存プロバイダーへの注入
+- [x] `init` コマンドでの対話的保存フロー対応
+- [x] 非 Windows 環境での明示的エラーメッセージ表示 + 起動中断実装
+- [x] 単体テスト（正常系 + 各障害ケース）
 
----
+### 受け入れ基準
 
-### ステップ 3: ダッシュボード フェーズ表示対応
-
-SharePoint 版の4フェーズ進捗をダッシュボードに表示するため、API と UI を拡張する。
-
-- [x] `/api/phase` エンドポイント追加（`crawl_complete`・`folder_creation_complete` チェックポイントでフェーズ判定）
-  - `crawl_complete != "true"` → `phase: "crawling"`
-  - `crawl_complete == "true"` かつ `folder_creation_complete != "true"` → `phase: "folder_creation"`
-  - `folder_creation_complete == "true"` → `phase: "transferring"`
-- [x] ダッシュボード UI にフェーズバッジ（クロール中=黄 / フォルダ作成中=紫 / 転送中=緑）を追加
-- [x] `sp_folder_done` を使ったフォルダ作成進捗バー（`folder_total` チェックポイントとの比較）
-- [x] `DashboardCommand` のデフォルト DB を `destinationProvider` に応じて切り替え（SP: `SharePointStateDb`、Dropbox: `DropboxStateDb`）
-- [ ] `sp_crawl_pages` を使ったクロール進捗表示（ページ数 or 件数）— 将来対応
+- [x] `sample.env` の認証情報項目を設定しなくてもツールが起動できる
+- [x] Credential Manager に保存された認証情報が Graph / Dropbox プロバイダーで正常に使用される
+- [x] 環境変数が設定されている場合は v0.4.x においてフォールバックとして機能する
+- [x] config.json に秘密情報が書き出されない
+- [x] 再セットアップ時（ウィザード・`init` コマンド両方）に既存 Credential の上書き確認が行われる
+- [x] 障害時（Policy 禁止・破損・権限不足・AV 干渉）に適切なエラーメッセージが表示される（Win32Exception メッセージで対応）
+- [x] いかなる障害時も平文・環境変数へのサイレントフォールバックが発生しない
+- [x] 非 Windows 環境では明示的なエラーメッセージが表示される
 
 ---
 
-### ステップ 4: skip_list → SQLite 移行対応
+## ISSUE #114: Blazor Hybrid 基盤整備
 
-- [x] 初回起動時（DB が存在しない場合）に既存 skip_list から SQLite へのマイグレーション
-  - skip_list の各エントリを `done` ステータスのレコードとして INSERT
-- [x] `TransferCommand.RunCoreAsync` の SharePoint ブランチを新パイプライン呼び出しに変更
-  - `SqliteTransferStateDb` を生成して `SharePointMigrationPipeline` に渡す
-  - `fullRebuild` / `hashChanged` 時に DB をリセット（WAL/SHM サイドカーも個別削除）
-- [ ] `CrawlCache`（JSON）・`RebuildSkipListFromSharePointAsync` を SharePoint フローから除去（ステップ 5 で対応）
+**Issue**: [#114 feat: CloudMigrator.Dashboard を Blazor Hybrid（WPF + BlazorWebView）に移行](https://github.com/scottlz0310/cloud-migrator/issues/114)  
+**Milestone**: v0.4.0  
+**依存**: #109（`ICredentialStore` が DI に必要）  
+**ブロック先**: #110, #111, #112, #113（完了後に着手）
+
+### アーキテクチャ変更概要
+
+現行の「ASP.NET Core Minimal API + HTML インライン文字列」方式を廃止し、  
+**WPF + BlazorWebView（Blazor Hybrid）+ MudBlazor + 完全インプロセス DI** へ移行する。
+
+### プロジェクト変換タスク
+
+- [ ] `CloudMigrator.Dashboard.csproj` を `net10.0-windows` + `<UseWPF>true</UseWPF>` に変換
+- [ ] `Microsoft.AspNetCore.Components.WebView.Wpf` NuGet パッケージを追加
+- [ ] `MudBlazor` NuGet パッケージを追加
+- [ ] WPF `App.xaml` / `MainWindow.xaml` + `BlazorWebView` コントロールの実装
+- [ ] `_Imports.razor` / `wwwroot/index.html` など Blazor Hybrid 基盤ファイルの追加
+- [ ] MudBlazor のテーマ設定（`MudThemeProvider` / `MudDialogProvider` 等）
+- [ ] `IDialogService` インターフェース定義 + WPF `MessageBox` 実装の DI 登録
+
+### HTTP レイヤー廃止タスク
+
+- [ ] `DashboardServer.cs` の全 HTTP エンドポイントを DI サービス呼び出しに置き換え
+- [ ] SSE ログストリームを `System.Threading.Channels.Channel` ベースのインプロセス配信に置き換え
+- [ ] `DashboardServer.cs` の削除
+- [ ] `LogStreamSink`（Serilog）を `Channel` に書き込む形に変更
+
+### 既存ダッシュボードの移植タスク（MudBlazor コンポーネント）
+
+- [ ] 転送ステータス表示コンポーネント（`ITransferStateDb` 直接呼び出し）
+- [ ] ログストリーム表示コンポーネント（`Channel` 購読）
+- [ ] 設定パネルコンポーネント（`IConfigurationService` 直接呼び出し）
+- [ ] 転送ジョブ開始・停止コントロール（`ITransferJobService` 直接呼び出し）
+- [ ] `IndexHtml` 定数の削除
+
+### 起動経路変更タスク
+
+- [ ] WPF Application エントリポイントの実装（`App.xaml.cs`）
+- [ ] DI コンテナ構成（現行 `DashboardServer.BuildApp` の DI 登録を WPF App に移植）
+- [ ] アプリ起動時に WPF ウィンドウを自動表示（ブラウザ手動起動の廃止）
+
+### インフラタスク
+
+- [ ] WebView2 Evergreen Bootstrapper を MSI ビルドに統合
+- [ ] WebView2 の動作確認（**#112 Spike 2 相当を兼ねる**）
+
+### 受け入れ基準
+
+- [ ] アプリ起動時に WPF ウィンドウが自動的に開き、ブラウザの手動起動が不要になる
+- [ ] 既存のダッシュボード機能（転送進捗・ログ・設定）が Blazor Hybrid + MudBlazor 上で動作する
+- [ ] WebView2 が WPF ウィンドウ内で正常に動作することが確認される（#112 Spike 2 解決）
+- [ ] `DashboardServer.cs` が削除され、HTTP レイヤーが完全に廃止されている
+- [ ] Blazor コンポーネントが DI 経由でサービスを直接呼び出している（HTTP 不使用）
+- [ ] ログストリームが `Channel` ベースのインプロセス配信で動作する
+- [ ] Blazor コンポーネントが WPF 型に直接依存していない（インターフェース経由のみ）
+- [ ] CLI コマンド（`transfer` / `doctor` 等）の既存動作に影響がない
+- [ ] MSI インストーラーで WebView2 Evergreen Bootstrapper が組み込まれる
 
 ---
 
-### ステップ 5: 不要コードの整理
+## ISSUE #112: Dropbox OAuth 2.0 フロー実装
 
-- [x] `SharePointMigrationPipeline.cs`（旧 TransferEngine ラッパー）が完全に置き換わったことを確認
-- [x] `TransferEngine.cs` が Dropbox 以外から参照されなくなったことを確認（本番コードからの呼び出しなし・段階的廃止で可）
-- [x] `CrawlCache.cs` SharePoint フロー参照除去: `RebuildSkipListFromSharePointAsync` を `TransferCommand` から削除、`RebuildSkipListCommand` を廃止メッセージに更新
+**Issue**: [#112 feat: Dropbox OAuth 2.0 フロー実装（WebView2 PKCE）](https://github.com/scottlz0310/cloud-migrator/issues/112)  
+**Milestone**: v0.4.0  
+**依存**: #109（トークン保存先）、#114（WebView2 ホスト）
+
+### 事前調査（Spike）
+
+- [ ] **Spike 1 完了**: Dropbox App Console でのリダイレクト URI ポート仕様確認
+  - 期待結果 A（ポート未指定OK）→ ランダムポート方式採用
+  - 期待結果 B（ポート固定必須）→ 固定ポート方式（`http://127.0.0.1:54321` 等）にフォールバック
+  - **結果を Issue #112 に記録すること**
+- ~~Spike 2（WebView2 動作確認）~~: #114 の完了をもって解決済みとみなす
+
+### 実装タスク
+
+- [ ] Dropbox App Console 登録手順ガイド UI（D-1〜D-5、Public Client 方式として説明）
+- [ ] App Key 入力フォーム → Credential Manager 保存（`cloud-migrator/dropbox/app-key`）
+- [ ] PKCE `code_verifier` / `code_challenge` 生成ユーティリティ
+- [ ] Dropbox OAuth 認可 URL 組み立て（`client_secret` パラメータなし）
+- [ ] ポート選択 + 一時 HTTP リスナー実装（Spike 1 結果に応じてランダム or 固定）
+- [ ] コールバックキャプチャ実装（WPF Host の WebView2 `NavigationStarting` を使用）
+- [ ] `token` エンドポイントへのリクエスト処理（`client_secret` 省略）
+- [ ] トークンの Credential Manager 保存（`dropbox/access-token` / `dropbox/refresh-token`）
+- [ ] トークンライフサイクル管理:
+  - [ ] Access Token 有効期限切れ時の透過的リフレッシュ実装
+  - [ ] Refresh Token 失効検知（401 レスポンス）
+  - [ ] 失効時の Credential 削除 + UI 通知 + Step 3 を `NotStarted` に戻す実装
+- [ ] 既存 `DropboxStorageProvider` への Credential Manager 対応（#109 連携）
+
+### 受け入れ基準
+
+- [ ] **Spike 1 が完了しており、リダイレクト URI 方式が確定している**
+- [ ] App Key のみで認証が完結できる（App Secret 入力不要）
+- [ ] App Key はユーザーが自身で登録・入力する（バイナリ埋め込みなし）
+- [ ] ウィザードの「Dropbox と連携」ボタンからブラウザ認証を完了できる
+- [ ] 取得したトークンが自動的に Credential Manager に保存される
+- [ ] 次回起動時にトークンが自動読み込みされ、再認証不要
+- [ ] Access Token 有効期限切れ時に透過的リフレッシュが動作する
+- [ ] Refresh Token 失効時に UI 通知 + Step 3 再認証フローへの誘導が動作する
 
 ---
 
-### ステップ 6: ユニットテスト
+## ISSUE #113: オンボーディングウィザード UI
 
-- [x] `SharePointMigrationPipelineTests.cs` 作成（19テスト追加）
-  - Phase A: `ResetProcessingAsync` が呼ばれる
-  - Phase B クロール → `UpsertPendingIfNotTerminalAsync` とカーソル保存が実行される
-  - Phase B スキップ（`crawl_complete == "true"` の場合）
-  - Phase B: フォルダアイテムはスキップされる
-  - Phase C フォルダ先行作成 → 深さ順に `EnsureFolderAsync` が呼ばれる・`folder_total` チェックポイントが保存される
-  - Phase C: 重複パスの一意化
-  - Phase C スキップ（`folder_creation_complete == "true"` の場合）
-  - Phase D 転送成功 → `MarkDoneAsync` が呼ばれる
-  - Phase D 転送失敗 → `MarkFailedAsync` が呼ばれる
-  - 100 件転送で throughput メトリクスが記録される
-  - `current_parallelism` 即時記録（controller あり）
+**Issue**: [#113 feat: オンボーディングウィザード UI（初回起動フロー統合）](https://github.com/scottlz0310/cloud-migrator/issues/113)  
+**Milestone**: v0.4.0  
+**依存**: #109, #114, #112
+
+### ウィザードステップ構成（v0.4.0）
+
+```
+Welcome
+  └── Step 0: 移行路線選択
+        ├── [OneDrive→Dropbox 路線]（v0.4.0 実装）
+        │     └── Step 3: Dropbox OAuth 連携（#112）
+        │           └── Step 4: 接続テスト & 完了
+        └── [OneDrive→SharePoint 路線]（v0.5.0 予定）
+              └── 「この路線は v0.5.0 で対応予定です」プレースホルダー画面
+```
+
+### 実装タスク（v0.4.0）
+
+- [ ] `WizardStepState` enum 定義（`NotStarted` / `InProgress` / `Verified` / `Failed` / `Skipped`）
+- [ ] `wizard-state.json` 読み書きサービス実装（スキーマバージョン管理・破損時フォールバックを含む）
+  - 保存先: `%APPDATA%\CloudMigrator\wizard-state.json`
+  - `InProgress` はファイルに書き出さない（`NotStarted` に戻してから保存）
+  - 未知 `schemaVersion` / パース失敗時: `wizard-state.backup.json` にリネーム → 初期化
+- [ ] アプリ終了時に `InProgress` → `NotStarted` で保存するシャットダウンフック実装
+- [ ] Welcome 画面 UI（MudBlazor）
+- [ ] Step 0: 移行路線選択 UI（MudBlazor）
+  - [ ] SharePoint 路線選択時の「v0.5.0 で対応予定」プレースホルダー画面
+- [ ] ステップ間の進行制御（前ステップが `Verified`/`Skipped` でないと進めない）
+- [ ] 初回起動検出ロジック（`wizard-state.json` 不在 + Credential 未登録の複合判定）
+- [ ] 中断再開ロジック（最初の `NotStarted`/`Failed` から再開）
+- [ ] Step 4: 接続テスト UI（Dropbox 路線のみ・DI 経由で doctor/verify 呼び出し）
+  - [ ] Credential Verify → Discovery Verify → Migration Preflight の 3 層を順に実行
+  - [ ] 失敗時の原因層・ステップ特定表示
+- [ ] 「セットアップをやり直す」メニューエントリ（全ステップ `NotStarted` リセット）
+- [ ] 完了後のダッシュボードへの遷移
+
+### 受け入れ基準（v0.4.0）
+
+- [ ] 初回起動時にウィザードが自動表示される（`wizard-state.json` 不在が主判定条件）
+- [ ] Step 0 で SharePoint 路線を選択すると「v0.5.0 で対応予定」画面が表示される
+- [ ] Dropbox 路線でステップ 0→3→4 がエンド・ツー・エンドで動作する
+- [ ] Step 4 が Credential Verify → Discovery Verify → Migration Preflight の 3 層を実行する
+- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される
+- [ ] `InProgress` 状態でアプリを終了した場合、`wizard-state.json` には `NotStarted` として保存される
+- [ ] 中断後の再起動で最初の未完了ステップから再開できる
+- [ ] Step 4 接続テスト失敗時に失敗した層（Credential / Discovery / Preflight）が表示される
+- [ ] ウィザード完了後にダッシュボードに遷移し、ファイル転送が実行できる状態になっている
+- [ ] `schemaVersion` が未知の `wizard-state.json` を読み込んだ際にバックアップ化・初期化が行われる
+- [ ] オンボーディング完了後、Migration Runtime が config.json と Credential Manager の値を変換なしに読み込める
 
 ---
 
-### ステップ 7: E2E 検証
+## v0.4.0 全体の受け入れ基準
 
-- [x] TC-01: `dotnet build` → 0 errors, 0 warnings
-- [x] TC-02: `dotnet test` → 378 PASS / 0 FAIL
-- [x] TC-03: `transfer`（SharePoint モード）→ SQLite DB 作成・4フェーズ実行確認。バグ #1（キャッシュミス）・バグ #2（Name already exists Warning）を発見・修正
-- [x] TC-04: `transfer --full-rebuild` → DB リセット・WAL/SHM 削除・全 4フェーズ再実行確認
-- [x] TC-05: `transfer`（Phase B 途中でCtrl+C → 再実行）→ カーソルチェックポイントから再開（134→101ページ）確認
-- [x] TC-06: `transfer`（Phase C 途中でCtrl+C → 再実行）→ Phase B スキップ・Phase C 継続実行（`folder_creation_complete` 未設定のため）確認
-- [x] TC-07: `dashboard` → `/api/status`・`/api/db-status` で DB 接続・フェーズデータ取得確認
+- [ ] 環境変数なしで初回セットアップが完結できる
+- [ ] アプリ起動時にネイティブウィンドウが自動的に開く（ブラウザの手動起動不要）
+- [ ] Personal OneDrive → Dropbox 路線のセットアップがウィザードで完結できる
+- [ ] Dropbox 連携が App Secret なしの OAuth PKCE フローで完結できる
+- [ ] 認証情報が Windows Credential Manager に安全に保存される
+- [ ] オンボーディング完了後、Migration Runtime が追加操作なしに転送を開始できる
+- [ ] 非 Windows 環境で起動した際に明示的なエラーメッセージが表示される
 
 ---
 
-## 将来フェーズ（今回スコープ外）
+## v0.5.0 スコープ（今回対象外）
 
-- ダッシュボードからの転送計画立案（並列数・スループット目標の設定 UI）
-- サイズ・更新日時によるスキップ判定強化（上書き判定）
-- 本番切替計画・段階カットオーバー手順書
-- 運用手順書（セットアップ / 日次 / 障害対応 / ロールバック）
+| ISSUE | 内容 |
+|-------|------|
+| [#110](https://github.com/scottlz0310/cloud-migrator/issues/110) | Azure Entra ID アプリ登録 & API権限設定ガイド |
+| [#111](https://github.com/scottlz0310/cloud-migrator/issues/111) | Graph API リソース発見（OneDrive + SharePoint） |
+| #113（残ステップ） | Step 1・2a・2b の Wizard UI（SharePoint 路線） |
+
+---
+
+## Verify 責務の分離（全 ISSUE 共通定義）
+
+| 層 | 目的 | 実施タイミング | 担当 ISSUE |
+|----|------|--------------|-----------:|
+| **Credential Verify** | シークレット / トークンの存在と有効性確認 | 各ステップの入力完了直後 | #109 / #112 |
+| **Discovery Verify** | 対象リソース（Drive ID 等）が実際に到達できるか確認 | Discovery 完了後 | #111（v0.5.0）/ #112 |
+| **Migration Preflight** | 実際の読み書き権限を小ファイルで確認 | Step 4（接続テスト） | #113 |
