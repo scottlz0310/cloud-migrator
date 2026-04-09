@@ -272,15 +272,25 @@ internal static class InitCommand
     /// 指定キーの認証情報を Credential Manager に保存する。
     /// 既に登録済みの場合は上書き確認を行う（<paramref name="force"/> が true の場合は確認を省略）。
     /// </summary>
-    internal static async Task SaveCredentialWithConfirmAsync(
+    internal static Task SaveCredentialWithConfirmAsync(
         string key,
         string value,
         string displayName,
         bool force,
         CancellationToken ct)
-    {
-        var store = CredentialStoreFactory.Create();
+        => SaveCredentialWithConfirmAsync(key, value, displayName, force, CredentialStoreFactory.Create(), ct);
 
+    /// <summary>
+    /// テスト可能なオーバーロード。<paramref name="store"/> を外部から注入できる。
+    /// </summary>
+    internal static async Task SaveCredentialWithConfirmAsync(
+        string key,
+        string value,
+        string displayName,
+        bool force,
+        ICredentialStore store,
+        CancellationToken ct)
+    {
         var exists = await store.ExistsAsync(key, ct).ConfigureAwait(false);
         if (exists && !force)
         {

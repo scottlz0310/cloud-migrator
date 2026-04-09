@@ -1,4 +1,5 @@
 using CloudMigrator.Core.Credentials;
+using CloudMigrator.Setup.Cli.Commands;
 using FluentAssertions;
 using Moq;
 
@@ -346,5 +347,147 @@ public sealed class CredentialStoreTests
             await store.DeleteAsync(key);
         }
 #pragma warning restore CA1416
+    }
+}
+
+/// <summary>
+/// ICredentialStore の null ガード / FallbackCredentialStore.DeleteAsync / InitCommand.SaveCredentialWithConfirmAsync のテスト。
+/// </summary>
+public sealed class CredentialStoreAdditionalTests
+{
+    // =========================================================
+    //  null ガード（ArgumentNullException）
+    // =========================================================
+
+    [Fact]
+    public async Task EnvironmentCredentialStore_GetAsync_ShouldThrow_WhenKeyIsNull()
+    {
+        // 検証対象: EnvironmentCredentialStore.GetAsync  目的: null キーに対して ArgumentNullException をスローすること
+#pragma warning disable CS0618
+        var store = new EnvironmentCredentialStore();
+#pragma warning restore CS0618
+
+        var act = async () => await store.GetAsync(null!);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task EnvironmentCredentialStore_ExistsAsync_ShouldThrow_WhenKeyIsNull()
+    {
+        // 検証対象: EnvironmentCredentialStore.ExistsAsync  目的: null キーに対して ArgumentNullException をスローすること
+#pragma warning disable CS0618
+        var store = new EnvironmentCredentialStore();
+#pragma warning restore CS0618
+
+        var act = async () => await store.ExistsAsync(null!);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    // =========================================================
+    //  FallbackCredentialStore.DeleteAsync
+    // =========================================================
+
+    [Fact]
+    public async Task FallbackCredentialStore_DeleteAsync_ShouldDelegateToPrimary()
+    {
+        // 検証対象: FallbackCredentialStore.DeleteAsync  目的: DeleteAsync がプライマリに委譲されること
+        var primary = new Mock<ICredentialStore>();
+        var fallback = new Mock<ICredentialStore>();
+        primary.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+               .Returns(Task.CompletedTask);
+
+        var store = new FallbackCredentialStore(primary.Object, fallback.Object);
+
+        await store.DeleteAsync("key");
+
+        primary.Verify(s => s.DeleteAsync("key", It.IsAny<CancellationToken>()), Times.Once);
+        fallback.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // =========================================================
+    //  InitCommand.SaveCredentialWithConfirmAsync
+    // =========================================================
+
+    [Fact]
+    public async Task SaveCredentialWithConfirmAsync_ShouldSave_WhenKeyDoesNotExist()
+    {
+        // 検証対象: InitCommand.SaveCredentialWithConfirmAsync  目的: 未登録キーは確認なしで直接保存されること
+        var store = new Mock<ICredentialStore>();
+        store.Setup(s => s.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(false);
+        store.Setup(s => s.SaveAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+             .Returns(Task.CompletedTask);
+
+        await InitCommand.SaveCredentialWithConfirmAsync(
+            "test-key", "test-value", "テスト", force: false, store.Object, CancellationToken.None);
+
+        store.Verify(s => s.SaveAsync("test-key", "test-value", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveCredentialWithConfirmAsync_ShouldSkipSave_WhenKeyExistsAndUserAnswersNo()
+    {
+        // 検証対象: InitCommand.SaveCredentialWithConfirmAsync  目的: 登録済みキーに対してユーザーが N を選択した場合は上書きしないこと
+        var store = new Mock<ICredentialStore>();
+        store.Setup(s => s.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(true);
+
+        var originalIn = Console.In;
+        Console.SetIn(new System.IO.StringReader("n\n"));
+        try
+        {
+            await InitCommand.SaveCredentialWithConfirmAsync(
+                "test-key", "test-value", "テスト", force: false, store.Object, CancellationToken.None);
+        }
+        finally
+        {
+            Console.SetIn(originalIn);
+        }
+
+        store.Verify(s => s.SaveAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SaveCredentialWithConfirmAsync_ShouldOverwrite_WhenKeyExistsAndUserAnswersYes()
+    {
+        // 検証対象: InitCommand.SaveCredentialWithConfirmAsync  目的: 登録済みキーに対してユーザーが y を選択した場合は上書き保存すること
+        var store = new Mock<ICredentialStore>();
+        store.Setup(s => s.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(true);
+        store.Setup(s => s.SaveAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+             .Returns(Task.CompletedTask);
+
+        var originalIn = Console.In;
+        Console.SetIn(new System.IO.StringReader("y\n"));
+        try
+        {
+            await InitCommand.SaveCredentialWithConfirmAsync(
+                "test-key", "test-value", "テスト", force: false, store.Object, CancellationToken.None);
+        }
+        finally
+        {
+            Console.SetIn(originalIn);
+        }
+
+        store.Verify(s => s.SaveAsync("test-key", "test-value", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveCredentialWithConfirmAsync_ShouldOverwrite_WhenForceIsTrue()
+    {
+        // 検証対象: InitCommand.SaveCredentialWithConfirmAsync  目的: force=true の場合は存在確認なしで上書き保存すること
+        var store = new Mock<ICredentialStore>();
+        store.Setup(s => s.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(true);
+        store.Setup(s => s.SaveAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+             .Returns(Task.CompletedTask);
+
+        await InitCommand.SaveCredentialWithConfirmAsync(
+            "test-key", "test-value", "テスト", force: true, store.Object, CancellationToken.None);
+
+        store.Verify(s => s.SaveAsync("test-key", "test-value", It.IsAny<CancellationToken>()), Times.Once);
+        // ExistsAsync は呼ばれるが、確認プロンプトはスキップ
     }
 }
