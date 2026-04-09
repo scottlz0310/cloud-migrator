@@ -12,7 +12,6 @@ public static class CredentialStoreFactory
     /// <summary>
     /// 実行プラットフォームに応じた <see cref="ICredentialStore"/> を生成する。
     /// </summary>
-    [SupportedOSPlatformGuard("windows")]
     public static ICredentialStore Create()
     {
         if (OperatingSystem.IsWindows())

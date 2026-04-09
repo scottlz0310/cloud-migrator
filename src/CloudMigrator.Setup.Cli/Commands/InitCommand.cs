@@ -291,6 +291,12 @@ internal static class InitCommand
         ICredentialStore store,
         CancellationToken ct)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new NotSupportedException(
+                "Credential Manager への保存は Windows でのみサポートされています。非 Windows 環境ではこのコマンドを使用できません。");
+        }
+
         var exists = await store.ExistsAsync(key, ct).ConfigureAwait(false);
         if (exists && !force)
         {

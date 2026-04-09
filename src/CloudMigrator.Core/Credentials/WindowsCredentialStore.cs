@@ -73,11 +73,13 @@ public sealed class WindowsCredentialStore : ICredentialStore
         {
             var cred = Marshal.PtrToStructure<CREDENTIAL>(credPtr);
             if (cred.CredentialBlobSize == 0 || cred.CredentialBlob == IntPtr.Zero)
-                return Task.FromResult<string?>(string.Empty);
+                return Task.FromResult<string?>(null);
 
             var bytes = new byte[cred.CredentialBlobSize];
             Marshal.Copy(cred.CredentialBlob, bytes, 0, bytes.Length);
-            return Task.FromResult<string?>(Encoding.Unicode.GetString(bytes));
+
+            var value = Encoding.Unicode.GetString(bytes).TrimEnd('\0');
+            return Task.FromResult<string?>(string.IsNullOrEmpty(value) ? null : value);
         }
         finally
         {

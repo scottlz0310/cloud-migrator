@@ -18,14 +18,22 @@ public sealed class CredentialStoreTests
     public async Task EnvironmentCredentialStore_GetAsync_ShouldReturnNull_WhenEnvVarNotSet()
     {
         // 検証対象: EnvironmentCredentialStore.GetAsync  目的: 対応する環境変数が未設定の場合 null を返すこと
+        var original = Environment.GetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET");
         Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET", null);
+        try
+        {
 #pragma warning disable CS0618
-        var store = new EnvironmentCredentialStore();
+            var store = new EnvironmentCredentialStore();
 #pragma warning restore CS0618
 
-        var result = await store.GetAsync(CredentialKeys.AzureClientSecret);
+            var result = await store.GetAsync(CredentialKeys.AzureClientSecret);
 
-        result.Should().BeNull();
+            result.Should().BeNull();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR__GRAPH__CLIENTSECRET", original);
+        }
     }
 
     [Fact]
@@ -67,14 +75,22 @@ public sealed class CredentialStoreTests
     public async Task EnvironmentCredentialStore_ExistsAsync_ShouldReturnFalse_WhenEnvVarNotSet()
     {
         // 検証対象: EnvironmentCredentialStore.ExistsAsync  目的: 未設定の環境変数に対して false を返すこと
+        var original = Environment.GetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN");
         Environment.SetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN", null);
+        try
+        {
 #pragma warning disable CS0618
-        var store = new EnvironmentCredentialStore();
+            var store = new EnvironmentCredentialStore();
 #pragma warning restore CS0618
 
-        var exists = await store.ExistsAsync(CredentialKeys.DropboxAccessToken);
+            var exists = await store.ExistsAsync(CredentialKeys.DropboxAccessToken);
 
-        exists.Should().BeFalse();
+            exists.Should().BeFalse();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MIGRATOR__DROPBOX__ACCESSTOKEN", original);
+        }
     }
 
     [Fact]
