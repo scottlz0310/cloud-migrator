@@ -1,0 +1,200 @@
+@inject ITransferStateDb TransferStateDb
+@inject ITransferJobService JobService
+@implements IDisposable
+
+<MudText Typo="Typo.h5" Class="mb-4">転送ダッシュボード</MudText>
+
+@if (_summary is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudGrid>
+        <!-- ステータスカード -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Default">完了</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Success">@_summary.Done</MudText>
+                    <MudText Typo="Typo.caption">/ @_summary.Total 件</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Default">処理中</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Info">@_summary.Processing</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Default">待機中</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Warning">@_summary.Pending</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline" Color="Color.Default">失敗</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Error">@(_summary.Failed + _summary.PermanentFailed)</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- 完了率プログレスバー -->
+        <MudItem xs="12">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">完了率: @_summary.CompletionRate.ToString("F1")%</MudText>
+                    <MudProgressLinear Value="@_summary.CompletionRate" Max="100" Color="Color.Success" Size="Size.Large" Rounded="true" />
+                    <MudText Typo="Typo.caption" Class="mt-1">
+                        転送済みサイズ: @FormatBytes(_summary.TotalDoneSizeBytes)
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- ジョブ操作 -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">転送ジョブ</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_currentJob is null)
+                    {
+                        <MudText Color="Color.Secondary">実行中のジョブはありません。</MudText>
+                    }
+                    else
+                    {
+                        <MudText>ジョブ ID: <code>@_currentJob.JobId[..8]...</code></MudText>
+                        <MudText>状態: <MudChip T="string" Color="@JobStatusColor(_currentJob.Status)" Size="Size.Small">@_currentJob.Status</MudChip></MudText>
+                        @if (_currentJob.StartedAt.HasValue)
+                        {
+                            <MudText>開始: @_currentJob.StartedAt.Value.LocalDateTime.ToString("HH:mm:ss")</MudText>
+                        }
+                        @if (!string.IsNullOrEmpty(_currentJob.ErrorMessage))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mt-2">@_currentJob.ErrorMessage</MudAlert>
+                        }
+                    }
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               Disabled="@_isJobRunning"
+                               OnClick="StartJobAsync">
+                        転送開始
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        <!-- 最近の失敗 -->
+        @if (_summary.RecentFailed.Count > 0)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6" Color="Color.Error">最近の失敗 (最大5件)</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudList T="FailedItem" Dense="true">
+                            @foreach (var item in _summary.RecentFailed)
+                            {
+                                <MudListItem>
+                                    <MudText Typo="Typo.body2">@item.Path/@item.Name</MudText>
+                                    @if (!string.IsNullOrEmpty(item.Error))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Error">@item.Error</MudText>
+                                    }
+                                </MudListItem>
+                            }
+                        </MudList>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private TransferDbSummary? _summary;
+    private TransferJobInfo? _currentJob;
+    private bool _isJobRunning;
+    private CancellationTokenSource? _cts;
+    private Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        // 5 秒ごとに自動更新
+        _refreshTimer = new Timer(async _ =>
+        {
+            await RefreshAsync();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            _summary = await TransferStateDb.GetSummaryAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // DB が存在しない場合は空のサマリーを使用
+            _summary = new TransferDbSummary();
+        }
+    }
+
+    private async Task StartJobAsync()
+    {
+        if (_isJobRunning) return;
+        _cts = new CancellationTokenSource();
+        _currentJob = await JobService.TryStartAsync(_cts.Token);
+        _isJobRunning = _currentJob?.Status is JobStatus.Pending or JobStatus.Running;
+    }
+
+    private static Color JobStatusColor(JobStatus status) => status switch
+    {
+        JobStatus.Pending => Color.Warning,
+        JobStatus.Running => Color.Info,
+        JobStatus.Completed => Color.Success,
+        JobStatus.Failed => Color.Error,
+        JobStatus.Cancelled => Color.Default,
+        _ => Color.Default,
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        return bytes switch
+        {
+            >= 1_073_741_824 => $"{bytes / 1_073_741_824.0:F1} GB",
+            >= 1_048_576 => $"{bytes / 1_048_576.0:F1} MB",
+            >= 1_024 => $"{bytes / 1_024.0:F1} KB",
+            _ => $"{bytes} B",
+        };
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

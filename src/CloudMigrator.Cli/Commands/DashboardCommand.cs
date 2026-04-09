@@ -1,13 +1,12 @@
 using System.CommandLine;
 using System.Diagnostics;
 using CloudMigrator.Core.Configuration;
-using CloudMigrator.Dashboard;
 using Microsoft.Extensions.Configuration;
 
 namespace CloudMigrator.Cli.Commands;
 
 /// <summary>
-/// dashboard サブコマンド - 移行進捗を Web ダッシュボードでリアルタイム表示する。
+/// dashboard サブコマンド - 移行進捗を Blazor Hybrid WPF ダッシュボードで表示する。
 /// </summary>
 internal static class DashboardCommand
 {
@@ -17,66 +16,60 @@ internal static class DashboardCommand
         {
             Description = "転送状態 DB のパス（省略時は設定ファイルの値を使用）",
         };
-        var portOption = new Option<int>("--port")
-        {
-            Description = "ダッシュボードのポート番号",
-            DefaultValueFactory = _ => 5050,
-        };
-        var noBrowserOption = new Option<bool>("--no-browser")
-        {
-            Description = "ブラウザを自動起動しない",
-        };
 
-        var cmd = new Command("dashboard", "移行進捗の Web ダッシュボードを起動します");
+        var cmd = new Command("dashboard", "移行進捗の Blazor Hybrid ダッシュボードを起動します");
         cmd.Add(dbOption);
-        cmd.Add(portOption);
-        cmd.Add(noBrowserOption);
 
         cmd.SetAction(async (parseResult, ct) =>
         {
+            await Task.CompletedTask;
             var config = AppConfiguration.Build();
             var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
                 ?? new MigratorOptions();
 
-            // destinationProvider に応じてデフォルト DB を切り替える（SharePoint: SP 用 DB、Dropbox: Dropbox 用 DB）
+            // destinationProvider に応じてデフォルト DB を切り替える
             var defaultDbPath = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase)
                 ? options.Paths.DropboxStateDb
                 : options.Paths.SharePointStateDb;
             var dbPath = parseResult.GetValue(dbOption) ?? defaultDbPath;
-            var port = parseResult.GetValue(portOption);
-            var noBrowser = parseResult.GetValue(noBrowserOption);
-            var url = $"http://localhost:{port}";
 
-            // DB ファイルが存在する場合は接続して起動。存在しない場合は DB なしモードで起動。
-            // DB なしモードでも UI は表示され、DB が作成されたら再起動するよう案内する。
-            bool dbExists = !string.IsNullOrEmpty(dbPath) && File.Exists(dbPath);
-            string? activeDbPath = string.IsNullOrEmpty(dbPath) ? null : dbPath;
+            Console.WriteLine("CloudMigrator Dashboard を起動しています...");
 
-            Console.WriteLine($"CloudMigrator Studio 起動中: {url}");
-            if (dbExists)
-                Console.WriteLine($"DB          : {dbPath}");
-            else
-                Console.WriteLine("DB          : なし — transfer 実行後、DB が作成されたら再起動してください");
-            Console.WriteLine("終了するには Ctrl+C を押してください。");
+            // CloudMigrator.Dashboard.exe を独立プロセスとして起動する
+            var exePath = FindDashboardExe();
+            if (exePath is null)
+            {
+                Console.Error.WriteLine("エラー: CloudMigrator.Dashboard.exe が見つかりません。インストールを確認してください。");
+                return;
+            }
 
-            if (!noBrowser)
-                TryOpenBrowser(url);
-
-            await DashboardServer.RunAsync(activeDbPath, port, ct).ConfigureAwait(false);
+            var args = string.IsNullOrEmpty(dbPath) ? string.Empty : $"--db-path \"{dbPath}\"";
+            Process.Start(new ProcessStartInfo(exePath, args)
+            {
+                UseShellExecute = true,
+            });
         });
 
         return cmd;
     }
 
-    private static void TryOpenBrowser(string url)
+    /// <summary>
+    /// CloudMigrator.Dashboard.exe を探す。
+    /// 現在の実行ファイルと同じディレクトリを優先する。
+    /// </summary>
+    private static string? FindDashboardExe()
     {
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch
-        {
-            // UIのない環境（CI、SSH 等）では無視する
-        }
+        var baseDir = AppContext.BaseDirectory;
+        var candidate = Path.Combine(baseDir, "CloudMigrator.Dashboard.exe");
+        if (File.Exists(candidate))
+            return candidate;
+
+        // インストーラーが Programs フォルダに配置する場合のパス
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var installCandidate = Path.Combine(localAppData, "Programs", "CloudMigrator", "CloudMigrator.Dashboard.exe");
+        if (File.Exists(installCandidate))
+            return installCandidate;
+
+        return null;
     }
 }

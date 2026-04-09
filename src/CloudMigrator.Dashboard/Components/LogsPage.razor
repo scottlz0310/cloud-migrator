@@ -1,0 +1,105 @@
+@inject ILogChannel LogChannel
+@implements IDisposable
+
+<MudText Typo="Typo.h5" Class="mb-4">ログ</MudText>
+
+<MudCard Elevation="2">
+    <MudCardHeader>
+        <CardHeaderContent>
+            <MudText Typo="Typo.subtitle1">リアルタイムログ</MudText>
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudChip T="string" Size="Size.Small" Color="@(_isConnected ? Color.Success : Color.Error)">
+                @(_isConnected ? "接続中" : "切断")
+            </MudChip>
+            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                           title="ログクリア"
+                           OnClick="ClearLogs" />
+        </CardHeaderActions>
+    </MudCardHeader>
+    <MudCardContent Style="height: 500px; overflow-y: auto;" @ref="_logContainer">
+        @if (_entries.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">ログエントリがありません。</MudText>
+        }
+        else
+        {
+            @foreach (var entry in _entries)
+            {
+                <div class="log-entry" style="margin-bottom: 2px; font-family: monospace; font-size: 12px;">
+                    <span style="color: #888;">@entry.Timestamp.LocalDateTime.ToString("HH:mm:ss")</span>
+                    <span style="color: @LevelColor(entry.Level); margin: 0 6px;">[@entry.Level]</span>
+                    <span>@entry.Message</span>
+                </div>
+            }
+        }
+    </MudCardContent>
+</MudCard>
+
+@code {
+    private readonly List<LogEntry> _entries = new(500);
+    private Guid _subscriberId;
+    private bool _isConnected;
+    private MudCardContent? _logContainer;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 直近のバッファを初回表示
+        _entries.AddRange(LogChannel.GetRecentEntries());
+
+        // リアルタイム購読を開始
+        _cts = new CancellationTokenSource();
+        var (id, reader) = LogChannel.Subscribe();
+        _subscriberId = id;
+        _isConnected = true;
+
+        // バックグラウンドで読み続ける（コンポーネント破棄で _cts がキャンセルされる）
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var entry in reader.ReadAllAsync(_cts.Token))
+                {
+                    _entries.Add(entry);
+                    // バッファ上限を超えたら最古を削除
+                    while (_entries.Count > 500)
+                        _entries.RemoveAt(0);
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 正常終了
+            }
+            finally
+            {
+                _isConnected = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+
+        await Task.CompletedTask;
+    }
+
+    private void ClearLogs()
+    {
+        _entries.Clear();
+    }
+
+    private static string LevelColor(string level) => level switch
+    {
+        "Error" or "Fatal" => "#f44336",
+        "Warning" => "#ff9800",
+        "Information" => "#2196f3",
+        "Debug" => "#9e9e9e",
+        _ => "#9e9e9e",
+    };
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        LogChannel.Unsubscribe(_subscriberId);
+    }
+}
