@@ -23,6 +23,13 @@ catch (Exception ex)
     Console.Error.WriteLine($"[WARN] AppData ディレクトリの作成に失敗しました: {ex.Message}");
 }
 
+// 非 Windows 環境チェック: CloudMigrator は Windows 専用アプリケーション（Windows Credential Manager 等）
+if (!OperatingSystem.IsWindows())
+{
+    Console.Error.WriteLine("[ERROR] CloudMigrator は Windows 専用アプリケーションです。Windows 環境で実行してください。");
+    return 1;
+}
+
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
 {
