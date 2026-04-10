@@ -68,11 +68,10 @@
 
     // ── ナビゲーションハンドラー ─────────────────────────────────────────
 
-    private async Task GoToRouteSelection()
+    private void GoToRouteSelection()
     {
         _state.Step0RouteSelection = WizardStepState.InProgress;
         _currentStep = WizardStep.RouteSelection;
-        await WizardStateService.SaveAsync(_state);
     }
 
     private async Task OnRouteSelected(WizardRoute route)
@@ -83,15 +82,12 @@
 
         if (route == WizardRoute.OneDriveToDropbox)
         {
-            _state.Step3DropboxOAuth = WizardStepState.InProgress;
             _currentStep = WizardStep.DropboxOAuth;
         }
         else
         {
             _currentStep = WizardStep.SharePointPlaceholder;
         }
-
-        await WizardStateService.SaveAsync(_state);
     }
 
     private void GoToDropboxOAuth()

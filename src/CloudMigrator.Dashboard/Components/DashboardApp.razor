@@ -1,5 +1,7 @@
 @using CloudMigrator.Core.Wizard
+@using CloudMigrator.Core.Credentials
 @inject IWizardStateService WizardStateService
+@inject ICredentialStore CredentialStore
 
 <MudThemeProvider Theme="_theme" />
 <MudDialogProvider />
@@ -97,8 +99,18 @@ else
     protected override async Task OnInitializedAsync()
     {
         var state = await WizardStateService.LoadAsync();
-        // wizard-state.json が不在（初回起動）またはウィザードが未完了の場合はウィザードを表示
-        _showWizard = !state.IsCompleted;
+        if (!state.IsCompleted)
+        {
+            // 初回起動またはウィザード未完了
+            _showWizard = true;
+        }
+        else
+        {
+            // 完了済みでも Credential Manager からキーが消えていたらウィザードを再表示
+            var hasCredential = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAppKey);
+            _showWizard = !hasCredential;
+        }
+
         _loading = false;
     }
 

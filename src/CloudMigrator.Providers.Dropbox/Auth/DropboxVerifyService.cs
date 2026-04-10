@@ -143,7 +143,9 @@ public sealed class DropboxVerifyService : IDropboxVerifyService
                 mute = true,
             });
 
-            using var content = new StringContent("cloudmigrator-preflight\n", System.Text.Encoding.UTF8, "application/octet-stream");
+            var preflightBytes = System.Text.Encoding.UTF8.GetBytes("cloudmigrator-preflight\n");
+            using var content = new ByteArrayContent(preflightBytes);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             using var uploadRequest = new HttpRequestMessage(HttpMethod.Post, $"{ContentBaseUrl}/files/upload");
             uploadRequest.Headers.Add("Dropbox-API-Arg", uploadArg);
             uploadRequest.Content = content;

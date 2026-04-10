@@ -50,9 +50,13 @@ public sealed class WizardStateService : IWizardStateService
 
         try
         {
-            await using var stream = File.OpenRead(_stateFilePath);
-            var state = await JsonSerializer.DeserializeAsync<WizardState>(stream, JsonOptions, cancellationToken)
-                .ConfigureAwait(false);
+            WizardState? state;
+            await using (var stream = File.OpenRead(_stateFilePath))
+            {
+                state = await JsonSerializer.DeserializeAsync<WizardState>(stream, JsonOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            // ストリームを閉じてから BackupAndReset を呼ぶ（Windows のファイルロック対策）
 
             if (state is null)
             {
@@ -61,13 +65,21 @@ public sealed class WizardStateService : IWizardStateService
                 return new WizardState();
             }
 
-            if (state.SchemaVersion != CurrentSchemaVersion)
+            if (state.SchemaVersion < CurrentSchemaVersion)
             {
                 _logger.LogWarning(
-                    "wizard-state.json の schemaVersion={Version} は未知です（現在の対応: {Current}）。バックアップ化して初期化します。",
+                    "wizard-state.json の schemaVersion={Version} は旧バージョンです（現在: {Current}）。バックアップ化して初期化します。",
                     state.SchemaVersion, CurrentSchemaVersion);
                 await BackupAndResetAsync(cancellationToken).ConfigureAwait(false);
                 return new WizardState();
+            }
+
+            if (state.SchemaVersion > CurrentSchemaVersion)
+            {
+                // 上位バージョンのファイル: 既知フィールドのみ best-effort で読み込む
+                _logger.LogWarning(
+                    "wizard-state.json の schemaVersion={Version} は未知の上位バージョンです（現在: {Current}）。既知フィールドのみ読み込みます。",
+                    state.SchemaVersion, CurrentSchemaVersion);
             }
 
             return state;
@@ -89,11 +101,11 @@ public sealed class WizardStateService : IWizardStateService
     public async Task SaveAsync(WizardState state, CancellationToken cancellationToken = default)
     {
         var toSave = state.ToSafeForPersistence();
+        var tmpPath = _stateFilePath + ".tmp";
 
         try
         {
             EnsureDirectoryExists();
-            var tmpPath = _stateFilePath + ".tmp";
             await using (var stream = File.Create(tmpPath))
             {
                 await JsonSerializer.SerializeAsync(stream, toSave, JsonOptions, cancellationToken)
@@ -106,6 +118,7 @@ public sealed class WizardStateService : IWizardStateService
         }
         catch (IOException ex)
         {
+            try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { /* ベストエフォート */ }
             _logger.LogError(ex, "wizard-state.json の保存に失敗しました。");
             throw;
         }
