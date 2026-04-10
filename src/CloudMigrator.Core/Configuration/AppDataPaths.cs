@@ -52,6 +52,9 @@ public static class AppDataPaths
     /// <summary>指定ファイル名のログパスを返す。</summary>
     public static string LogFile(string fileName) => Path.Combine(LogsDirectory, fileName);
 
+    /// <summary>wizard-state.json のフルパス: {DataDirectory}\wizard-state.json</summary>
+    public static string WizardStateFile() => Path.Combine(DataDirectory, "wizard-state.json");
+
     /// <summary>AppData 配下の必須ディレクトリをすべて作成する（冪等）。</summary>
     public static void EnsureDirectoriesExist()
     {

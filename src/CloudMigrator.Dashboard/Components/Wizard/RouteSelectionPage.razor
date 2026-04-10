@@ -1,0 +1,89 @@
+@using CloudMigrator.Core.Wizard
+
+@* Step 0: 移行路線選択 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
+    <MudStack Spacing="6">
+        <div>
+            <MudText Typo="Typo.h5">移行路線を選択してください</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                ファイルの移行元・移行先の組み合わせを選択します。
+            </MudText>
+        </div>
+
+        <MudStack Spacing="3">
+            @* OneDrive → Dropbox 路線 *@
+            <MudPaper Elevation="@(_selected == WizardRoute.OneDriveToDropbox ? 3 : 1)"
+                      Class="pa-4 cursor-pointer"
+                      Style="@RouteCardStyle(WizardRoute.OneDriveToDropbox)"
+                      @onclick="@(() => SelectRoute(WizardRoute.OneDriveToDropbox))"
+                      role="button"
+                      tabindex="0"
+                      @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") SelectRoute(WizardRoute.OneDriveToDropbox); })">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                    <MudIcon Icon="@Icons.Material.Filled.Cloud" Color="Color.Primary" />
+                    <div style="flex: 1;">
+                        <MudText Typo="Typo.subtitle1"><strong>OneDrive → Dropbox</strong></MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Personal OneDrive から Dropbox へファイルを移行します
+                        </MudText>
+                    </div>
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">v0.4.0 対応</MudChip>
+                </MudStack>
+            </MudPaper>
+
+            @* OneDrive → SharePoint 路線（v0.5.0 予定） *@
+            <MudPaper Elevation="@(_selected == WizardRoute.OneDriveToSharePoint ? 3 : 1)"
+                      Class="pa-4 cursor-pointer"
+                      Style="@RouteCardStyle(WizardRoute.OneDriveToSharePoint)"
+                      @onclick="@(() => SelectRoute(WizardRoute.OneDriveToSharePoint))"
+                      role="button"
+                      tabindex="0"
+                      @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") SelectRoute(WizardRoute.OneDriveToSharePoint); })">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                    <MudIcon Icon="@Icons.Material.Filled.Folder" Color="Color.Warning" />
+                    <div style="flex: 1;">
+                        <MudText Typo="Typo.subtitle1"><strong>OneDrive → SharePoint</strong></MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Personal OneDrive から SharePoint Document Library へ移行します
+                        </MudText>
+                    </div>
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small">v0.5.0 予定</MudChip>
+                </MudStack>
+            </MudPaper>
+        </MudStack>
+
+        @if (_selected != WizardRoute.None)
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       EndIcon="@Icons.Material.Filled.ArrowForward"
+                       OnClick="OnNextClick">
+                次へ
+            </MudButton>
+        }
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Parameter] public WizardRoute InitialRoute { get; set; } = WizardRoute.None;
+
+    /// <summary>路線が確定したときのコールバック（選択された路線を渡す）。</summary>
+    [Parameter] public EventCallback<WizardRoute> OnRouteSelected { get; set; }
+
+    private WizardRoute _selected;
+
+    protected override void OnParametersSet()
+    {
+        _selected = InitialRoute;
+    }
+
+    private void SelectRoute(WizardRoute route) => _selected = route;
+
+    private async Task OnNextClick() =>
+        await OnRouteSelected.InvokeAsync(_selected);
+
+    private string RouteCardStyle(WizardRoute route) =>
+        _selected == route
+            ? "border: 2px solid var(--mud-palette-primary); transition: all 0.2s;"
+            : "border: 2px solid transparent; transition: all 0.2s;";
+}

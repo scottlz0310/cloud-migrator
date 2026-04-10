@@ -1,0 +1,157 @@
+@using CloudMigrator.Core.Wizard
+@inject IWizardStateService WizardStateService
+@inject ISnackbar Snackbar
+
+@* ウィザードコンテナ: ステップ間のルーティングと状態管理を担う *@
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Primary">
+        <MudIcon Icon="@Icons.Material.Filled.CloudSync" Class="mr-2" />
+        <MudText Typo="Typo.h6">CloudMigrator セットアップ</MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.caption" Class="mr-4" Color="Color.Inherit">
+            @StepLabel(_currentStep)
+        </MudText>
+    </MudAppBar>
+
+    <MudMainContent>
+        @switch (_currentStep)
+        {
+            case WizardStep.Welcome:
+                <WelcomePage OnStartClick="GoToRouteSelection" />
+                break;
+
+            case WizardStep.RouteSelection:
+                <RouteSelectionPage InitialRoute="_state.SelectedRoute"
+                                    OnRouteSelected="OnRouteSelected" />
+                break;
+
+            case WizardStep.SharePointPlaceholder:
+                <SharePointPlaceholderPage OnBackClick="GoToRouteSelection" />
+                break;
+
+            case WizardStep.DropboxOAuth:
+                <DropboxOAuthPage OnBackClick="GoToRouteSelection"
+                                  OnAuthCompleted="GoToConnectionTest" />
+                break;
+
+            case WizardStep.ConnectionTest:
+                <ConnectionTestPage OnBackClick="GoToDropboxOAuth"
+                                    OnCompleteClick="CompleteWizardAsync" />
+                break;
+        }
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    /// <summary>ウィザードが完了したときのコールバック。</summary>
+    [Parameter] public EventCallback OnWizardCompleted { get; set; }
+
+    private WizardState _state = new();
+    private WizardStep _currentStep = WizardStep.Welcome;
+
+    private enum WizardStep
+    {
+        Welcome,
+        RouteSelection,
+        SharePointPlaceholder,
+        DropboxOAuth,
+        ConnectionTest,
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _state = await WizardStateService.LoadAsync();
+
+        // 中断再開: 最初の NotStarted/Failed ステップから再開
+        _currentStep = ResumeStep(_state);
+    }
+
+    // ── ナビゲーションハンドラー ─────────────────────────────────────────
+
+    private void GoToRouteSelection()
+    {
+        _state.Step0RouteSelection = WizardStepState.InProgress;
+        _currentStep = WizardStep.RouteSelection;
+    }
+
+    private async Task OnRouteSelected(WizardRoute route)
+    {
+        _state.SelectedRoute = route;
+        _state.Step0RouteSelection = WizardStepState.Verified;
+        await WizardStateService.SaveAsync(_state);
+
+        if (route == WizardRoute.OneDriveToDropbox)
+        {
+            _currentStep = WizardStep.DropboxOAuth;
+        }
+        else
+        {
+            _currentStep = WizardStep.SharePointPlaceholder;
+        }
+    }
+
+    private void GoToDropboxOAuth()
+    {
+        _state.Step3DropboxOAuth = WizardStepState.InProgress;
+        _currentStep = WizardStep.DropboxOAuth;
+    }
+
+    private async Task GoToConnectionTest()
+    {
+        _state.Step3DropboxOAuth = WizardStepState.Verified;
+        _state.Step4ConnectionTest = WizardStepState.InProgress;
+        _currentStep = WizardStep.ConnectionTest;
+        await WizardStateService.SaveAsync(_state);
+    }
+
+    private async Task CompleteWizardAsync()
+    {
+        _state.Step4ConnectionTest = WizardStepState.Verified;
+        _state.IsCompleted = true;
+        await WizardStateService.SaveAsync(_state);
+        Snackbar.Add("セットアップが完了しました！ダッシュボードへ移動します。", Severity.Success);
+        await OnWizardCompleted.InvokeAsync();
+    }
+
+    // ── ヘルパー ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 状態から再開すべきステップを決定する。
+    /// 完了済みの場合はウィザードを起動しないのが設計上の前提だが、フォールバックとして Welcome を返す。
+    /// </summary>
+    private static WizardStep ResumeStep(WizardState state)
+    {
+        if (state.IsCompleted)
+            return WizardStep.Welcome;
+
+        // Step 0 が未完了
+        if (state.Step0RouteSelection != WizardStepState.Verified)
+            return WizardStep.RouteSelection;
+
+        // Dropbox 路線: Step 3 が未完了
+        if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
+            state.Step3DropboxOAuth != WizardStepState.Verified)
+            return WizardStep.DropboxOAuth;
+
+        // Dropbox 路線: Step 4 が未完了
+        if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
+            state.Step4ConnectionTest != WizardStepState.Verified)
+            return WizardStep.ConnectionTest;
+
+        // SharePoint 路線（v0.5.0 予定）
+        if (state.SelectedRoute == WizardRoute.OneDriveToSharePoint)
+            return WizardStep.SharePointPlaceholder;
+
+        return WizardStep.Welcome;
+    }
+
+    private static string StepLabel(WizardStep step) => step switch
+    {
+        WizardStep.Welcome               => "ようこそ",
+        WizardStep.RouteSelection        => "Step 0: 移行路線の選択",
+        WizardStep.SharePointPlaceholder => "SharePoint 路線（v0.5.0 予定）",
+        WizardStep.DropboxOAuth          => "Step 3: Dropbox 連携",
+        WizardStep.ConnectionTest        => "Step 4: 接続テスト",
+        _                                => string.Empty,
+    };
+}

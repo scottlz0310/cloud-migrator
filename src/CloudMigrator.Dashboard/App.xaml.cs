@@ -1,10 +1,13 @@
 using System.IO;
 using System.Windows;
 using CloudMigrator.Core.Configuration;
+using CloudMigrator.Core.Credentials;
 using CloudMigrator.Core.Setup;
 using CloudMigrator.Core.State;
 using CloudMigrator.Core.Transfer;
+using CloudMigrator.Core.Wizard;
 using CloudMigrator.Observability;
+using CloudMigrator.Providers.Dropbox.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
@@ -112,6 +115,12 @@ public partial class App : Application
 
         // ── WPF Host サービス ──────────────────────────────────────────────
         services.AddSingleton<INativeDialogService, WpfDialogService>();
+
+        // ── Wizard ────────────────────────────────────────────────────────────
+        services.AddSingleton<IWizardStateService, WizardStateService>();
+        services.AddSingleton<ICredentialStore>(_ => CredentialStoreFactory.Create());
+        services.AddSingleton<IDropboxOAuthService, DropboxOAuthService>();
+        services.AddSingleton<IDropboxVerifyService, DropboxVerifyService>();
 
         // ── HTTP ─────────────────────────────────────────────────────────────
         services.AddHttpClient();

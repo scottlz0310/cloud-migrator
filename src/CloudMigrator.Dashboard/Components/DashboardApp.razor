@@ -1,7 +1,25 @@
+@using CloudMigrator.Core.Wizard
+@using CloudMigrator.Core.Credentials
+@inject IWizardStateService WizardStateService
+@inject ICredentialStore CredentialStore
+
 <MudThemeProvider Theme="_theme" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
+@if (_loading)
+{
+    @* 初回起動チェック中はスプラッシュ表示 *@
+    <MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="d-flex justify-center align-center" Style="height: 100vh;">
+        <MudProgressCircular Indeterminate="true" />
+    </MudContainer>
+}
+else if (_showWizard)
+{
+    <WizardApp OnWizardCompleted="OnWizardCompleted" />
+}
+else
+{
 <MudLayout>
     <MudAppBar Elevation="1" Color="Color.Primary">
         <MudIcon Icon="@Icons.Material.Filled.Cloud" Class="mr-2" />
@@ -28,6 +46,11 @@
                         OnClick="@(() => _currentPage = Page.Logs)">
                 ログ
             </MudNavLink>
+            <MudDivider />
+            <MudNavLink Icon="@Icons.Material.Filled.RestartAlt"
+                        OnClick="ResetWizardAsync">
+                セットアップをやり直す
+            </MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
@@ -51,9 +74,12 @@
         </MudContainer>
     </MudMainContent>
 </MudLayout>
+}
 
 @code {
     private Page _currentPage = Page.Dashboard;
+    private bool _loading = true;
+    private bool _showWizard;
 
     private static readonly MudTheme _theme = new()
     {
@@ -69,4 +95,46 @@
         typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     private enum Page { Dashboard, Settings, Doctor, Logs }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await WizardStateService.LoadAsync();
+        if (!state.IsCompleted)
+        {
+            // 初回起動またはウィザード未完了
+            _showWizard = true;
+        }
+        else
+        {
+            // 完了済みでも Dropbox の必須クレデンシャルが消えていたらウィザードを再表示
+            var hasAppKey = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAppKey);
+            var hasAccessToken = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAccessToken);
+            if (!(hasAppKey && hasAccessToken))
+            {
+                // 強制再表示時は永続化された状態も未完了に戻し、
+                // 途中中断後の次回起動でもウィザードが再表示されるようにする
+                await WizardStateService.ResetAsync();
+                _showWizard = true;
+            }
+            else
+            {
+                _showWizard = false;
+            }
+        }
+
+        _loading = false;
+    }
+
+    private async Task OnWizardCompleted()
+    {
+        _showWizard = false;
+        _currentPage = Page.Dashboard;
+        await Task.CompletedTask;
+    }
+
+    private async Task ResetWizardAsync()
+    {
+        await WizardStateService.ResetAsync();
+        _showWizard = true;
+    }
 }

@@ -1,0 +1,173 @@
+@using CloudMigrator.Core.Credentials
+@using CloudMigrator.Core.Wizard
+@using CloudMigrator.Providers.Dropbox.Auth
+@inject IDropboxOAuthService OAuthService
+@inject ICredentialStore CredentialStore
+@inject ISnackbar Snackbar
+
+@* Step 3: Dropbox OAuth 連携 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
+    <MudStack Spacing="6">
+        <div>
+            <MudText Typo="Typo.h5">Dropbox と連携する</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                Dropbox App Key を入力し、ブラウザで認証を完了してください。
+            </MudText>
+        </div>
+
+        @* Dropbox App Console 手順ガイド *@
+        <MudExpansionPanels>
+            <MudExpansionPanel Text="Dropbox App Console の設定手順（初回のみ）" Icon="@Icons.Material.Filled.HelpOutline">
+                <MudStack Spacing="2" Class="pa-2">
+                    <MudText Typo="Typo.body2"><strong>D-1.</strong> <MudLink Href="https://www.dropbox.com/developers/apps" Target="_blank">Dropbox App Console</MudLink> を開く</MudText>
+                    <MudText Typo="Typo.body2"><strong>D-2.</strong> 「Create app」→「Scoped access」→「Full Dropbox」を選択</MudText>
+                    <MudText Typo="Typo.body2"><strong>D-3.</strong> アプリ名を入力して作成</MudText>
+                    <MudText Typo="Typo.body2"><strong>D-4.</strong> 「Permissions」タブで <code>files.content.write</code> / <code>files.content.read</code> にチェック →「Submit」</MudText>
+                    <MudText Typo="Typo.body2"><strong>D-5.</strong> 「Settings」タブの「Redirect URIs」に以下を登録:</MudText>
+                    <MudPaper Elevation="0" Class="pa-2" Style="background: var(--mud-palette-background-grey); font-family: monospace; font-size: 12px;">
+                        http://127.0.0.1:54321/callback<br />
+                        http://127.0.0.1:54322/callback<br />
+                        http://127.0.0.1:54323/callback<br />
+                        http://127.0.0.1:54324/callback<br />
+                        http://127.0.0.1:54325/callback
+                    </MudPaper>
+                    <MudText Typo="Typo.body2"><strong>D-6.</strong> 「App key」をコピーして下の入力欄に貼り付ける</MudText>
+                </MudStack>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+
+        @* App Key 入力 *@
+        <MudTextField @bind-Value="_appKey"
+                      Label="Dropbox App Key"
+                      Variant="Variant.Outlined"
+                      Placeholder="例: abcdefghij0123456"
+                      Disabled="@_isAuthenticating"
+                      HelperText="Dropbox App Console の「Settings」タブから取得してください。" />
+
+        @* 認証ボタン *@
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.OpenInBrowser"
+                   Disabled="@(string.IsNullOrWhiteSpace(_appKey) || _isAuthenticating)"
+                   OnClick="StartAuthAsync">
+            @if (_isAuthenticating)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>認証中... ブラウザで操作してください</span>
+            }
+            else
+            {
+                <span>Dropbox で認証する</span>
+            }
+        </MudButton>
+
+        @if (_authError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true"
+                      CloseIconClicked="@(() => _authError = null)">
+                @_authError
+            </MudAlert>
+        }
+
+        @if (_isVerified)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true">
+                認証が完了しました。トークンを Credential Manager に保存しました。
+            </MudAlert>
+        }
+
+        @* キャンセル/戻るボタン *@
+        @if (!_isAuthenticating)
+        {
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       OnClick="OnBackClick">
+                路線選択に戻る
+            </MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Error"
+                       OnClick="CancelAuth">
+                キャンセル
+            </MudButton>
+        }
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Parameter] public EventCallback OnBackClick { get; set; }
+
+    /// <summary>認証が正常に完了したときのコールバック。</summary>
+    [Parameter] public EventCallback OnAuthCompleted { get; set; }
+
+    private string _appKey = string.Empty;
+    private bool _isAuthenticating;
+    private bool _isVerified;
+    private string? _authError;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 既に App Key が保存されていれば事前入力する
+        var savedAppKey = await CredentialStore.GetAsync(CredentialKeys.DropboxAppKey);
+        if (!string.IsNullOrEmpty(savedAppKey))
+        {
+            _appKey = savedAppKey;
+            // 既にトークンがある場合は Verified 済みとして表示
+            var hasToken = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAccessToken);
+            _isVerified = hasToken;
+        }
+    }
+
+    private async Task StartAuthAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_appKey)) return;
+
+        _isAuthenticating = true;
+        _isVerified = false;
+        _authError = null;
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            var result = await OAuthService.AuthorizeAsync(_appKey.Trim(), _cts.Token);
+
+            // Credential Manager に保存
+            await CredentialStore.SaveAsync(CredentialKeys.DropboxAppKey, _appKey.Trim(), _cts.Token);
+            await CredentialStore.SaveAsync(CredentialKeys.DropboxAccessToken, result.AccessToken, _cts.Token);
+            if (!string.IsNullOrEmpty(result.RefreshToken))
+                await CredentialStore.SaveAsync(CredentialKeys.DropboxRefreshToken, result.RefreshToken, _cts.Token);
+
+            _isVerified = true;
+            Snackbar.Add("Dropbox 認証が完了しました", Severity.Success);
+            await OnAuthCompleted.InvokeAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            _authError = "認証がキャンセルされました。";
+        }
+        catch (DropboxOAuthException ex)
+        {
+            _authError = $"認証エラー: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _authError = $"予期しないエラーが発生しました: {ex.Message}";
+        }
+        finally
+        {
+            _isAuthenticating = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
+    }
+
+    private void CancelAuth()
+    {
+        _cts?.Cancel();
+        _authError = "認証がキャンセルされました。";
+    }
+}

@@ -8,6 +8,24 @@
 ## [Unreleased]
 
 ### Added
+- **オンボーディングウィザード UI スケルトン** (Issue #113)
+  - `WizardStepState` 列挙型: `NotStarted` / `InProgress` / `Verified` / `Failed` / `Skipped`
+  - `WizardRoute` 列挙型: `None` / `OneDriveToDropbox` / `OneDriveToSharePoint`
+  - `WizardState`: `wizard-state.json` 永続化モデル（`ToSafeForPersistence` で InProgress→NotStarted 変換）
+  - `IWizardStateService` / `WizardStateService` (Core.Wizard): ファイル読み書き・初期化・バックアップ・リセット
+  - `AppDataPaths.WizardStateFile()`: `%APPDATA%\CloudMigrator\wizard-state.json`
+  - `IDropboxVerifyService` / `DropboxVerifyService` (Providers.Dropbox): Credential / Discovery / Preflight 3層検証
+  - Blazor Wizard コンポーネント群 (Dashboard):
+    - `WelcomePage.razor`: 起動時の Welcome 画面
+    - `RouteSelectionPage.razor`: Step 0 移行路線選択（OneDrive→Dropbox / OneDrive→SharePoint）
+    - `SharePointPlaceholderPage.razor`: SharePoint 路線「v0.5.0 で対応予定」プレースホルダー
+    - `DropboxOAuthPage.razor`: Step 3 Dropbox OAuth 連携（App Console 手順ガイド D-1〜D-6 + App Key 入力 + 認証）
+    - `ConnectionTestPage.razor`: Step 4 接続テスト（3層 Verify 実行・失敗層の特定表示）
+    - `WizardApp.razor`: ステップルーティング・状態管理コンテナ（中断再開ロジック含む）
+  - `DashboardApp.razor`: 初回起動検出（`wizard-state.json` 不在またはウィザード未完了でウィザード表示）・「セットアップをやり直す」メニューエントリ
+  - `CloudMigrator.Dashboard.csproj`: `CloudMigrator.Providers.Dropbox` プロジェクト参照を追加
+  - `App.xaml.cs`: `IWizardStateService` / `ICredentialStore` / `IDropboxOAuthService` / `IDropboxVerifyService` の DI 登録
+
 - **Dropbox OAuth 2.0 PKCE フロー** (Issue #112)
   - `IDropboxOAuthService` / `DropboxOAuthService`: PKCE（`code_challenge_method=S256`）+ 固定ポート `54321–54325` + ポート競合フォールバック
   - `DropboxTokenResult` / `DropboxRefreshResult`: OAuth 結果レコード

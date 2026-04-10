@@ -202,37 +202,37 @@ Welcome
 
 ### 実装タスク（v0.4.0）
 
-- [ ] `WizardStepState` enum 定義（`NotStarted` / `InProgress` / `Verified` / `Failed` / `Skipped`）
-- [ ] `wizard-state.json` 読み書きサービス実装（スキーマバージョン管理・破損時フォールバックを含む）
+- [x] `WizardStepState` enum 定義（`NotStarted` / `InProgress` / `Verified` / `Failed` / `Skipped`）
+- [x] `wizard-state.json` 読み書きサービス実装（スキーマバージョン管理・破損時フォールバックを含む）
   - 保存先: `%APPDATA%\CloudMigrator\wizard-state.json`
   - `InProgress` はファイルに書き出さない（`NotStarted` に戻してから保存）
   - 未知 `schemaVersion` / パース失敗時: `wizard-state.backup.json` にリネーム → 初期化
-- [ ] アプリ終了時に `InProgress` → `NotStarted` で保存するシャットダウンフック実装
-- [ ] Welcome 画面 UI（MudBlazor）
-- [ ] Step 0: 移行路線選択 UI（MudBlazor）
-  - [ ] SharePoint 路線選択時の「v0.5.0 で対応予定」プレースホルダー画面
-- [ ] ステップ間の進行制御（前ステップが `Verified`/`Skipped` でないと進めない）
-- [ ] 初回起動検出ロジック（`wizard-state.json` 不在 + Credential 未登録の複合判定）
-- [ ] 中断再開ロジック（最初の `NotStarted`/`Failed` から再開）
-- [ ] Step 4: 接続テスト UI（Dropbox 路線のみ・DI 経由で doctor/verify 呼び出し）
-  - [ ] Credential Verify → Discovery Verify → Migration Preflight の 3 層を順に実行
-  - [ ] 失敗時の原因層・ステップ特定表示
-- [ ] 「セットアップをやり直す」メニューエントリ（全ステップ `NotStarted` リセット）
-- [ ] 完了後のダッシュボードへの遷移
+- [x] アプリ終了時に `InProgress` → `NotStarted` で保存するシャットダウンフック実装
+- [x] Welcome 画面 UI（MudBlazor）
+- [x] Step 0: 移行路線選択 UI（MudBlazor）
+  - [x] SharePoint 路線選択時の「v0.5.0 で対応予定」プレースホルダー画面
+- [x] ステップ間の進行制御（前ステップが `Verified`/`Skipped` でないと進めない）
+- [x] 初回起動検出ロジック（`wizard-state.json` 不在 + Credential 未登録の複合判定）
+- [x] 中断再開ロジック（最初の `NotStarted`/`Failed` から再開）
+- [x] Step 4: 接続テスト UI（Dropbox 路線のみ・DI 経由で doctor/verify 呼び出し）
+  - [x] Credential Verify → Discovery Verify → Migration Preflight の 3 層を順に実行
+  - [x] 失敗時の原因層・ステップ特定表示
+- [x] 「セットアップをやり直す」メニューエントリ（全ステップ `NotStarted` リセット）
+- [x] 完了後のダッシュボードへの遷移
 
 ### 受け入れ基準（v0.4.0）
 
-- [ ] 初回起動時にウィザードが自動表示される（`wizard-state.json` 不在が主判定条件）
-- [ ] Step 0 で SharePoint 路線を選択すると「v0.5.0 で対応予定」画面が表示される
-- [ ] Dropbox 路線でステップ 0→3→4 がエンド・ツー・エンドで動作する
-- [ ] Step 4 が Credential Verify → Discovery Verify → Migration Preflight の 3 層を実行する
+- [x] 初回起動時にウィザードが自動表示される（`wizard-state.json` 不在が主判定条件）
+- [x] Step 0 で SharePoint 路線を選択すると「v0.5.0 で対応予定」画面が表示される
+- [x] Dropbox 路線でステップ 0→3→4 がエンド・ツー・エンドで動作する
+- [x] Step 4 が Credential Verify → Discovery Verify → Migration Preflight の 3 層を実行する
 - [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される
-- [ ] `InProgress` 状態でアプリを終了した場合、`wizard-state.json` には `NotStarted` として保存される
-- [ ] 中断後の再起動で最初の未完了ステップから再開できる
-- [ ] Step 4 接続テスト失敗時に失敗した層（Credential / Discovery / Preflight）が表示される
-- [ ] ウィザード完了後にダッシュボードに遷移し、ファイル転送が実行できる状態になっている
-- [ ] `schemaVersion` が未知の `wizard-state.json` を読み込んだ際にバックアップ化・初期化が行われる
-- [ ] オンボーディング完了後、Migration Runtime が config.json と Credential Manager の値を変換なしに読み込める
+- [x] `InProgress` 状態でアプリを終了した場合、`wizard-state.json` には `NotStarted` として保存される
+- [x] 中断後の再起動で最初の未完了ステップから再開できる
+- [x] Step 4 接続テスト失敗時に失敗した層（Credential / Discovery / Preflight）が表示される
+- [x] ウィザード完了後にダッシュボードに遷移し、ファイル転送が実行できる状態になっている
+- [x] `schemaVersion` が未知の `wizard-state.json` を読み込んだ際にバックアップ化・初期化が行われる
+- [x] オンボーディング完了後、Migration Runtime が config.json と Credential Manager の値を変換なしに読み込める
 
 ---
 
