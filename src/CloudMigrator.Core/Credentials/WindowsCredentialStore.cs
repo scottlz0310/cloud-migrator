@@ -78,8 +78,13 @@ public sealed class WindowsCredentialStore : ICredentialStore
             var bytes = new byte[cred.CredentialBlobSize];
             Marshal.Copy(cred.CredentialBlob, bytes, 0, bytes.Length);
 
-            // UTF-8 でデコード（SaveAsync と対称）
-            var value = Encoding.UTF8.GetString(bytes).TrimEnd('\0');
+            // UTF-8 でデコードを試みる（SaveAsync の新方式）。
+            // 旧バージョンは Encoding.Unicode（UTF-16LE）で保存していたため、
+            // UTF-8 デコード結果に \0 が含まれる場合は UTF-16LE へフォールバックする。
+            var utf8Decoded = Encoding.UTF8.GetString(bytes);
+            var value = utf8Decoded.Contains('\0')
+                ? Encoding.Unicode.GetString(bytes).TrimEnd('\0')
+                : utf8Decoded;
             return Task.FromResult<string?>(string.IsNullOrEmpty(value) ? null : value);
         }
         finally
