@@ -106,9 +106,10 @@ else
         }
         else
         {
-            // 完了済みでも Credential Manager からキーが消えていたらウィザードを再表示
-            var hasCredential = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAppKey);
-            _showWizard = !hasCredential;
+            // 完了済みでも Dropbox の必須クレデンシャルが消えていたらウィザードを再表示
+            var hasAppKey = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAppKey);
+            var hasAccessToken = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAccessToken);
+            _showWizard = !(hasAppKey && hasAccessToken);
         }
 
         _loading = false;

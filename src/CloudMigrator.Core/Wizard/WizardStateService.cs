@@ -7,7 +7,7 @@ namespace CloudMigrator.Core.Wizard;
 /// <summary>
 /// wizard-state.json を <c>%APPDATA%\CloudMigrator\</c> に読み書きする <see cref="IWizardStateService"/> 実装。
 /// <list type="bullet">
-///   <item><description>未知の <c>schemaVersion</c> / パース失敗時: バックアップ化 → 初期化。</description></item>
+///   <item><description>旧 <c>schemaVersion</c>（<c>&lt; CurrentSchemaVersion</c>）またはパース失敗時: バックアップ化 → 初期化。上位バージョンは既知フィールドのみ best-effort 読み込み（保存時に <c>CurrentSchemaVersion</c> へダウングレード）。</description></item>
 ///   <item><description><see cref="WizardStepState.InProgress"/> はファイルに書き出さない（<see cref="WizardStepState.NotStarted"/> に戻してから保存）。</description></item>
 /// </list>
 /// </summary>

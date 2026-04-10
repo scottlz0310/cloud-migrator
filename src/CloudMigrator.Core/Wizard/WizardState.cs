@@ -40,7 +40,8 @@ public sealed class WizardState
 
         return new WizardState
         {
-            SchemaVersion = SchemaVersion,
+            // 上位バージョンで読み込んだ場合でも既知バージョンにダウングレードして保存する
+            SchemaVersion = WizardStateService.CurrentSchemaVersion,
             SelectedRoute = SelectedRoute,
             Step0RouteSelection = Safe(Step0RouteSelection),
             Step3DropboxOAuth = Safe(Step3DropboxOAuth),

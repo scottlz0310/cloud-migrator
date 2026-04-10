@@ -50,7 +50,6 @@ public sealed class DropboxVerifyServiceTests
                 });
         }
 
-        var client = new HttpClient(handler.Object);
         var factory = new Mock<IHttpClientFactory>();
         // 毎回新しい HttpClient を生成（DropboxVerifyService は各層で using var http を使うため）
         factory.Setup(f => f.CreateClient(It.IsAny<string>()))
