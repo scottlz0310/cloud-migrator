@@ -146,38 +146,39 @@ cloud-migrator/dropbox/refresh-token
 
 ### 事前調査（Spike）
 
-- [ ] **Spike 1 完了**: Dropbox App Console でのリダイレクト URI ポート仕様確認
-  - 期待結果 A（ポート未指定OK）→ ランダムポート方式採用
-  - 期待結果 B（ポート固定必須）→ 固定ポート方式（`http://127.0.0.1:54321` 等）にフォールバック
-  - **結果を Issue #112 に記録すること**
+- [x] **Spike 1 完了**: Dropbox App Console でのリダイレクト URI ポート仕様確認
+  - 結果 B（ポート固定必須）→ 固定ポート方式（`http://127.0.0.1:54321–54325`）+ ポート競合フォールバック
+  - **結果を Issue #112 に記録済み**
 - ~~Spike 2（WebView2 動作確認）~~: #114 の完了をもって解決済みとみなす
 
-### 実装タスク
+### 実装タスク (バックエンド層 Phase 112a)
 
-- [ ] Dropbox App Console 登録手順ガイド UI（D-1〜D-5、Public Client 方式として説明）
-- [ ] App Key 入力フォーム → Credential Manager 保存（`cloud-migrator/dropbox/app-key`）
-- [ ] PKCE `code_verifier` / `code_challenge` 生成ユーティリティ
-- [ ] Dropbox OAuth 認可 URL 組み立て（`client_secret` パラメータなし）
-- [ ] ポート選択 + 一時 HTTP リスナー実装（Spike 1 結果に応じてランダム or 固定）
-- [ ] コールバックキャプチャ実装（WPF Host の WebView2 `NavigationStarting` を使用）
-- [ ] `token` エンドポイントへのリクエスト処理（`client_secret` 省略）
-- [ ] トークンの Credential Manager 保存（`dropbox/access-token` / `dropbox/refresh-token`）
-- [ ] トークンライフサイクル管理:
-  - [ ] Access Token 有効期限切れ時の透過的リフレッシュ実装
-  - [ ] Refresh Token 失効検知（401 レスポンス）
-  - [ ] 失効時の Credential 削除 + UI 通知 + Step 3 を `NotStarted` に戻す実装
-- [ ] 既存 `DropboxStorageProvider` への Credential Manager 対応（#109 連携）
+- [x] PKCE `code_verifier` / `code_challenge` 生成 (`DropboxOAuthService`)
+- [x] Dropbox OAuth 認可 URL 組み立て (`client_secret` パラメータなし)
+- [x] 固定ポート + 一時 HTTP リスナー実装 (54321–54325 フォールバック)
+- [x] コールバックキャプチャ実装 (`WaitForCallbackAsync`)
+- [x] `token` エンドポイントへのリクエスト処理 (`ExchangeCodeAsync`)
+- [x] `IDropboxOAuthService` / `DropboxTokenResult` / `DropboxRefreshResult` / `DropboxOAuthException` 実装
+- [x] トークンライフサイクル管理:
+  - [x] `DropboxStorageProvider` Credential Store コンストラクタ追加
+  - [x] Access Token 有効期限切れ時の透過的リフレッシュ (oAuthService パス)
+  - [x] Refresh Token 失効検知 (IsTokenExpired) + Credential 削除 + 再認証例外送出
+- [x] 既存 `DropboxStorageProvider` への Credential Manager 対応 (#109 連携)
+- [ ] Dropbox App Console 登録手順ガイド UI（D-1〜D-5）← #113 で対応予定
+- [ ] App Key 入力フォーム → Credential Manager 保存    ← #113 で対応予定
+- [ ] コールバックキャプチャ（WPF WebView2 `NavigationStarting` 利用）← #113 で対応予定
+- [ ] 失効時の UI 通知 + Step 3 を `NotStarted` に戻す実装  ← #113 で対応予定
 
 ### 受け入れ基準
 
-- [ ] **Spike 1 が完了しており、リダイレクト URI 方式が確定している**
-- [ ] App Key のみで認証が完結できる（App Secret 入力不要）
-- [ ] App Key はユーザーが自身で登録・入力する（バイナリ埋め込みなし）
-- [ ] ウィザードの「Dropbox と連携」ボタンからブラウザ認証を完了できる
-- [ ] 取得したトークンが自動的に Credential Manager に保存される
-- [ ] 次回起動時にトークンが自動読み込みされ、再認証不要
-- [ ] Access Token 有効期限切れ時に透過的リフレッシュが動作する
-- [ ] Refresh Token 失効時に UI 通知 + Step 3 再認証フローへの誘導が動作する
+- [x] **Spike 1 が完了しており、リダイレクト URI 方式が確定している**
+- [x] App Key のみで認証が完結できる（App Secret 入力不要）
+- [ ] App Key はユーザーが自身で登録・入力する（バイナリ埋め込みなし）← UI #113
+- [ ] ウィザードの「Dropbox と連携」ボタンからブラウザ認証を完了できる ← UI #113
+- [x] 取得したトークンが自動的に Credential Manager に保存される
+- [x] 次回起動時にトークンが自動読み込みされ、再認証不要
+- [x] Access Token 有効期限切れ時に透過的リフレッシュが動作する
+- [x] Refresh Token 失効時に Credential 削除 + 再認証例外送出が動作する
 
 ---
 
