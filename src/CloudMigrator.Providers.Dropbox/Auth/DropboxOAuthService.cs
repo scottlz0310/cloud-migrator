@@ -59,11 +59,11 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
         // state / code_challenge 等の機微情報はログに出さず、認可エンドポイントのみ記録する
         _logger.LogInformation("ブラウザで Dropbox 認可ページを開いています: {Endpoint}", AuthorizeEndpoint);
 
-        // 既定のブラウザで認可ページを開く
-        Process.Start(new ProcessStartInfo(authUrl) { UseShellExecute = true });
-
         try
         {
+            // 既定のブラウザで認可ページを開く（try 内で実行し、失敗時も listener を確実に解放）
+            Process.Start(new ProcessStartInfo(authUrl) { UseShellExecute = true });
+
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromMinutes(5));
 
@@ -143,6 +143,15 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
             {
                 // ポートが使用中 — 次のポートを試す
                 listener.Close();
+            }
+            catch (HttpListenerException ex)
+            {
+                // 権限不足・URLACL 未登録・不正な Prefix 等、ポート競合以外のエラーは回復不可
+                listener.Close();
+                throw new DropboxOAuthException(
+                    $"OAuth リスナーを起動できませんでした（ポート {port}）。" +
+                    $"URLACL の登録漏れまたは権限不足の可能性があります: {ex.Message}",
+                    ex);
             }
         }
 
