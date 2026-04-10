@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -58,6 +59,9 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
         // state / code_challenge 等の機微情報はログに出さず、認可エンドポイントのみ記録する
         _logger.LogInformation("ブラウザで Dropbox 認可ページを開いています: {Endpoint}", AuthorizeEndpoint);
 
+        // 既定のブラウザで認可ページを開く
+        Process.Start(new ProcessStartInfo(authUrl) { UseShellExecute = true });
+
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -94,7 +98,8 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogError("トークンリフレッシュ失敗: {Status}", response.StatusCode);
+            var bodySummary = body.Length > 512 ? $"{body[..512]}..." : body;
+            _logger.LogError("トークンリフレッシュ失敗: {Status} Body: {Body}", response.StatusCode, bodySummary);
 
             if (response.StatusCode == HttpStatusCode.Unauthorized ||
                 response.StatusCode == HttpStatusCode.Forbidden)
@@ -119,6 +124,12 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
     /// </summary>
     internal static (HttpListener Listener, int Port) StartListener()
     {
+        // Windows: ERROR_ALREADY_EXISTS(183) / WSAEADDRINUSE(10048)
+        // Linux/macOS: EADDRINUSE(98) — アドレス使用中はフォールバック、それ以外は即時再スロー
+        const int ErrorAlreadyExists = 183;
+        const int WsaeAddrinUse = 10048;
+        const int EAddrInUse = 98;
+
         foreach (var port in CallbackPorts)
         {
             var listener = new HttpListener();
@@ -128,9 +139,9 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
                 listener.Start();
                 return (listener, port);
             }
-            catch (HttpListenerException)
+            catch (HttpListenerException ex) when (ex.ErrorCode is ErrorAlreadyExists or WsaeAddrinUse or EAddrInUse)
             {
-                // ポート競合 — 次のポートを試す
+                // ポートが使用中 — 次のポートを試す
                 listener.Close();
             }
         }
@@ -140,10 +151,10 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
             $"ポート {string.Join(", ", CallbackPorts)} がすべて使用中です。");
     }
 
-    private static string BuildRedirectUri(int port) =>
+    internal static string BuildRedirectUri(int port) =>
         $"http://127.0.0.1:{port}{CallbackPath}/";
 
-    private static string BuildAuthorizationUrl(string appKey, string redirectUri, string codeChallenge, string state)
+    internal static string BuildAuthorizationUrl(string appKey, string redirectUri, string codeChallenge, string state)
     {
         var query = new StringBuilder("?");
         query.Append("client_id=").Append(Uri.EscapeDataString(appKey));
@@ -224,7 +235,8 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogError("PKCE トークン交換失敗: {Status}", response.StatusCode);
+            var bodySummary = body.Length > 512 ? $"{body[..512]}..." : body;
+            _logger.LogError("PKCE トークン交換失敗: {Status} Body: {Body}", response.StatusCode, bodySummary);
             throw new DropboxOAuthException($"PKCE トークン交換に失敗しました: {response.StatusCode}");
         }
 

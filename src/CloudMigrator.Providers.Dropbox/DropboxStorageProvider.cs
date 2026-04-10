@@ -90,7 +90,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
         _logger = logger;
         _credentialStore = credentialStore;
         _oAuthService = oAuthService;
-        _accessToken = string.Empty;  // 初回 API 呼び出し前に EnsureTokenLoadedAsync で設定される
+        _accessToken = string.Empty;  // 初回 API 呼び出し前に EnsureAccessTokenAsync で設定される
         _options = options ?? new DropboxStorageOptions();
         _httpClient = httpClient ?? new HttpClient();
         _ownsHttpClient = httpClient is null || disposeHttpClient;
@@ -969,7 +969,9 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
             {
                 // IDropboxOAuthService（PKCE）ベースのリフレッシュ
                 var appKey = await _credentialStore.GetAsync(CredentialKeys.DropboxAppKey, ct).ConfigureAwait(false)
-                    ?? throw new InvalidOperationException("Dropbox App Key が Credential Store に存在しません。");
+                    ?? throw new DropboxOAuthException(
+                        "Dropbox App Key が Credential Store に存在しません。初回セットアップが必要です。",
+                        "token_not_found");
                 var refreshToken = await _credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken, ct).ConfigureAwait(false)
                     ?? throw new DropboxOAuthException(
                         "Dropbox リフレッシュトークンが Credential Store に存在しません。再認証が必要です。",

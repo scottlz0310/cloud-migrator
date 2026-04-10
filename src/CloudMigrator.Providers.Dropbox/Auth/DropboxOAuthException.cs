@@ -8,7 +8,7 @@ public sealed class DropboxOAuthException : Exception
     /// <summary>OAuth エラーコード（例: invalid_grant, token_revoked, token_not_found）。</summary>
     public string? ErrorCode { get; }
 
-    /// <summary>トークンが失効（401/403）したため再認証が必要かどうか。</summary>
+    /// <summary>トークンまたは認証情報が失効または欠如しており、再認証が必要かどうか。</summary>
     public bool IsTokenExpired { get; }
 
     public DropboxOAuthException(string message, bool isTokenExpired = false)

@@ -446,20 +446,14 @@ public class DropboxOAuthServiceTests
 }
 
 /// <summary>
-/// internal static メソッドのテスト用ヘルパー（InternalsVisibleTo が不要な場合はリフレクション不要）。
-/// DropboxOAuthService の private static メソッドを internal に昇格したものを呼ぶ。
+/// DropboxOAuthService の internal static メソッド テスト用ヘルパー。
+/// InternalsVisibleTo によりテストプロジェクトから直接呼び出せる。
 /// </summary>
 internal static class DropboxOAuthServiceTestHelper
 {
     public static string BuildRedirectUri(int port) =>
-        (string)typeof(DropboxOAuthService)
-            .GetMethod("BuildRedirectUri",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
-            .Invoke(null, [port])!;
+        DropboxOAuthService.BuildRedirectUri(port);
 
     public static string BuildAuthorizationUrl(string appKey, string redirectUri, string codeChallenge, string state) =>
-        (string)typeof(DropboxOAuthService)
-            .GetMethod("BuildAuthorizationUrl",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
-            .Invoke(null, [appKey, redirectUri, codeChallenge, state])!;
+        DropboxOAuthService.BuildAuthorizationUrl(appKey, redirectUri, codeChallenge, state);
 }
