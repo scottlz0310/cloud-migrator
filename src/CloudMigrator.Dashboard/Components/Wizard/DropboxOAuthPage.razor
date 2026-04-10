@@ -22,14 +22,20 @@
                     <MudText Typo="Typo.body2"><strong>D-1.</strong> <MudLink Href="https://www.dropbox.com/developers/apps" Target="_blank">Dropbox App Console</MudLink> を開く</MudText>
                     <MudText Typo="Typo.body2"><strong>D-2.</strong> 「Create app」→「Scoped access」→「Full Dropbox」を選択</MudText>
                     <MudText Typo="Typo.body2"><strong>D-3.</strong> アプリ名を入力して作成</MudText>
-                    <MudText Typo="Typo.body2"><strong>D-4.</strong> 「Permissions」タブで <code>files.content.write</code> / <code>files.content.read</code> にチェック →「Submit」</MudText>
+                    <MudText Typo="Typo.body2"><strong>D-4.</strong> 「Permissions」タブで以下にチェック →「Submit」:</MudText>
+                    <MudPaper Elevation="0" Class="pa-2" Style="background: var(--mud-palette-background-grey); font-family: monospace; font-size: 12px;">
+                        files.metadata.write<br />
+                        files.metadata.read<br />
+                        files.content.write<br />
+                        files.content.read
+                    </MudPaper>
                     <MudText Typo="Typo.body2"><strong>D-5.</strong> 「Settings」タブの「Redirect URIs」に以下を登録:</MudText>
                     <MudPaper Elevation="0" Class="pa-2" Style="background: var(--mud-palette-background-grey); font-family: monospace; font-size: 12px;">
-                        http://127.0.0.1:54321/callback<br />
-                        http://127.0.0.1:54322/callback<br />
-                        http://127.0.0.1:54323/callback<br />
-                        http://127.0.0.1:54324/callback<br />
-                        http://127.0.0.1:54325/callback
+                        http://127.0.0.1:54321/callback/<br />
+                        http://127.0.0.1:54322/callback/<br />
+                        http://127.0.0.1:54323/callback/<br />
+                        http://127.0.0.1:54324/callback/<br />
+                        http://127.0.0.1:54325/callback/
                     </MudPaper>
                     <MudText Typo="Typo.body2"><strong>D-6.</strong> 「App key」をコピーして下の入力欄に貼り付ける</MudText>
                 </MudStack>

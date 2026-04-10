@@ -78,7 +78,8 @@ public sealed class WindowsCredentialStore : ICredentialStore
             var bytes = new byte[cred.CredentialBlobSize];
             Marshal.Copy(cred.CredentialBlob, bytes, 0, bytes.Length);
 
-            var value = Encoding.Unicode.GetString(bytes).TrimEnd('\0');
+            // UTF-8 でデコード（SaveAsync と対称）
+            var value = Encoding.UTF8.GetString(bytes).TrimEnd('\0');
             return Task.FromResult<string?>(string.IsNullOrEmpty(value) ? null : value);
         }
         finally
@@ -94,7 +95,16 @@ public sealed class WindowsCredentialStore : ICredentialStore
         ArgumentNullException.ThrowIfNull(value);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var blob = Encoding.Unicode.GetBytes(value);
+        // ASCII トークン等は UTF-8 (1 バイト/文字) でエンコードすることで
+        // CRED_TYPE_GENERIC のサイズ上限 (2560 バイト) 内に収める
+        var blob = Encoding.UTF8.GetBytes(value);
+
+        // CRED_TYPE_GENERIC の CredentialBlobSize 上限は 5 * 512 = 2560 バイト
+        const int MaxBlobSize = 2560;
+        if (blob.Length > MaxBlobSize)
+            throw new InvalidOperationException(
+                $"Credential Manager への書き込みに失敗しました: {key} の値が上限サイズ（{MaxBlobSize} バイト）を超えています（{blob.Length} バイト）。");
+
         var blobHandle = GCHandle.Alloc(blob, GCHandleType.Pinned);
         try
         {
@@ -105,7 +115,8 @@ public sealed class WindowsCredentialStore : ICredentialStore
                 CredentialBlobSize = (uint)blob.Length,
                 CredentialBlob = blobHandle.AddrOfPinnedObject(),
                 Persist = CRED_PERSIST_LOCAL_MACHINE,
-                UserName = Environment.UserName,
+                // CRED_TYPE_GENERIC では UserName は任意フィールド。
+                // 環境によってはユーザー名の内容が CredWrite を失敗させるため省略する。
             };
             if (!CredWrite(ref cred, 0))
             {
