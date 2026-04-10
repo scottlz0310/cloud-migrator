@@ -48,6 +48,28 @@ internal static class DashboardCommand
 /// </summary>
 internal static class DashboardLauncher
 {
+    /// <summary>
+    /// 設定ファイルから DB パスを自動解決して Dashboard を起動する（引数なし起動用）。
+    /// </summary>
+    public static void LaunchWithAutoDetect()
+    {
+        var config = AppConfiguration.Build();
+        var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
+            ?? new MigratorOptions();
+        var defaultDbPath = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase)
+            ? options.Paths.DropboxStateDb
+            : options.Paths.SharePointStateDb;
+        bool dbExists = !string.IsNullOrWhiteSpace(defaultDbPath) && File.Exists(defaultDbPath);
+
+        Console.WriteLine("CloudMigrator Dashboard を起動しています...");
+        if (dbExists)
+            Console.WriteLine($"DB          : {defaultDbPath}");
+        else
+            Console.WriteLine("DB          : なし — transfer 実行後、DB が作成されたら再起動してください");
+
+        Launch(dbExists ? defaultDbPath : null);
+    }
+
     /// <summary>Dashboard.exe を探して起動する。失敗時はエラーをコンソールに出力する。</summary>
     public static void Launch(string? dbPath = null)
     {

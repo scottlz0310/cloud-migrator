@@ -1,8 +1,6 @@
 using System.CommandLine;
-using System.Diagnostics;
 using CloudMigrator.Cli.Commands;
 using CloudMigrator.Core.Configuration;
-using Microsoft.Extensions.Configuration;
 
 // 初回起動時: ./configs/config.json → AppData へ自動移行
 // 移行メッセージは JSON ログ（stdout）との混在を避けるため stderr に出力する
@@ -41,21 +39,7 @@ var rootCmd = new RootCommand("CloudMigrator - OneDrive から SharePoint への
 // 引数なし起動: CloudMigrator Dashboard (WPF) を起動する
 rootCmd.SetAction((parseResult, ct) =>
 {
-    var config = AppConfiguration.Build();
-    var options = config.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>()
-        ?? new MigratorOptions();
-    var defaultDbPath = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase)
-        ? options.Paths.DropboxStateDb
-        : options.Paths.SharePointStateDb;
-    bool dbExists = !string.IsNullOrWhiteSpace(defaultDbPath) && File.Exists(defaultDbPath);
-
-    Console.WriteLine("CloudMigrator Dashboard を起動しています...");
-    if (dbExists)
-        Console.WriteLine($"DB          : {defaultDbPath}");
-    else
-        Console.WriteLine("DB          : なし — transfer 実行後、DB が作成されたら再起動してください");
-
-    DashboardLauncher.Launch(dbExists ? defaultDbPath : null);
+    DashboardLauncher.LaunchWithAutoDetect();
     return Task.CompletedTask;
 });
 
