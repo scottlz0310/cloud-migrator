@@ -103,6 +103,7 @@ public sealed class WizardStateService : IWizardStateService
         var toSave = state.ToSafeForPersistence();
         var tmpPath = _stateFilePath + ".tmp";
 
+        var succeeded = false;
         try
         {
             EnsureDirectoryExists();
@@ -114,13 +115,21 @@ public sealed class WizardStateService : IWizardStateService
 
             // アトミックな置き換え
             File.Move(tmpPath, _stateFilePath, overwrite: true);
+            succeeded = true;
             _logger.LogDebug("wizard-state.json を保存しました。");
         }
-        catch (IOException ex)
+        catch (Exception ex)
         {
-            try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { /* ベストエフォート */ }
             _logger.LogError(ex, "wizard-state.json の保存に失敗しました。");
             throw;
+        }
+        finally
+        {
+            // 失敗時のみ後始末（成功時は Move 済みのため tmpPath は存在しない）
+            if (!succeeded)
+            {
+                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { /* ベストエフォート */ }
+            }
         }
     }
 

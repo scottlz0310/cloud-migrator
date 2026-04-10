@@ -15,7 +15,10 @@
             <MudPaper Elevation="@(_selected == WizardRoute.OneDriveToDropbox ? 3 : 1)"
                       Class="pa-4 cursor-pointer"
                       Style="@RouteCardStyle(WizardRoute.OneDriveToDropbox)"
-                      @onclick="@(() => SelectRoute(WizardRoute.OneDriveToDropbox))">
+                      @onclick="@(() => SelectRoute(WizardRoute.OneDriveToDropbox))"
+                      role="button"
+                      tabindex="0"
+                      @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") SelectRoute(WizardRoute.OneDriveToDropbox); })">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
                     <MudIcon Icon="@Icons.Material.Filled.Cloud" Color="Color.Primary" />
                     <div style="flex: 1;">
@@ -32,7 +35,10 @@
             <MudPaper Elevation="@(_selected == WizardRoute.OneDriveToSharePoint ? 3 : 1)"
                       Class="pa-4 cursor-pointer"
                       Style="@RouteCardStyle(WizardRoute.OneDriveToSharePoint)"
-                      @onclick="@(() => SelectRoute(WizardRoute.OneDriveToSharePoint))">
+                      @onclick="@(() => SelectRoute(WizardRoute.OneDriveToSharePoint))"
+                      role="button"
+                      tabindex="0"
+                      @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") SelectRoute(WizardRoute.OneDriveToSharePoint); })">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
                     <MudIcon Icon="@Icons.Material.Filled.Folder" Color="Color.Warning" />
                     <div style="flex: 1;">

@@ -134,7 +134,8 @@
             return WizardStep.DropboxOAuth;
 
         // Dropbox 路線: Step 4 が未完了
-        if (state.SelectedRoute == WizardRoute.OneDriveToDropbox)
+        if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
+            state.Step4ConnectionTest != WizardStepState.Verified)
             return WizardStep.ConnectionTest;
 
         // SharePoint 路線（v0.5.0 予定）
