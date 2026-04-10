@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace CloudMigrator.Dashboard;
+namespace CloudMigrator.Core.Setup;
 
 /// <summary>個別チェックのステータス。</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

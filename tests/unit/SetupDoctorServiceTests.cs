@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using CloudMigrator.Dashboard;
+using CloudMigrator.Core.Setup;
 using FluentAssertions;
 using Moq;
 using Moq.Protected;

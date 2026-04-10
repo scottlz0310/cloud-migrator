@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace CloudMigrator.Dashboard;
+namespace CloudMigrator.Core.Transfer;
 
 /// <summary>
 /// ジョブエラー時にクライアントへ返す汎用メッセージ定数。

@@ -8,6 +8,9 @@ coverage:
         threshold: 5%
 
 ignore:
-  - "src/CloudMigrator.Dashboard/**"
+  - "src/CloudMigrator.Dashboard/Components/**"
+  - "src/CloudMigrator.Dashboard/MainWindow.xaml.cs"
+  - "src/CloudMigrator.Dashboard/App.xaml.cs"
+  - "src/CloudMigrator.Dashboard/WpfDialogService.cs"
   - "src/CloudMigrator.Cli/Commands/DashboardCommand.cs"
   - "src/CloudMigrator.Cli/Program.cs"
