@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace CloudMigrator.Dashboard;
 
 /// <summary>
-/// WPF メインウィンドウ。BlazorWebView をホストし、WebView2 の NavigationStarting ハンドラを管理する。
+/// WPF メインウィンドウ。BlazorWebView をホストし、初期化する。
 /// </summary>
 public partial class MainWindow : Window
 {

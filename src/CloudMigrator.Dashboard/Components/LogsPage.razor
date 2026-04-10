@@ -61,11 +61,15 @@
             {
                 await foreach (var entry in reader.ReadAllAsync(_cts.Token))
                 {
-                    _entries.Add(entry);
-                    // バッファ上限を超えたら最古を削除
-                    while (_entries.Count > 500)
-                        _entries.RemoveAt(0);
-                    await InvokeAsync(StateHasChanged);
+                    // UI スレッド上で _entries を変更してスレッドセーフを確保する
+                    await InvokeAsync(() =>
+                    {
+                        _entries.Add(entry);
+                        // バッファ上限を超えたら最古を削除
+                        while (_entries.Count > 500)
+                            _entries.RemoveAt(0);
+                        StateHasChanged();
+                    });
                 }
             }
             catch (OperationCanceledException)

@@ -55,10 +55,14 @@ else
                                   FullWidth="true" />
                 </MudItem>
                 <MudItem xs="12">
-                    <MudTextField @bind-Value="_editDestinationProvider"
-                                  Label="転送先プロバイダー"
-                                  Variant="Variant.Outlined"
-                                  FullWidth="true" />
+                    <MudSelect T="string"
+                               @bind-Value="_editDestinationProvider"
+                               Label="転送先プロバイダー"
+                               Variant="Variant.Outlined"
+                               FullWidth="true">
+                        <MudSelectItem Value='"sharepoint"'>sharepoint</MudSelectItem>
+                        <MudSelectItem Value='"dropbox"'>dropbox</MudSelectItem>
+                    </MudSelect>
                 </MudItem>
             </MudGrid>
         </MudCardContent>
@@ -122,6 +126,43 @@ else
 
     private async Task SaveAsync()
     {
+        // 保存前バリデーション
+        if (_editMaxParallelTransfers is < 1 or > 256)
+        {
+            Snackbar.Add("最大並行転送数は 1〜256 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editMaxParallelFolderCreations is < 1 or > 32)
+        {
+            Snackbar.Add("最大並行フォルダ作成数は 1〜32 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editChunkSizeMb is < 1 or > 100)
+        {
+            Snackbar.Add("チャンクサイズは 1〜100 MB の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editLargeFileThresholdMb is < 1 or > 100)
+        {
+            Snackbar.Add("大ファイル閾値は 1〜100 MB の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editRetryCount is < 0 or > 10)
+        {
+            Snackbar.Add("リトライ回数は 0〜10 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editTimeoutSec is < 30 or > 3600)
+        {
+            Snackbar.Add("タイムアウトは 30〜3600 秒の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editDestinationProvider is not ("sharepoint" or "dropbox"))
+        {
+            Snackbar.Add("転送先プロバイダーは sharepoint または dropbox を選択してください。", Severity.Warning);
+            return;
+        }
+
         try
         {
             var update = new ConfigUpdateDto(

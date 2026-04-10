@@ -135,33 +135,36 @@ else
     private TransferDbSummary? _summary;
     private TransferJobInfo? _currentJob;
     private bool _isJobRunning;
-    private CancellationTokenSource? _cts;
+    // 自動更新ループ用と転送ジョブ用で CTS を分離する
+    private CancellationTokenSource? _refreshCts;
+    private CancellationTokenSource? _jobCts;
 
     protected override async Task OnInitializedAsync()
     {
-        await RefreshAsync();
-        _cts = new CancellationTokenSource();
+        await RefreshAsync(CancellationToken.None);
+        _refreshCts = new CancellationTokenSource();
+        var token = _refreshCts.Token;
         // 5 秒ごとに自動更新（PeriodicTimer で再入防止）
         _ = Task.Run(async () =>
         {
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
             try
             {
-                while (await timer.WaitForNextTickAsync(_cts.Token))
+                while (await timer.WaitForNextTickAsync(token))
                 {
-                    await RefreshAsync();
+                    await RefreshAsync(token);
                     await InvokeAsync(StateHasChanged);
                 }
             }
             catch (OperationCanceledException) { }
-        });
+        }, token);
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         try
         {
-            _summary = await TransferStateDb.GetSummaryAsync(CancellationToken.None);
+            _summary = await TransferStateDb.GetSummaryAsync(cancellationToken);
         }
         catch
         {
@@ -173,8 +176,8 @@ else
     private async Task StartJobAsync()
     {
         if (_isJobRunning) return;
-        _cts = new CancellationTokenSource();
-        _currentJob = await JobService.TryStartAsync(_cts.Token);
+        _jobCts = new CancellationTokenSource();
+        _currentJob = await JobService.TryStartAsync(_jobCts.Token);
         _isJobRunning = _currentJob?.Status is JobStatus.Pending or JobStatus.Running;
     }
 
@@ -201,7 +204,9 @@ else
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
+        _jobCts?.Cancel();
+        _jobCts?.Dispose();
     }
 }
