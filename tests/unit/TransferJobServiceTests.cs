@@ -1,4 +1,4 @@
-using CloudMigrator.Dashboard;
+using CloudMigrator.Core.Transfer;
 using FluentAssertions;
 
 namespace CloudMigrator.Tests.Unit;

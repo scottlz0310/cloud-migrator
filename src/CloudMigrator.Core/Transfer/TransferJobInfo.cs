@@ -1,4 +1,4 @@
-namespace CloudMigrator.Dashboard;
+namespace CloudMigrator.Core.Transfer;
 
 /// <summary>
 /// 転送ジョブ状態レコード（ダッシュボード専用・インメモリ管理）。

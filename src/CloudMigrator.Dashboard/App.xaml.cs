@@ -1,7 +1,9 @@
 using System.IO;
 using System.Windows;
 using CloudMigrator.Core.Configuration;
+using CloudMigrator.Core.Setup;
 using CloudMigrator.Core.State;
+using CloudMigrator.Core.Transfer;
 using CloudMigrator.Observability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,9 +1,8 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using CloudMigrator.Core.Configuration;
 
-namespace CloudMigrator.Dashboard;
+namespace CloudMigrator.Core.Configuration;
 
 /// <summary>
 /// GET /api/config で返す設定 DTO（シークレット除外済み）。

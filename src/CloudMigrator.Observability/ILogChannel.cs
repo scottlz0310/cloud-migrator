@@ -1,7 +1,6 @@
 using System.Threading.Channels;
-using CloudMigrator.Observability;
 
-namespace CloudMigrator.Dashboard;
+namespace CloudMigrator.Observability;
 
 /// <summary>
 /// Channel ベースのインプロセスログ配信サービスの契約。

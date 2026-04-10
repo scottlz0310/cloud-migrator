@@ -1,5 +1,5 @@
 using System.Text.Json;
-using CloudMigrator.Dashboard;
+using CloudMigrator.Core.Configuration;
 using FluentAssertions;
 
 namespace CloudMigrator.Tests.Unit;

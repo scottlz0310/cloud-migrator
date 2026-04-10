@@ -1,4 +1,4 @@
-namespace CloudMigrator.Dashboard;
+namespace CloudMigrator.Core.Transfer;
 
 /// <summary>
 /// 転送ジョブの実行状態を表す列挙型。
