@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### Added
+- **Dropbox OAuth 2.0 PKCE フロー** (Issue #112)
+  - `IDropboxOAuthService` / `DropboxOAuthService`: PKCE（`code_challenge_method=S256`）+ 固定ポート `54321–54325` + ポート競合フォールバック
+  - `DropboxTokenResult` / `DropboxRefreshResult`: OAuth 結果レコード
+  - `DropboxOAuthException`: `ErrorCode` プロパティ付き認証例外（`IsTokenExpired` も維持）
+  - `DropboxStorageProvider` Credential Store コンストラクタ: `ICredentialStore` + `IDropboxOAuthService` を受け取り、保存済みトークンを自動ロード
+  - `EnsureAccessTokenAsync`: Credential Store からの遅延ロードと検証（非同期化）
+  - `RefreshAccessTokenAsync` を `IDropboxOAuthService` パス対応に拡張（リフレッシュ後トークンをストアへ保存、失効時は削除して `DropboxOAuthException` を送出）
+  - `DownloadStreamAsync` を async に変換
+  - `DropboxOAuthServiceTests`: `RefreshTokenAsync` / Credential Store パスのユニットテスト 14 件
+
 ---
 
 ## [0.3.0] - 2026-04-08

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CloudMigrator.Providers.Abstractions\CloudMigrator.Providers.Abstractions.csproj" />
+    <ProjectReference Include="..\CloudMigrator.Core\CloudMigrator.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,7 +4,9 @@ using System.Buffers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CloudMigrator.Core.Credentials;
 using CloudMigrator.Providers.Abstractions;
+using CloudMigrator.Providers.Dropbox.Auth;
 using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Providers.Dropbox;
@@ -25,6 +27,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
     private readonly string? _refreshToken;
     private readonly string? _clientId;
     private readonly string? _clientSecret;
+    private readonly ICredentialStore? _credentialStore;
+    private readonly IDropboxOAuthService? _oAuthService;
     private readonly SemaphoreSlim _tokenRefreshLock = new(1, 1);
     private readonly DropboxStorageOptions _options;
     private readonly int _maxRetry;
@@ -68,6 +72,34 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
         _onRateLimit = onRateLimit;
     }
 
+    /// <summary>
+    /// Credential Manager ベースのコンストラクタ。
+    /// アクセストークンは実行時に <see cref="ICredentialStore"/> から取得し、
+    /// 期限切れ時は <see cref="IDropboxOAuthService"/> でリフレッシュする。
+    /// </summary>
+    public DropboxStorageProvider(
+        ILogger<DropboxStorageProvider> logger,
+        ICredentialStore credentialStore,
+        IDropboxOAuthService oAuthService,
+        DropboxStorageOptions? options = null,
+        HttpClient? httpClient = null,
+        int maxRetry = 3,
+        bool disposeHttpClient = false,
+        Action<TimeSpan?>? onRateLimit = null)
+    {
+        _logger = logger;
+        _credentialStore = credentialStore;
+        _oAuthService = oAuthService;
+        _accessToken = string.Empty;  // 初回 API 呼び出し前に EnsureAccessTokenAsync で設定される
+        _options = options ?? new DropboxStorageOptions();
+        _httpClient = httpClient ?? new HttpClient();
+        _ownsHttpClient = httpClient is null || disposeHttpClient;
+        _maxRetry = Math.Max(0, maxRetry);
+        _simpleUploadLimitBytes = Math.Max(1, _options.SimpleUploadLimitMb) * 1024 * 1024;
+        _uploadChunkSizeBytes = Math.Max(1, _options.UploadChunkSizeMb) * 1024 * 1024;
+        _onRateLimit = onRateLimit;
+    }
+
     public void Dispose()
     {
         _tokenRefreshLock.Dispose();
@@ -86,7 +118,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
             return [];
         }
 
-        EnsureAccessTokenConfigured();
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         var crawlPath = ResolveCrawlPath(rootPath);
         ListFolderResponse firstPage;
@@ -142,7 +174,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
     /// <inheritdoc/>
     public async Task UploadFileAsync(TransferJob job, CancellationToken cancellationToken = default)
     {
-        EnsureAccessTokenConfigured();
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         if (job.Source.SizeBytes is null)
             throw new InvalidOperationException($"SizeBytes が未設定のため転送できません: {job.Source.SkipKey}");
@@ -165,7 +197,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
     /// <inheritdoc/>
     public async Task<string> DownloadToTempAsync(StorageItem item, CancellationToken cancellationToken = default)
     {
-        EnsureAccessTokenConfigured();
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         try
@@ -189,16 +221,16 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
     }
 
     /// <inheritdoc/>
-    public Task<Stream> DownloadStreamAsync(StorageItem item, CancellationToken cancellationToken = default)
+    public async Task<Stream> DownloadStreamAsync(StorageItem item, CancellationToken cancellationToken = default)
     {
-        EnsureAccessTokenConfigured();
-        return DownloadStreamByPathAsync(BuildSourceFilePath(item), cancellationToken);
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        return await DownloadStreamByPathAsync(BuildSourceFilePath(item), cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task UploadFromLocalAsync(string localFilePath, long fileSizeBytes, string destinationFullPath, CancellationToken cancellationToken = default)
     {
-        EnsureAccessTokenConfigured();
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         await using var stream = File.OpenRead(localFilePath);
         await UploadFromStreamAsync(stream, fileSizeBytes, destinationFullPath, cancellationToken).ConfigureAwait(false);
@@ -211,7 +243,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
         string destinationFullPath,
         CancellationToken cancellationToken = default)
     {
-        EnsureAccessTokenConfigured();
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         var destinationPath = NormalizeFilePath(destinationFullPath);
         _logger.LogDebug("Dropbox アップロード開始: {DestPath} ({Bytes} bytes)", destinationPath, fileSizeBytes);
@@ -234,7 +266,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
         string? cursor,
         CancellationToken cancellationToken = default)
     {
-        EnsureAccessTokenConfigured();
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         ListFolderResponse response;
         if (cursor is null)
@@ -285,7 +317,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
     /// <inheritdoc/>
     public async Task EnsureFolderAsync(string folderPath, CancellationToken cancellationToken = default)
     {
-        EnsureAccessTokenConfigured();
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         var normalized = NormalizeFolderPath(folderPath);
         if (string.IsNullOrEmpty(normalized))
@@ -897,12 +929,24 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
     }
 
     private bool HasRefreshCapability()
-        => !string.IsNullOrWhiteSpace(_refreshToken)
-            && !string.IsNullOrWhiteSpace(_clientId)
-            && !string.IsNullOrWhiteSpace(_clientSecret);
+        => (!string.IsNullOrWhiteSpace(_refreshToken)
+                && !string.IsNullOrWhiteSpace(_clientId)
+                && !string.IsNullOrWhiteSpace(_clientSecret))
+            || (_oAuthService != null && _credentialStore != null);
 
-    private void EnsureAccessTokenConfigured()
+    /// <summary>
+    /// アクセストークンが設定済みかを確認し、Credential Store ベースの場合は保存済みトークンをロードする。
+    /// </summary>
+    private async Task EnsureAccessTokenAsync(CancellationToken ct)
     {
+        // Credential Store ベースの場合: 初回呼び出し時に保存済みアクセストークンをロード
+        if (_credentialStore != null && string.IsNullOrWhiteSpace(_accessToken))
+        {
+            var stored = await _credentialStore.GetAsync(CredentialKeys.DropboxAccessToken, ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(stored))
+                _accessToken = stored;
+        }
+
         if (string.IsNullOrWhiteSpace(_accessToken) && !HasRefreshCapability())
             throw new InvalidOperationException(
                 "Dropbox の認証情報が未設定です。" +
@@ -920,27 +964,65 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
         try
         {
             _logger.LogInformation("Dropbox アクセストークンを更新しています...");
-            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+
+            if (_oAuthService != null && _credentialStore != null)
             {
-                ["grant_type"] = "refresh_token",
-                ["refresh_token"] = _refreshToken!,
-                ["client_id"] = _clientId!,
-                ["client_secret"] = _clientSecret!,
-            });
-            using var response = await _httpClient
-                .PostAsync("https://api.dropboxapi.com/oauth2/token", content, ct)
-                .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                var errBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                throw new InvalidOperationException(
-                    $"Dropbox トークンリフレッシュに失敗しました: ({(int)response.StatusCode}) {errBody}");
+                // IDropboxOAuthService（PKCE）ベースのリフレッシュ
+                var appKey = await _credentialStore.GetAsync(CredentialKeys.DropboxAppKey, ct).ConfigureAwait(false)
+                    ?? throw new DropboxOAuthException(
+                        "Dropbox App Key が Credential Store に存在しません。初回セットアップが必要です。",
+                        "token_not_found");
+                var refreshToken = await _credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken, ct).ConfigureAwait(false)
+                    ?? throw new DropboxOAuthException(
+                        "Dropbox リフレッシュトークンが Credential Store に存在しません。再認証が必要です。",
+                        "token_not_found");
+
+                DropboxRefreshResult result;
+                try
+                {
+                    result = await _oAuthService.RefreshTokenAsync(appKey, refreshToken, ct).ConfigureAwait(false);
+                }
+                catch (DropboxOAuthException ex) when (ex.IsTokenExpired)
+                {
+                    // リフレッシュトークンも失効 → Credential Store からトークンを削除して再認証を要求
+                    await _credentialStore.DeleteAsync(CredentialKeys.DropboxAccessToken, ct).ConfigureAwait(false);
+                    await _credentialStore.DeleteAsync(CredentialKeys.DropboxRefreshToken, ct).ConfigureAwait(false);
+                    _accessToken = string.Empty;
+                    throw new DropboxOAuthException(
+                        "Dropbox リフレッシュトークンが失効しました。再認証が必要です。",
+                        "token_expired",
+                        ex);
+                }
+
+                _accessToken = result.AccessToken;
+                await _credentialStore.SaveAsync(CredentialKeys.DropboxAccessToken, result.AccessToken, ct).ConfigureAwait(false);
             }
-            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            var result = await JsonSerializer.DeserializeAsync<DropboxTokenResponse>(stream, JsonOptions, ct)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("トークン応答のデシリアライズに失敗しました");
-            _accessToken = result.AccessToken;
+            else
+            {
+                // レガシー（clientSecret ベース）リフレッシュ
+                var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["grant_type"] = "refresh_token",
+                    ["refresh_token"] = _refreshToken!,
+                    ["client_id"] = _clientId!,
+                    ["client_secret"] = _clientSecret!,
+                });
+                using var response = await _httpClient
+                    .PostAsync("https://api.dropboxapi.com/oauth2/token", content, ct)
+                    .ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    throw new InvalidOperationException(
+                        $"Dropbox トークンリフレッシュに失敗しました: ({(int)response.StatusCode}) {errBody}");
+                }
+                await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                var result = await JsonSerializer.DeserializeAsync<DropboxTokenResponse>(stream, JsonOptions, ct)
+                    .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("トークン応答のデシリアライズに失敗しました");
+                _accessToken = result.AccessToken;
+            }
+
             _logger.LogInformation("Dropbox アクセストークンを更新しました");
         }
         finally
