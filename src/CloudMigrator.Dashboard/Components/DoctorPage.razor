@@ -1,0 +1,115 @@
+@inject ISetupDoctorService DoctorService
+
+<MudText Typo="Typo.h5" Class="mb-4">接続テスト (Doctor)</MudText>
+
+<MudCard Elevation="2" Style="max-width: 700px;">
+    <MudCardContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Azure Graph 認証・SharePoint サイト・ドキュメントライブラリへの接続を確認します。
+        </MudText>
+
+        @if (_result is not null)
+        {
+            <MudAlert Severity="@OverallSeverity(_result.OverallStatus)" Class="mb-3">
+                全体ステータス: <strong>@_result.OverallStatus</strong>
+            </MudAlert>
+
+            <MudList T="DoctorCheck" Dense="true">
+                @foreach (var check in _result.Checks)
+                {
+                    <MudListItem>
+                        <MudGrid>
+                            <MudItem xs="1">
+                                <MudIcon Icon="@CheckIcon(check.Status)"
+                                         Color="@CheckColor(check.Status)"
+                                         Size="Size.Small" />
+                            </MudItem>
+                            <MudItem xs="4">
+                                <MudText Typo="Typo.body2"><strong>@check.Name</strong></MudText>
+                            </MudItem>
+                            <MudItem xs="7">
+                                <MudText Typo="Typo.body2" Color="@CheckColor(check.Status)">
+                                    @(check.Detail ?? (check.Status == DoctorStatus.Pass ? "OK" : string.Empty))
+                                </MudText>
+                            </MudItem>
+                        </MudGrid>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+        else if (_isRunning)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mb-2" />
+            <MudText Typo="Typo.body2">確認中...</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">「テスト実行」ボタンをクリックして診断を開始してください。</MudText>
+        }
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_errorMessage</MudAlert>
+        }
+    </MudCardContent>
+    <MudCardActions>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                   Disabled="@_isRunning"
+                   OnClick="RunDoctorAsync">
+            テスト実行
+        </MudButton>
+    </MudCardActions>
+</MudCard>
+
+@code {
+    private DoctorResult? _result;
+    private bool _isRunning;
+    private string? _errorMessage;
+
+    private async Task RunDoctorAsync()
+    {
+        _isRunning = true;
+        _result = null;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            _result = await DoctorService.RunAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"診断中にエラーが発生しました: {ex.Message}";
+        }
+        finally
+        {
+            _isRunning = false;
+        }
+    }
+
+    private static Severity OverallSeverity(OverallStatus status) => status switch
+    {
+        OverallStatus.Healthy => Severity.Success,
+        OverallStatus.Degraded => Severity.Warning,
+        OverallStatus.Unhealthy => Severity.Error,
+        _ => Severity.Normal,
+    };
+
+    private static string CheckIcon(DoctorStatus status) => status switch
+    {
+        DoctorStatus.Pass => Icons.Material.Filled.CheckCircle,
+        DoctorStatus.Warning => Icons.Material.Filled.Warning,
+        DoctorStatus.Fail => Icons.Material.Filled.Error,
+        _ => Icons.Material.Filled.Circle,
+    };
+
+    private static Color CheckColor(DoctorStatus status) => status switch
+    {
+        DoctorStatus.Pass => Color.Success,
+        DoctorStatus.Warning => Color.Warning,
+        DoctorStatus.Fail => Color.Error,
+        _ => Color.Default,
+    };
+}

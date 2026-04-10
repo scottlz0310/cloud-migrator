@@ -1,0 +1,193 @@
+@inject IConfigurationService ConfigService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h5" Class="mb-4">設定</MudText>
+
+@if (_config is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudCard Elevation="2" Style="max-width: 600px;">
+        <MudCardContent>
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_editMaxParallelTransfers"
+                                     Label="最大並行転送数"
+                                     Min="1" Max="256"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_editMaxParallelFolderCreations"
+                                     Label="最大並行フォルダ作成数"
+                                     Min="1" Max="32"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_editChunkSizeMb"
+                                     Label="チャンクサイズ (MB)"
+                                     Min="1" Max="100"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_editLargeFileThresholdMb"
+                                     Label="大ファイル閾値 (MB)"
+                                     Min="1" Max="100"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_editRetryCount"
+                                     Label="リトライ回数"
+                                     Min="0" Max="10"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_editTimeoutSec"
+                                     Label="タイムアウト (秒)"
+                                     Min="30" Max="3600"
+                                     Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_editDestinationRoot"
+                                  Label="転送先ルートパス"
+                                  Variant="Variant.Outlined"
+                                  FullWidth="true" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudSelect T="string"
+                               @bind-Value="_editDestinationProvider"
+                               Label="転送先プロバイダー"
+                               Variant="Variant.Outlined"
+                               FullWidth="true">
+                        <MudSelectItem Value="@("sharepoint")">sharepoint</MudSelectItem>
+                        <MudSelectItem Value="@("dropbox")">dropbox</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+        </MudCardContent>
+        <MudCardActions>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="SaveAsync">
+                保存
+            </MudButton>
+            <MudButton Variant="Variant.Text"
+                       OnClick="ResetAsync">
+                リセット
+            </MudButton>
+        </MudCardActions>
+    </MudCard>
+}
+
+@code {
+    private ConfigDto? _config;
+
+    // 編集用フィールド
+    private int _editMaxParallelTransfers;
+    private int _editMaxParallelFolderCreations;
+    private int _editChunkSizeMb;
+    private int _editLargeFileThresholdMb;
+    private int _editRetryCount;
+    private int _editTimeoutSec;
+    private string _editDestinationRoot = string.Empty;
+    private string _editDestinationProvider = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConfigAsync();
+    }
+
+    private async Task LoadConfigAsync()
+    {
+        try
+        {
+            _config = await ConfigService.GetConfigAsync();
+            CopyToEditFields(_config);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"設定の読み込みに失敗しました: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void CopyToEditFields(ConfigDto cfg)
+    {
+        _editMaxParallelTransfers = cfg.MaxParallelTransfers;
+        _editMaxParallelFolderCreations = cfg.MaxParallelFolderCreations;
+        _editChunkSizeMb = cfg.ChunkSizeMb;
+        _editLargeFileThresholdMb = cfg.LargeFileThresholdMb;
+        _editRetryCount = cfg.RetryCount;
+        _editTimeoutSec = cfg.TimeoutSec;
+        _editDestinationRoot = cfg.DestinationRoot;
+        _editDestinationProvider = cfg.DestinationProvider;
+    }
+
+    private async Task SaveAsync()
+    {
+        // 保存前バリデーション
+        if (_editMaxParallelTransfers is < 1 or > 256)
+        {
+            Snackbar.Add("最大並行転送数は 1〜256 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editMaxParallelFolderCreations is < 1 or > 32)
+        {
+            Snackbar.Add("最大並行フォルダ作成数は 1〜32 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editChunkSizeMb is < 1 or > 100)
+        {
+            Snackbar.Add("チャンクサイズは 1〜100 MB の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editLargeFileThresholdMb is < 1 or > 100)
+        {
+            Snackbar.Add("大ファイル閾値は 1〜100 MB の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editRetryCount is < 0 or > 10)
+        {
+            Snackbar.Add("リトライ回数は 0〜10 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editTimeoutSec is < 30 or > 3600)
+        {
+            Snackbar.Add("タイムアウトは 30〜3600 秒の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editDestinationProvider is not ("sharepoint" or "dropbox"))
+        {
+            Snackbar.Add("転送先プロバイダーは sharepoint または dropbox を選択してください。", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var update = new ConfigUpdateDto(
+                MaxParallelTransfers: _editMaxParallelTransfers,
+                MaxParallelFolderCreations: _editMaxParallelFolderCreations,
+                ChunkSizeMb: _editChunkSizeMb,
+                LargeFileThresholdMb: _editLargeFileThresholdMb,
+                RetryCount: _editRetryCount,
+                TimeoutSec: _editTimeoutSec,
+                DestinationRoot: _editDestinationRoot,
+                DestinationProvider: _editDestinationProvider);
+            await ConfigService.UpdateConfigAsync(update);
+            _config = await ConfigService.GetConfigAsync();
+            Snackbar.Add("設定を保存しました。", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"設定の保存に失敗しました: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        if (_config is not null)
+            CopyToEditFields(_config);
+        await Task.CompletedTask;
+    }
+}

@@ -1,11 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- TODO: CLI が Dashboard（ASP.NET Core）に依存しており、将来 dashboard サブコマンドを
-       独立した実行ファイルに分離する際に解消する。現状は単一バイナリの利便性を優先している。 -->
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\CloudMigrator.Core\CloudMigrator.Core.csproj" />
-    <ProjectReference Include="..\CloudMigrator.Dashboard\CloudMigrator.Dashboard.csproj" />
     <ProjectReference Include="..\CloudMigrator.Observability\CloudMigrator.Observability.csproj" />
     <ProjectReference Include="..\CloudMigrator.Providers.Dropbox\CloudMigrator.Providers.Dropbox.csproj" />
     <ProjectReference Include="..\CloudMigrator.Providers.Graph\CloudMigrator.Providers.Graph.csproj" />
@@ -13,6 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
     <PackageReference Include="System.CommandLine" Version="3.0.0-preview.2.26159.112" />
   </ItemGroup>
 

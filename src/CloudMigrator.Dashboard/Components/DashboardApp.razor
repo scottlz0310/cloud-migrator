@@ -1,0 +1,72 @@
+<MudThemeProvider Theme="_theme" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Primary">
+        <MudIcon Icon="@Icons.Material.Filled.Cloud" Class="mr-2" />
+        <MudText Typo="Typo.h6">CloudMigrator Dashboard</MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.caption" Class="mr-2">v@(Version)</MudText>
+    </MudAppBar>
+
+    <MudDrawer Open="true" Variant="DrawerVariant.Persistent" Elevation="2">
+        <MudNavMenu>
+            <MudNavLink Icon="@Icons.Material.Filled.Dashboard"
+                        OnClick="@(() => _currentPage = Page.Dashboard)">
+                ダッシュボード
+            </MudNavLink>
+            <MudNavLink Icon="@Icons.Material.Filled.Settings"
+                        OnClick="@(() => _currentPage = Page.Settings)">
+                設定
+            </MudNavLink>
+            <MudNavLink Icon="@Icons.Material.Filled.BugReport"
+                        OnClick="@(() => _currentPage = Page.Doctor)">
+                接続テスト
+            </MudNavLink>
+            <MudNavLink Icon="@Icons.Material.Filled.List"
+                        OnClick="@(() => _currentPage = Page.Logs)">
+                ログ
+            </MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+            @switch (_currentPage)
+            {
+                case Page.Dashboard:
+                    <DashboardPage />
+                    break;
+                case Page.Settings:
+                    <SettingsPage />
+                    break;
+                case Page.Doctor:
+                    <DoctorPage />
+                    break;
+                case Page.Logs:
+                    <LogsPage />
+                    break;
+            }
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private Page _currentPage = Page.Dashboard;
+
+    private static readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1976D2",
+            Secondary = "#424242",
+            AppbarBackground = "#1976D2",
+        },
+    };
+
+    private static string Version =>
+        typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
+    private enum Page { Dashboard, Settings, Doctor, Logs }
+}
