@@ -109,7 +109,17 @@ else
             // 完了済みでも Dropbox の必須クレデンシャルが消えていたらウィザードを再表示
             var hasAppKey = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAppKey);
             var hasAccessToken = await CredentialStore.ExistsAsync(CredentialKeys.DropboxAccessToken);
-            _showWizard = !(hasAppKey && hasAccessToken);
+            if (!(hasAppKey && hasAccessToken))
+            {
+                // 強制再表示時は永続化された状態も未完了に戻し、
+                // 途中中断後の次回起動でもウィザードが再表示されるようにする
+                await WizardStateService.ResetAsync();
+                _showWizard = true;
+            }
+            else
+            {
+                _showWizard = false;
+            }
         }
 
         _loading = false;

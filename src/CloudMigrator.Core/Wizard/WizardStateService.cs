@@ -90,6 +90,11 @@ public sealed class WizardStateService : IWizardStateService
             await BackupAndResetAsync(cancellationToken).ConfigureAwait(false);
             return new WizardState();
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "wizard-state.json へのアクセス権がありません。初期状態を返します。");
+            return new WizardState();
+        }
         catch (IOException ex)
         {
             _logger.LogError(ex, "wizard-state.json の読み込みに失敗しました。初期状態を返します。");
@@ -160,7 +165,16 @@ public sealed class WizardStateService : IWizardStateService
             _logger.LogWarning(ex, "wizard-state.json のバックアップに失敗しました。");
         }
 
-        await ResetAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await ResetAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "wizard-state.json のリセットに失敗しました。書き込み不可のため、永続化は行わずメモリ上の初期状態へフォールバックします。");
+        }
     }
 
     private void EnsureDirectoryExists()
