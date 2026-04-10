@@ -171,6 +171,13 @@ else
             // DB が存在しない場合は空のサマリーを使用
             _summary = new TransferDbSummary();
         }
+
+        // ジョブの最新状態を追従させる（TryStartAsync の戻り値はスナップショットのため自動更新が必要）
+        if (_currentJob is not null)
+        {
+            _currentJob = JobService.GetJob(_currentJob.JobId) ?? _currentJob;
+            _isJobRunning = _currentJob.Status is JobStatus.Pending or JobStatus.Running;
+        }
     }
 
     private async Task StartJobAsync()

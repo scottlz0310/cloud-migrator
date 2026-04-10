@@ -57,6 +57,12 @@ public partial class App : Application
         services.AddSingleton(logStreamSink);
         services.AddSingleton<ILogChannel, LogChannelAdapter>();
 
+        // Serilog パイプラインを構築して LogStreamSink に接続する（LogsPage へのリアルタイム配信に必要）
+        var logFilePath = AppDataPaths.LogFile("dashboard.log");
+        var loggerFactory = LoggingSetup.CreateLoggerFactory(logFilePath, logStreamSink: logStreamSink);
+        services.AddSingleton(loggerFactory);
+        services.AddLogging();
+
         // ── Application services ─────────────────────────────────────────────
         services.AddSingleton<IConfigurationService, ConfigurationService>();
         services.AddSingleton<ITransferJobService, TransferJobService>();
@@ -88,6 +94,8 @@ public partial class App : Application
                 }
                 catch (Exception ex)
                 {
+                    // 初期化失敗: db を確実に破棄してからフォールバック（ファイルハンドルのリーク防止）
+                    db.DisposeAsync().AsTask().GetAwaiter().GetResult();
                     MessageBox.Show(
                         $"DB の初期化に失敗しました。DB なしモードで起動します。\n\n{ex.Message}",
                         "警告",

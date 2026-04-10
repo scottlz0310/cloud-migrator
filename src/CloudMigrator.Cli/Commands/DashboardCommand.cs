@@ -80,10 +80,16 @@ internal static class DashboardLauncher
             return;
         }
 
-        var args = string.IsNullOrEmpty(dbPath) ? string.Empty : $"--db-path \"{dbPath}\"";
+        var psi = new ProcessStartInfo(exePath) { UseShellExecute = true };
+        if (!string.IsNullOrEmpty(dbPath))
+        {
+            // ArgumentList を使って OS に安全にエスケープさせる（引数インジェクション防止）
+            psi.ArgumentList.Add("--db-path");
+            psi.ArgumentList.Add(dbPath);
+        }
         try
         {
-            Process.Start(new ProcessStartInfo(exePath, args) { UseShellExecute = true });
+            Process.Start(psi);
         }
         catch (Exception ex)
         {
