@@ -1,0 +1,31 @@
+@* SharePoint 路線プレースホルダー: v0.5.0 で対応予定 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-12">
+    <MudStack AlignItems="AlignItems.Center" Spacing="6">
+        <MudIcon Icon="@Icons.Material.Filled.Construction"
+                 Style="font-size: 64px; color: var(--mud-palette-warning);" />
+
+        <MudText Typo="Typo.h5" Align="Align.Center">
+            OneDrive → SharePoint 路線
+        </MudText>
+
+        <MudAlert Severity="Severity.Info" Dense="true">
+            この路線は <strong>v0.5.0</strong> で対応予定です。
+        </MudAlert>
+
+        <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
+            現在は <strong>OneDrive → Dropbox</strong> 路線のみ利用できます。<br />
+            路線を変更して再度お試しください。
+        </MudText>
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                   OnClick="OnBackClick">
+            路線選択に戻る
+        </MudButton>
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Parameter] public EventCallback OnBackClick { get; set; }
+}

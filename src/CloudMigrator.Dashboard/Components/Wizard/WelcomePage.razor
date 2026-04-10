@@ -1,0 +1,35 @@
+@* Welcome ページ: ウィザード起動時の最初の画面 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-12">
+    <MudStack AlignItems="AlignItems.Center" Spacing="6">
+        <MudIcon Icon="@Icons.Material.Filled.CloudSync"
+                 Style="font-size: 80px; color: var(--mud-palette-primary);" />
+
+        <MudText Typo="Typo.h4" Align="Align.Center">
+            CloudMigrator へようこそ
+        </MudText>
+
+        <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
+            初回セットアップを開始します。<br />
+            ステップに従って移行設定を完了してください。
+        </MudText>
+
+        <MudPaper Elevation="1" Class="pa-4" Style="width: 100%; border-left: 4px solid var(--mud-palette-info);">
+            <MudText Typo="Typo.body2" Color="Color.Info">
+                <strong>所要時間の目安:</strong> 約 5〜10 分
+            </MudText>
+        </MudPaper>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Size="Size.Large"
+                   EndIcon="@Icons.Material.Filled.ArrowForward"
+                   OnClick="OnStartClick">
+            セットアップを開始
+        </MudButton>
+    </MudStack>
+</MudContainer>
+
+@code {
+    /// <summary>「セットアップを開始」ボタンが押されたときのコールバック。</summary>
+    [Parameter] public EventCallback OnStartClick { get; set; }
+}

@@ -1,7 +1,23 @@
+@using CloudMigrator.Core.Wizard
+@inject IWizardStateService WizardStateService
+
 <MudThemeProvider Theme="_theme" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
+@if (_loading)
+{
+    @* 初回起動チェック中はスプラッシュ表示 *@
+    <MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="d-flex justify-center align-center" Style="height: 100vh;">
+        <MudProgressCircular Indeterminate="true" />
+    </MudContainer>
+}
+else if (_showWizard)
+{
+    <WizardApp OnWizardCompleted="OnWizardCompleted" />
+}
+else
+{
 <MudLayout>
     <MudAppBar Elevation="1" Color="Color.Primary">
         <MudIcon Icon="@Icons.Material.Filled.Cloud" Class="mr-2" />
@@ -28,6 +44,11 @@
                         OnClick="@(() => _currentPage = Page.Logs)">
                 ログ
             </MudNavLink>
+            <MudDivider />
+            <MudNavLink Icon="@Icons.Material.Filled.RestartAlt"
+                        OnClick="ResetWizardAsync">
+                セットアップをやり直す
+            </MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
@@ -51,9 +72,12 @@
         </MudContainer>
     </MudMainContent>
 </MudLayout>
+}
 
 @code {
     private Page _currentPage = Page.Dashboard;
+    private bool _loading = true;
+    private bool _showWizard;
 
     private static readonly MudTheme _theme = new()
     {
@@ -69,4 +93,25 @@
         typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     private enum Page { Dashboard, Settings, Doctor, Logs }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await WizardStateService.LoadAsync();
+        // wizard-state.json が不在（初回起動）またはウィザードが未完了の場合はウィザードを表示
+        _showWizard = !state.IsCompleted;
+        _loading = false;
+    }
+
+    private async Task OnWizardCompleted()
+    {
+        _showWizard = false;
+        _currentPage = Page.Dashboard;
+        await Task.CompletedTask;
+    }
+
+    private async Task ResetWizardAsync()
+    {
+        await WizardStateService.ResetAsync();
+        _showWizard = true;
+    }
 }

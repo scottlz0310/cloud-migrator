@@ -1,0 +1,117 @@
+@using CloudMigrator.Core.Wizard
+@using CloudMigrator.Providers.Dropbox.Auth
+@inject IDropboxVerifyService VerifyService
+
+@* Step 4: 接続テスト & 完了 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
+    <MudStack Spacing="6">
+        <div>
+            <MudText Typo="Typo.h5">接続テスト</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                Credential / Discovery / Preflight の 3 層で接続を確認します。
+            </MudText>
+        </div>
+
+        @if (_result is null && !_isRunning)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                「テストを実行」ボタンをクリックして接続を確認してください。
+            </MudText>
+        }
+
+        @if (_isRunning)
+        {
+            <MudProgressLinear Indeterminate="true" />
+            <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary">接続確認中...</MudText>
+        }
+
+        @if (_result is not null)
+        {
+            <MudAlert Severity="@(_result.IsSuccess ? Severity.Success : Severity.Error)" Dense="true">
+                @(_result.IsSuccess ? "すべてのチェックが完了しました。" : "接続テストに失敗しました。")
+            </MudAlert>
+
+            <MudList T="DropboxVerifyCheck" Dense="true">
+                @foreach (var check in _result.Checks)
+                {
+                    <MudListItem>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@(check.IsSuccess ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                     Color="@(check.IsSuccess ? Color.Success : (check.Detail?.Contains("スキップ") == true ? Color.Default : Color.Error))"
+                                     Size="Size.Small" />
+                            <div>
+                                <MudText Typo="Typo.body2"><strong>@LayerLabel(check.Layer)</strong></MudText>
+                                @if (!string.IsNullOrEmpty(check.Detail))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@check.Detail</MudText>
+                                }
+                            </div>
+                        </MudStack>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       Disabled="@_isRunning"
+                       OnClick="RunVerifyAsync">
+                テストを実行
+            </MudButton>
+
+            @if (_result?.IsSuccess == true)
+            {
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Success"
+                           EndIcon="@Icons.Material.Filled.CheckCircle"
+                           OnClick="OnCompleteClick">
+                    セットアップ完了
+                </MudButton>
+            }
+        </MudStack>
+
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                   Disabled="@_isRunning"
+                   OnClick="OnBackClick">
+            Dropbox 連携に戻る
+        </MudButton>
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Parameter] public EventCallback OnBackClick { get; set; }
+
+    /// <summary>接続テストが全層成功し、完了ボタンが押されたときのコールバック。</summary>
+    [Parameter] public EventCallback OnCompleteClick { get; set; }
+
+    private DropboxVerifyResult? _result;
+    private bool _isRunning;
+
+    private async Task RunVerifyAsync()
+    {
+        _isRunning = true;
+        _result = null;
+        StateHasChanged();
+
+        try
+        {
+            _result = await VerifyService.VerifyAsync();
+        }
+        finally
+        {
+            _isRunning = false;
+        }
+    }
+
+    private static string LayerLabel(DropboxVerifyLayer layer) => layer switch
+    {
+        DropboxVerifyLayer.Credential => "Credential Verify（クレデンシャル確認）",
+        DropboxVerifyLayer.Discovery  => "Discovery Verify（API 到達確認）",
+        DropboxVerifyLayer.Preflight  => "Migration Preflight（読み書き権限確認）",
+        _ => layer.ToString(),
+    };
+}

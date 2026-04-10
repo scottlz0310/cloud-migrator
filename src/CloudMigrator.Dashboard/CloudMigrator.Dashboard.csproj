@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CloudMigrator.Core\CloudMigrator.Core.csproj" />
     <ProjectReference Include="..\CloudMigrator.Observability\CloudMigrator.Observability.csproj" />
+    <ProjectReference Include="..\CloudMigrator.Providers.Dropbox\CloudMigrator.Providers.Dropbox.csproj" />
   </ItemGroup>
 
 </Project>
