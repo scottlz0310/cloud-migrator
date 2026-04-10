@@ -55,7 +55,8 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
 
         var authUrl = BuildAuthorizationUrl(appKey, redirectUri, codeChallenge, state);
 
-        _logger.LogInformation("ブラウザで以下の URL を開いて認可を完了してください: {Url}", authUrl);
+        // state / code_challenge 等の機微情報はログに出さず、認可エンドポイントのみ記録する
+        _logger.LogInformation("ブラウザで Dropbox 認可ページを開いています: {Endpoint}", AuthorizeEndpoint);
 
         try
         {
@@ -70,7 +71,7 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
         }
         finally
         {
-            try { listener.Stop(); } catch { /* ベストエフォート */ }
+            try { listener.Close(); } catch { /* ベストエフォート */ }
         }
     }
 
@@ -89,11 +90,11 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
             ["client_id"] = appKey,
         });
 
-        var response = await _httpClient.PostAsync(TokenEndpoint, form, cancellationToken);
+        using var response = await _httpClient.PostAsync(TokenEndpoint, form, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("トークンリフレッシュ失敗: {Status} {Body}", response.StatusCode, body);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogError("トークンリフレッシュ失敗: {Status}", response.StatusCode);
 
             if (response.StatusCode == HttpStatusCode.Unauthorized ||
                 response.StatusCode == HttpStatusCode.Forbidden)
@@ -104,7 +105,7 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
             throw new DropboxOAuthException($"トークンリフレッシュに失敗しました: {response.StatusCode}");
         }
 
-        var result = await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken: cancellationToken)
+        var result = await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken: cancellationToken).ConfigureAwait(false)
             ?? throw new DropboxOAuthException("トークンレスポンスのデシリアライズに失敗しました。");
 
         return new DropboxRefreshResult(result.AccessToken, result.ExpiresIn);
@@ -140,7 +141,7 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
     }
 
     private static string BuildRedirectUri(int port) =>
-        $"http://127.0.0.1:{port}{CallbackPath}";
+        $"http://127.0.0.1:{port}{CallbackPath}/";
 
     private static string BuildAuthorizationUrl(string appKey, string redirectUri, string codeChallenge, string state)
     {
@@ -160,40 +161,47 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
         string expectedState,
         CancellationToken cancellationToken)
     {
-        var context = await listener.GetContextAsync().WaitAsync(cancellationToken);
+        var context = await listener.GetContextAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
         var query = context.Request.QueryString;
 
-        // エラーレスポンス確認
-        var error = query["error"];
-        if (!string.IsNullOrEmpty(error))
-        {
-            var desc = query["error_description"] ?? error;
-            SendHtmlResponse(context.Response, 400,
-                "<h1>認可エラー</h1><p>Dropbox からエラーが返されました。このウィンドウを閉じてください。</p>");
-            throw new DropboxOAuthException($"Dropbox 認可エラー: {desc}");
-        }
-
-        // state CSRF 検証
-        var returnedState = query["state"] ?? string.Empty;
-        if (!string.Equals(returnedState, expectedState, StringComparison.Ordinal))
+        var (code, errorMessage) = ParseCallbackQuery(query, expectedState);
+        if (errorMessage is not null)
         {
             SendHtmlResponse(context.Response, 400,
-                "<h1>セキュリティエラー</h1><p>state パラメータが一致しません。このウィンドウを閉じてください。</p>");
-            throw new DropboxOAuthException("state パラメータが一致しません。CSRF 攻撃の可能性があります。");
-        }
-
-        var code = query["code"];
-        if (string.IsNullOrEmpty(code))
-        {
-            SendHtmlResponse(context.Response, 400,
-                "<h1>エラー</h1><p>認可コードが取得できませんでした。このウィンドウを閉じてください。</p>");
-            throw new DropboxOAuthException("認可コードがコールバックに含まれていません。");
+                $"<h1>エラー</h1><p>{System.Net.WebUtility.HtmlEncode(errorMessage)}</p><p>このウィンドウを閉じてください。</p>");
+            throw new DropboxOAuthException(errorMessage);
         }
 
         SendHtmlResponse(context.Response, 200,
             "<h1>認証完了</h1><p>Dropbox との連携が完了しました。このウィンドウを閉じてください。</p>");
 
-        return code;
+        return code!;
+    }
+
+    /// <summary>
+    /// コールバッククエリを検証し code を返す純関数。
+    /// エラー時は <c>(null, errorMessage)</c>、正常時は <c>(code, null)</c> を返す。
+    /// </summary>
+    internal static (string? Code, string? ErrorMessage) ParseCallbackQuery(
+        System.Collections.Specialized.NameValueCollection query,
+        string expectedState)
+    {
+        var error = query["error"];
+        if (!string.IsNullOrEmpty(error))
+        {
+            var desc = query["error_description"] ?? error;
+            return (null, $"Dropbox 認可エラー: {desc}");
+        }
+
+        var returnedState = query["state"] ?? string.Empty;
+        if (!string.Equals(returnedState, expectedState, StringComparison.Ordinal))
+            return (null, "state パラメータが一致しません。CSRF 攻撃の可能性があります。");
+
+        var code = query["code"];
+        if (string.IsNullOrEmpty(code))
+            return (null, "認可コードがコールバックに含まれていません。");
+
+        return (code, null);
     }
 
     private async Task<DropboxTokenResult> ExchangeCodeAsync(
@@ -212,15 +220,15 @@ public sealed class DropboxOAuthService : IDropboxOAuthService, IDisposable
             ["client_id"] = appKey,
         });
 
-        var response = await _httpClient.PostAsync(TokenEndpoint, form, cancellationToken);
+        using var response = await _httpClient.PostAsync(TokenEndpoint, form, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("PKCE トークン交換失敗: {Status} {Body}", response.StatusCode, body);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogError("PKCE トークン交換失敗: {Status}", response.StatusCode);
             throw new DropboxOAuthException($"PKCE トークン交換に失敗しました: {response.StatusCode}");
         }
 
-        var result = await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken: cancellationToken)
+        var result = await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken: cancellationToken).ConfigureAwait(false)
             ?? throw new DropboxOAuthException("トークンレスポンスのデシリアライズに失敗しました。");
 
         return new DropboxTokenResult(result.AccessToken, result.RefreshToken, result.ExpiresIn);

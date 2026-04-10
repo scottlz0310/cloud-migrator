@@ -1,4 +1,6 @@
+using System.Collections.Specialized;
 using System.Net;
+using System.Web;
 using CloudMigrator.Core.Credentials;
 using CloudMigrator.Providers.Dropbox;
 using CloudMigrator.Providers.Dropbox.Auth;
@@ -242,18 +244,18 @@ public class DropboxOAuthServiceTests
     [Fact]
     public async Task CredentialStore_Constructor_ShouldThrow_WhenNoTokenAndNoRefreshCapability()
     {
-        // 検証対象: EnsureAccessTokenAsync  目的: ストアにトークンも Refresh Token もない場合は InvalidOperationException がスローされること
+        // 検証対象: EnsureAccessTokenAsync + RefreshAccessTokenAsync  目的: ストアにトークンも RefreshToken もない場合、ErrorCode="token_not_found" の DropboxOAuthException がスローされること
         var credStoreMock = new Mock<ICredentialStore>();
-        credStoreMock.Setup(s => s.GetAsync(It.IsAny<string>()))
+        // アクセストークンは空
+        credStoreMock.Setup(s => s.GetAsync(CredentialKeys.DropboxAccessToken, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+        // App Key は存在するが RefreshToken はない
+        credStoreMock.Setup(s => s.GetAsync(CredentialKeys.DropboxAppKey, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("app-key");
+        credStoreMock.Setup(s => s.GetAsync(CredentialKeys.DropboxRefreshToken, It.IsAny<CancellationToken>()))
             .ReturnsAsync((string?)null);
 
         var oAuthMock = new Mock<IDropboxOAuthService>();
-        // oAuthService が null でないため HasRefreshCapability() = true → RefreshTokenAsync が呼ばれる
-        // ここでは RefreshToken が取得できないため例外が発生するシナリオを確認
-        credStoreMock.Setup(s => s.GetAsync(CredentialKeys.DropboxRefreshToken))
-            .ReturnsAsync((string?)null);
-        credStoreMock.Setup(s => s.GetAsync(CredentialKeys.DropboxAppKey))
-            .ReturnsAsync("app-key");
 
         using var httpClient = new HttpClient(new StubTokenHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -268,8 +270,9 @@ public class DropboxOAuthServiceTests
 
         var act = async () => await provider.ListPagedAsync("dropbox", null);
 
-        // リフレッシュトークンが取得できないため InvalidOperationException がスローされること
-        await act.Should().ThrowAsync<Exception>();
+        // RefreshToken が取得できないため ErrorCode="token_not_found" の DropboxOAuthException がスローされること
+        await act.Should().ThrowAsync<DropboxOAuthException>()
+            .Where(ex => ex.ErrorCode == "token_not_found");
     }
 
     // ─── スタブ ───────────────────────────────────────────────────────────────
@@ -285,4 +288,178 @@ public class DropboxOAuthServiceTests
             CancellationToken cancellationToken)
             => Task.FromResult(_response);
     }
+
+    // ─── 純関数テスト ─────────────────────────────────────────────────────────
+
+    // ── BuildRedirectUri ── 
+
+    [Theory]
+    [InlineData(54321)]
+    [InlineData(54325)]
+    public void BuildRedirectUri_ShouldHaveTrailingSlash(int port)
+    {
+        // 検証対象: BuildRedirectUri  目的: HttpListener.Prefix と完全一致するよう末尾スラッシュが付くこと
+        var uri = DropboxOAuthServiceTestHelper.BuildRedirectUri(port);
+
+        uri.Should().EndWith("/");
+        uri.Should().StartWith($"http://127.0.0.1:{port}/callback");
+    }
+
+    [Fact]
+    public void BuildRedirectUri_ShouldMatchListenerPrefix()
+    {
+        // 検証対象: BuildRedirectUri vs StartListener  目的: redirect_uri と HttpListener.Prefix が一致すること
+        const int port = 54321;
+        var redirectUri = DropboxOAuthServiceTestHelper.BuildRedirectUri(port);
+        // HttpListener の Prefix 形式に変換して比較（ホスト名は "localhost" ではなく "127.0.0.1" 固定）
+        redirectUri.Should().Be($"http://127.0.0.1:{port}/callback/");
+    }
+
+    // ── BuildAuthorizationUrl ──
+
+    [Fact]
+    public void BuildAuthorizationUrl_ShouldContainRequiredParameters()
+    {
+        // 検証対象: BuildAuthorizationUrl  目的: OAuth 2.0 PKCE に必要なパラメータが全て含まれること
+        var url = DropboxOAuthServiceTestHelper.BuildAuthorizationUrl(
+            "my-app-key",
+            "http://127.0.0.1:54321/callback/",
+            "challenge123",
+            "state456");
+
+        var query = HttpUtility.ParseQueryString(new Uri(url).Query);
+        query["client_id"].Should().Be("my-app-key");
+        query["response_type"].Should().Be("code");
+        query["redirect_uri"].Should().Be("http://127.0.0.1:54321/callback/");
+        query["code_challenge"].Should().Be("challenge123");
+        query["code_challenge_method"].Should().Be("S256");
+        query["token_access_type"].Should().Be("offline");
+        query["state"].Should().Be("state456");
+    }
+
+    [Fact]
+    public void BuildAuthorizationUrl_ShouldNotContainClientSecret()
+    {
+        // 検証対象: BuildAuthorizationUrl  目的: PKCE Public Client フローでは client_secret が含まれないこと
+        var url = DropboxOAuthServiceTestHelper.BuildAuthorizationUrl(
+            "app-key", "http://127.0.0.1:54321/callback/", "ch", "st");
+
+        url.Should().NotContain("client_secret");
+    }
+
+    // ── ParseCallbackQuery ──
+
+    [Fact]
+    public void ParseCallbackQuery_ShouldReturnCode_WhenValidCallback()
+    {
+        // 検証対象: ParseCallbackQuery  目的: 正常なコールバックで code が返ること
+        var query = BuildQuery(("code", "auth-code-abc"), ("state", "my-state"));
+
+        var (code, error) = DropboxOAuthService.ParseCallbackQuery(query, "my-state");
+
+        code.Should().Be("auth-code-abc");
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseCallbackQuery_ShouldReturnError_WhenDropboxReturnsError()
+    {
+        // 検証対象: ParseCallbackQuery  目的: Dropbox がエラーを返した場合にエラーメッセージが返ること
+        var query = BuildQuery(("error", "access_denied"), ("error_description", "User denied access"), ("state", "st"));
+
+        var (code, error) = DropboxOAuthService.ParseCallbackQuery(query, "st");
+
+        code.Should().BeNull();
+        error.Should().Contain("User denied access");
+    }
+
+    [Fact]
+    public void ParseCallbackQuery_ShouldReturnError_WhenStateMismatch()
+    {
+        // 検証対象: ParseCallbackQuery  目的: state 不一致時に CSRF エラーが返ること
+        var query = BuildQuery(("code", "abc"), ("state", "evil-state"));
+
+        var (code, error) = DropboxOAuthService.ParseCallbackQuery(query, "expected-state");
+
+        code.Should().BeNull();
+        error.Should().Contain("state");
+    }
+
+    [Fact]
+    public void ParseCallbackQuery_ShouldReturnError_WhenCodeMissing()
+    {
+        // 検証対象: ParseCallbackQuery  目的: code がない場合にエラーが返ること
+        var query = BuildQuery(("state", "st"));  // code なし
+
+        var (code, error) = DropboxOAuthService.ParseCallbackQuery(query, "st");
+
+        code.Should().BeNull();
+        error.Should().NotBeNullOrEmpty();
+    }
+
+    // ── GenerateCodeVerifier / GenerateCodeChallenge ──
+
+    [Fact]
+    public void GenerateCodeVerifier_ShouldReturnBase64UrlEncoded_WithExpectedLength()
+    {
+        // 検証対象: GenerateCodeVerifier  目的: RFC 7636 準拠の文字列（Base64URL, 43文字以上）が返ること
+        var verifier = DropboxOAuthService.GenerateCodeVerifier();
+
+        verifier.Should().NotBeNullOrWhiteSpace();
+        verifier.Should().NotContain("+").And.NotContain("/").And.NotContain("=");
+        verifier.Length.Should().BeGreaterThanOrEqualTo(43);
+    }
+
+    [Fact]
+    public void GenerateCodeChallenge_ShouldReturnBase64UrlEncoded_SHA256()
+    {
+        // 検証対象: GenerateCodeChallenge  目的: SHA-256(verifier) を Base64URL エンコードした値が返ること（パディングなし）
+        var verifier = DropboxOAuthService.GenerateCodeVerifier();
+        var challenge = DropboxOAuthService.GenerateCodeChallenge(verifier);
+
+        challenge.Should().NotBeNullOrWhiteSpace();
+        challenge.Should().NotContain("+").And.NotContain("/").And.NotContain("=");
+        // SHA-256 は 32 バイト → Base64 で 43 文字（パディング除去後）
+        challenge.Length.Should().Be(43);
+    }
+
+    [Fact]
+    public void GenerateCodeChallenge_ShouldBeDeterministic_ForSameVerifier()
+    {
+        // 検証対象: GenerateCodeChallenge  目的: 同一 verifier に対して同一 challenge が返ること（冪等性）
+        var verifier = DropboxOAuthService.GenerateCodeVerifier();
+        var ch1 = DropboxOAuthService.GenerateCodeChallenge(verifier);
+        var ch2 = DropboxOAuthService.GenerateCodeChallenge(verifier);
+
+        ch1.Should().Be(ch2);
+    }
+
+    // ── ヘルパー ──
+
+    private static NameValueCollection BuildQuery(params (string key, string value)[] pairs)
+    {
+        var q = HttpUtility.ParseQueryString(string.Empty);
+        foreach (var (key, value) in pairs)
+            q[key] = value;
+        return q;
+    }
+}
+
+/// <summary>
+/// internal static メソッドのテスト用ヘルパー（InternalsVisibleTo が不要な場合はリフレクション不要）。
+/// DropboxOAuthService の private static メソッドを internal に昇格したものを呼ぶ。
+/// </summary>
+internal static class DropboxOAuthServiceTestHelper
+{
+    public static string BuildRedirectUri(int port) =>
+        (string)typeof(DropboxOAuthService)
+            .GetMethod("BuildRedirectUri",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, [port])!;
+
+    public static string BuildAuthorizationUrl(string appKey, string redirectUri, string codeChallenge, string state) =>
+        (string)typeof(DropboxOAuthService)
+            .GetMethod("BuildAuthorizationUrl",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, [appKey, redirectUri, codeChallenge, state])!;
 }

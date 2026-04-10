@@ -942,7 +942,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
         // Credential Store ベースの場合: 初回呼び出し時に保存済みアクセストークンをロード
         if (_credentialStore != null && string.IsNullOrWhiteSpace(_accessToken))
         {
-            var stored = await _credentialStore.GetAsync(CredentialKeys.DropboxAccessToken).ConfigureAwait(false);
+            var stored = await _credentialStore.GetAsync(CredentialKeys.DropboxAccessToken, ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(stored))
                 _accessToken = stored;
         }
@@ -968,9 +968,9 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
             if (_oAuthService != null && _credentialStore != null)
             {
                 // IDropboxOAuthService（PKCE）ベースのリフレッシュ
-                var appKey = await _credentialStore.GetAsync(CredentialKeys.DropboxAppKey).ConfigureAwait(false)
+                var appKey = await _credentialStore.GetAsync(CredentialKeys.DropboxAppKey, ct).ConfigureAwait(false)
                     ?? throw new InvalidOperationException("Dropbox App Key が Credential Store に存在しません。");
-                var refreshToken = await _credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken).ConfigureAwait(false)
+                var refreshToken = await _credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken, ct).ConfigureAwait(false)
                     ?? throw new DropboxOAuthException(
                         "Dropbox リフレッシュトークンが Credential Store に存在しません。再認証が必要です。",
                         "token_not_found");
@@ -983,8 +983,8 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
                 catch (DropboxOAuthException ex) when (ex.IsTokenExpired)
                 {
                     // リフレッシュトークンも失効 → Credential Store からトークンを削除して再認証を要求
-                    await _credentialStore.DeleteAsync(CredentialKeys.DropboxAccessToken).ConfigureAwait(false);
-                    await _credentialStore.DeleteAsync(CredentialKeys.DropboxRefreshToken).ConfigureAwait(false);
+                    await _credentialStore.DeleteAsync(CredentialKeys.DropboxAccessToken, ct).ConfigureAwait(false);
+                    await _credentialStore.DeleteAsync(CredentialKeys.DropboxRefreshToken, ct).ConfigureAwait(false);
                     _accessToken = string.Empty;
                     throw new DropboxOAuthException(
                         "Dropbox リフレッシュトークンが失効しました。再認証が必要です。",
@@ -993,7 +993,7 @@ public sealed class DropboxStorageProvider : IStorageProvider, IRetryAwareStorag
                 }
 
                 _accessToken = result.AccessToken;
-                await _credentialStore.SaveAsync(CredentialKeys.DropboxAccessToken, result.AccessToken).ConfigureAwait(false);
+                await _credentialStore.SaveAsync(CredentialKeys.DropboxAccessToken, result.AccessToken, ct).ConfigureAwait(false);
             }
             else
             {
