@@ -45,6 +45,28 @@ public sealed record GraphConfigUpdateDto(
     string? ClientSecretExpiry = null);
 
 /// <summary>
+/// Discovery 結果 DTO（OneDrive Drive ID / SharePoint Site ID / Drive ID）。
+/// </summary>
+public sealed record DiscoveryConfigDto(
+    string OneDriveUserId,
+    string OneDriveDriveId,
+    string SharePointSiteId,
+    string SharePointDriveId,
+    string MigrationRoute,
+    string DestinationProvider);
+
+/// <summary>
+/// Discovery 結果マージ更新 DTO。null フィールドは上書きしない。
+/// </summary>
+public sealed record DiscoveryConfigUpdateDto(
+    string? OneDriveUserId = null,
+    string? OneDriveDriveId = null,
+    string? SharePointSiteId = null,
+    string? SharePointDriveId = null,
+    string? MigrationRoute = null,
+    string? DestinationProvider = null);
+
+/// <summary>
 /// config.json の読み書きを担当するサービス契約。
 /// </summary>
 public interface IConfigurationService
@@ -60,6 +82,12 @@ public interface IConfigurationService
 
     /// <summary>Graph プロバイダー設定をマージ保存する（null フィールドはスキップ）。</summary>
     Task UpdateGraphConfigAsync(GraphConfigUpdateDto update, CancellationToken ct = default);
+
+    /// <summary>Discovery 結果（OneDrive / SharePoint リソース識別子）を取得する。</summary>
+    Task<DiscoveryConfigDto> GetDiscoveryConfigAsync(CancellationToken ct = default);
+
+    /// <summary>Discovery 結果をマージ保存する（null フィールドはスキップ）。</summary>
+    Task UpdateDiscoveryConfigAsync(DiscoveryConfigUpdateDto update, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -196,6 +224,81 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.ClientId is not null) g["clientId"] = update.ClientId;
             if (update.TenantId is not null) g["tenantId"] = update.TenantId;
             if (update.ClientSecretExpiry is not null) g["clientSecretExpiry"] = update.ClientSecretExpiry;
+
+            var tmpPath = _configFilePath + ".tmp";
+            await using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+            await using (var writer = new Utf8JsonWriter(stream, WriteOptions))
+            {
+                root.WriteTo(writer);
+            }
+            File.Move(tmpPath, _configFilePath, overwrite: true);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<DiscoveryConfigDto> GetDiscoveryConfigAsync(CancellationToken ct = default)
+    {
+        if (!File.Exists(_configFilePath))
+            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+
+        var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("migrator", out var m))
+                return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+
+            var g = m.TryGetProperty("graph", out var gProp) ? gProp : default;
+            var oneDriveUserId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "oneDriveUserId", string.Empty) : string.Empty;
+            var oneDriveDriveId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "oneDriveDriveId", string.Empty) : string.Empty;
+            var sharePointSiteId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "sharePointSiteId", string.Empty) : string.Empty;
+            var sharePointDriveId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "sharePointDriveId", string.Empty) : string.Empty;
+            var migrationRoute = GetString(m, "migrationRoute", string.Empty);
+            var destinationProvider = GetString(m, "destinationProvider", "sharepoint");
+
+            return new DiscoveryConfigDto(oneDriveUserId, oneDriveDriveId, sharePointSiteId, sharePointDriveId, migrationRoute, destinationProvider);
+        }
+        catch (JsonException)
+        {
+            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateDiscoveryConfigAsync(DiscoveryConfigUpdateDto update, CancellationToken ct = default)
+    {
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var json = File.Exists(_configFilePath)
+                ? await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false)
+                : "{}";
+            var root = JsonNode.Parse(json) ?? new JsonObject();
+
+            // migrator セクションを確保
+            if (root["migrator"] is not JsonObject m)
+            {
+                m = new JsonObject();
+                root["migrator"] = m;
+            }
+
+            // graph サブセクションを確保
+            if (m["graph"] is not JsonObject g)
+            {
+                g = new JsonObject();
+                m["graph"] = g;
+            }
+
+            if (update.OneDriveUserId is not null) g["oneDriveUserId"] = update.OneDriveUserId;
+            if (update.OneDriveDriveId is not null) g["oneDriveDriveId"] = update.OneDriveDriveId;
+            if (update.SharePointSiteId is not null) g["sharePointSiteId"] = update.SharePointSiteId;
+            if (update.SharePointDriveId is not null) g["sharePointDriveId"] = update.SharePointDriveId;
+            if (update.MigrationRoute is not null) m["migrationRoute"] = update.MigrationRoute;
+            if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 
             var tmpPath = _configFilePath + ".tmp";
             await using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))

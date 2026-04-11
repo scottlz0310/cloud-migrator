@@ -22,6 +22,10 @@ public sealed class WizardState
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public WizardStepState Step1AzureAuth { get; set; } = WizardStepState.NotStarted;
 
+    /// <summary>Step 2a: OneDrive Drive ID 取得（両路線共通）。</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public WizardStepState Step2aOneDriveDiscovery { get; set; } = WizardStepState.NotStarted;
+
     /// <summary>Step 3: Dropbox OAuth 連携（OneDrive→Dropbox 路線）。</summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public WizardStepState Step3DropboxOAuth { get; set; } = WizardStepState.NotStarted;
@@ -49,6 +53,7 @@ public sealed class WizardState
             SelectedRoute = SelectedRoute,
             Step0RouteSelection = Safe(Step0RouteSelection),
             Step1AzureAuth = Safe(Step1AzureAuth),
+            Step2aOneDriveDiscovery = Safe(Step2aOneDriveDiscovery),
             Step3DropboxOAuth = Safe(Step3DropboxOAuth),
             Step4ConnectionTest = Safe(Step4ConnectionTest),
             IsCompleted = IsCompleted,
