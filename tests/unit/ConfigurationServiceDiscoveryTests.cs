@@ -44,9 +44,9 @@ public sealed class ConfigurationServiceDiscoveryTests : IDisposable
     // ── GetDiscoveryConfigAsync ────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryConfigAsync_WhenFileIsEmpty_ReturnsDefaults()
+    public async Task GetDiscoveryConfigAsync_WhenDiscoveryFieldsAreMissing_ReturnsDefaults()
     {
-        // 検証対象: GetDiscoveryConfigAsync  目的: graph セクションが空の場合にデフォルト値が返されること
+        // 検証対象: GetDiscoveryConfigAsync  目的: Discovery 関連フィールドが未設定の場合にデフォルト値が返されること
         var result = await _sut.GetDiscoveryConfigAsync();
 
         result.OneDriveUserId.Should().BeEmpty();

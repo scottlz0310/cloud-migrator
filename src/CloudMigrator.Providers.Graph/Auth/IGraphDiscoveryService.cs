@@ -8,7 +8,7 @@ public interface IGraphDiscoveryService
 {
     /// <summary>
     /// UPN またはユーザー ID から Personal OneDrive の Drive ID を取得する。
-    /// App-only 認証では /me/drive が使用できないため UPN 必須。
+    /// App-only 認証では /me/drive が使用できないため、対象ユーザーの UPN またはユーザー ID の指定が必要。
     /// </summary>
     Task<OneDriveDiscoveryResult> GetOneDriveDriveIdAsync(
         string clientId,

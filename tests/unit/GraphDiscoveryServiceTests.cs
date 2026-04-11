@@ -117,6 +117,20 @@ public sealed class GraphDiscoveryServiceTests
         result.ErrorMessage.Should().Contain("URL");
     }
 
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenUrlIsHttp_ReturnsFailure()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: HTTP URL（非-HTTPS）が拒否されること
+        var result = await _sut.GetSharePointSiteByUrlAsync(
+            clientId: "client-id",
+            tenantId: "tenant-id",
+            clientSecret: "secret",
+            siteUrl: "http://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("HTTPS");
+    }
+
     // ── GetSharePointDrivesAsync 入力バリデーション ────────────────────
 
     [Fact]
@@ -148,5 +162,37 @@ public sealed class GraphDiscoveryServiceTests
 
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().NotBeNullOrEmpty();
+    }
+
+    // ── BuildAdminConsentError ビジネスロジック ─────────────────────────────────
+
+    [Fact]
+    public void BuildAdminConsentError_WhenAuthorizationRequestDenied_ReturnsConsentGuide()
+    {
+        // 検証対象: BuildAdminConsentError  目的: "Authorization_RequestDenied" コード時に管理者同意ガイドが返されること
+        var message = GraphDiscoveryService.BuildAdminConsentError(403, "Authorization_RequestDenied");
+
+        message.Should().Contain("管理者の同意");
+        message.Should().Contain("Azure Portal");
+    }
+
+    [Fact]
+    public void BuildAdminConsentError_WhenUnknownErrorCode_ReturnsGenericMessage()
+    {
+        // 検証対象: BuildAdminConsentError  目的: 未知コード時に汎用エラーメッセージが返されること
+        var message = GraphDiscoveryService.BuildAdminConsentError(403, "Authorization_Forbidden");
+
+        message.Should().Contain("アクセスが拒否");
+        message.Should().Contain("Authorization_Forbidden");
+    }
+
+    [Fact]
+    public void BuildAdminConsentError_WhenErrorCodeIsNull_ReturnsGenericMessage()
+    {
+        // 検証対象: BuildAdminConsentError  目的: errorCode が null でもクラッシュせず汎用メッセージが返されること
+        var message = GraphDiscoveryService.BuildAdminConsentError(403, null);
+
+        message.Should().Contain("アクセスが拒否");
+        message.Should().NotBeNullOrEmpty();
     }
 }

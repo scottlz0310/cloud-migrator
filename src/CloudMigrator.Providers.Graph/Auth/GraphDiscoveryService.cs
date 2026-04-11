@@ -1,6 +1,7 @@
 using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Graph;
 using Microsoft.Graph.Models.ODataErrors;
+using Microsoft.Kiota.Abstractions;
 
 namespace CloudMigrator.Providers.Graph.Auth;
 
@@ -11,6 +12,11 @@ namespace CloudMigrator.Providers.Graph.Auth;
 /// </summary>
 public sealed class GraphDiscoveryService : IGraphDiscoveryService
 {
+    /// <summary>
+    /// テスト時に差し替え可能な GraphServiceClient ファクトリー。
+    /// 引数は (clientId, tenantId, clientSecret)。
+    /// </summary>
+    internal Func<string, string, string, GraphServiceClient> ClientFactory { get; set; } = CreateClient;
     /// <inheritdoc/>
     public async Task<OneDriveDiscoveryResult> GetOneDriveDriveIdAsync(
         string clientId,
@@ -24,7 +30,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
         try
         {
-            var client = CreateClient(clientId, tenantId, clientSecret);
+            var client = ClientFactory(clientId, tenantId, clientSecret);
             var drive = await client.Users[userId].Drive
                 .GetAsync(cancellationToken: ct)
                 .ConfigureAwait(false);
@@ -37,20 +43,21 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
                 DriveId: drive.Id,
                 DisplayName: drive.Name ?? userId);
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
+            var odataCode = (ex as ODataError)?.Error?.Code;
             return new OneDriveDiscoveryResult(false,
-                ErrorMessage: BuildAdminConsentError(ex));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
         {
             return new OneDriveDiscoveryResult(false,
                 ErrorMessage: $"ユーザー '{userId}' が見つかりませんでした。UPN またはユーザー ID を確認してください。");
         }
-        catch (ODataError ex)
+        catch (ApiException ex)
         {
             return new OneDriveDiscoveryResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
         }
         catch (OperationCanceledException)
         {
@@ -80,7 +87,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
         try
         {
-            var client = CreateClient(clientId, tenantId, clientSecret);
+            var client = ClientFactory(clientId, tenantId, clientSecret);
             var sitesResponse = await client.Sites
                 .GetAsync(r => r.QueryParameters.Search = keyword, ct)
                 .ConfigureAwait(false);
@@ -95,15 +102,16 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointSiteSearchResult(Success: true, Sites: sites);
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
+            var odataCode = (ex as ODataError)?.Error?.Code;
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
         }
-        catch (ODataError ex)
+        catch (ApiException ex)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
         }
         catch (OperationCanceledException)
         {
@@ -131,7 +139,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             // https://{hostname}/sites/{path} → GET /sites/{hostname}:/sites/{path}
             if (!Uri.TryCreate(siteUrl.Trim(), UriKind.Absolute, out var uri) ||
-                (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+                uri.Scheme != Uri.UriSchemeHttps)
             {
                 return new SharePointSiteSearchResult(false,
                     ErrorMessage: "有効な HTTPS URL を入力してください（例: https://contoso.sharepoint.com/sites/MyTeam）。");
@@ -140,7 +148,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
             var hostname = uri.Host;
             var serverRelativePath = uri.AbsolutePath.TrimStart('/');
 
-            var client = CreateClient(clientId, tenantId, clientSecret);
+            var client = ClientFactory(clientId, tenantId, clientSecret);
             var site = await client.Sites[$"{hostname}:/{serverRelativePath}"]
                 .GetAsync(cancellationToken: ct)
                 .ConfigureAwait(false);
@@ -155,20 +163,21 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointSiteSearchResult(Success: true, Sites: [entry]);
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
+            var odataCode = (ex as ODataError)?.Error?.Code;
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
         {
             return new SharePointSiteSearchResult(false,
                 ErrorMessage: "指定された URL のサイトが見つかりませんでした。URL を確認してください。");
         }
-        catch (ODataError ex)
+        catch (ApiException ex)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
         }
         catch (OperationCanceledException)
         {
@@ -194,7 +203,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
         try
         {
-            var client = CreateClient(clientId, tenantId, clientSecret);
+            var client = ClientFactory(clientId, tenantId, clientSecret);
             var drivesResponse = await client.Sites[siteId].Drives
                 .GetAsync(cancellationToken: ct)
                 .ConfigureAwait(false);
@@ -209,15 +218,16 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointDriveListResult(Success: true, Drives: drives);
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
+            var odataCode = (ex as ODataError)?.Error?.Code;
             return new SharePointDriveListResult(false,
-                ErrorMessage: BuildAdminConsentError(ex));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
         }
-        catch (ODataError ex)
+        catch (ApiException ex)
         {
             return new SharePointDriveListResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
         }
         catch (OperationCanceledException)
         {
@@ -243,7 +253,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
         try
         {
-            var client = CreateClient(clientId, tenantId, clientSecret);
+            var client = ClientFactory(clientId, tenantId, clientSecret);
             var drive = await client.Drives[driveId]
                 .GetAsync(cancellationToken: ct)
                 .ConfigureAwait(false);
@@ -252,18 +262,19 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
                 ? new DiscoveryVerifyResult(true)
                 : new DiscoveryVerifyResult(false, "Drive が見つかりませんでした。");
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
-            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex));
+            var odataCode = (ex as ODataError)?.Error?.Code;
+            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
+        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
         {
             return new DiscoveryVerifyResult(false, "指定された Drive ID が見つかりませんでした。");
         }
-        catch (ODataError ex)
+        catch (ApiException ex)
         {
             return new DiscoveryVerifyResult(false,
-                $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+                $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
         }
         catch (OperationCanceledException)
         {
@@ -283,17 +294,21 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         return Http.GraphClientFactory.Create(authenticator);
     }
 
-    private static string BuildAdminConsentError(ODataError ex)
+    /// <summary>
+    /// 403 レスポンスを受けた際の管理者同意エラーメッセージを生成する。
+    /// </summary>
+    /// <param name="statusCode">HTTP ステータスコード（403）。</param>
+    /// <param name="errorCode">OData エラーコード（例: "Authorization_RequestDenied"）。null 可。</param>
+    internal static string BuildAdminConsentError(int statusCode, string? errorCode)
     {
-        var code = ex.Error?.Code ?? string.Empty;
-        return code switch
+        return errorCode switch
         {
             "Authorization_RequestDenied" =>
                 "管理者の同意が付与されていません。\n" +
                 "Azure Portal の「API のアクセス許可」→「管理者の同意を与えます」で同意を付与するか、" +
                 "Step 1 の「管理者同意 URL を生成」ボタンで生成した URL をテナント管理者に送付してください。",
             _ =>
-                $"アクセスが拒否されました ({code})。管理者の同意が必要な場合があります。詳細: {ex.Error?.Message}",
+                $"アクセスが拒否されました ({errorCode})。管理者の同意が必要な場合があります。",
         };
     }
 }
