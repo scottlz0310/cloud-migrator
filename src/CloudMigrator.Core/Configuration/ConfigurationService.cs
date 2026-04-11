@@ -31,6 +31,20 @@ public sealed record ConfigUpdateDto(
     string? DestinationProvider = null);
 
 /// <summary>
+/// Graph プロバイダー設定 DTO（シークレット除外済み）。
+/// ClientId / TenantId / ClientSecretExpiry のみ。ClientSecret は Credential Manager 管理。
+/// </summary>
+public sealed record GraphConfigDto(string ClientId, string TenantId, string ClientSecretExpiry);
+
+/// <summary>
+/// Graph プロバイダー設定マージ更新 DTO。null フィールドは上書きしない。
+/// </summary>
+public sealed record GraphConfigUpdateDto(
+    string? ClientId = null,
+    string? TenantId = null,
+    string? ClientSecretExpiry = null);
+
+/// <summary>
 /// config.json の読み書きを担当するサービス契約。
 /// </summary>
 public interface IConfigurationService
@@ -40,6 +54,12 @@ public interface IConfigurationService
 
     /// <summary>指定フィールドのみをマージ保存する（null フィールドはスキップ）。</summary>
     Task UpdateConfigAsync(ConfigUpdateDto update, CancellationToken ct = default);
+
+    /// <summary>Graph プロバイダー設定を取得する（ClientId / TenantId / ClientSecretExpiry）。</summary>
+    Task<GraphConfigDto> GetGraphConfigAsync(CancellationToken ct = default);
+
+    /// <summary>Graph プロバイダー設定をマージ保存する（null フィールドはスキップ）。</summary>
+    Task UpdateGraphConfigAsync(GraphConfigUpdateDto update, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -121,4 +141,73 @@ public sealed class ConfigurationService : IConfigurationService
         => element.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String
             ? prop.GetString() ?? defaultValue
             : defaultValue;
+
+    /// <inheritdoc />
+    public async Task<GraphConfigDto> GetGraphConfigAsync(CancellationToken ct = default)
+    {
+        if (!File.Exists(_configFilePath))
+            return new GraphConfigDto(string.Empty, string.Empty, string.Empty);
+
+        var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("migrator", out var m) ||
+                !m.TryGetProperty("graph", out var g))
+                return new GraphConfigDto(string.Empty, string.Empty, string.Empty);
+
+            return new GraphConfigDto(
+                ClientId: GetString(g, "clientId", string.Empty),
+                TenantId: GetString(g, "tenantId", string.Empty),
+                ClientSecretExpiry: GetString(g, "clientSecretExpiry", string.Empty));
+        }
+        catch (JsonException)
+        {
+            // config.json が不正な JSON の場合は空の DTO を返す
+            return new GraphConfigDto(string.Empty, string.Empty, string.Empty);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateGraphConfigAsync(GraphConfigUpdateDto update, CancellationToken ct = default)
+    {
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var json = File.Exists(_configFilePath)
+                ? await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false)
+                : "{}";
+            var root = JsonNode.Parse(json) ?? new JsonObject();
+
+            // migrator セクションを確保
+            if (root["migrator"] is not JsonObject m)
+            {
+                m = new JsonObject();
+                root["migrator"] = m;
+            }
+
+            // graph サブセクションを確保
+            if (m["graph"] is not JsonObject g)
+            {
+                g = new JsonObject();
+                m["graph"] = g;
+            }
+
+            if (update.ClientId is not null) g["clientId"] = update.ClientId;
+            if (update.TenantId is not null) g["tenantId"] = update.TenantId;
+            if (update.ClientSecretExpiry is not null) g["clientSecretExpiry"] = update.ClientSecretExpiry;
+
+            var tmpPath = _configFilePath + ".tmp";
+            await using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+            await using (var writer = new Utf8JsonWriter(stream, WriteOptions))
+            {
+                root.WriteTo(writer);
+            }
+            File.Move(tmpPath, _configFilePath, overwrite: true);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
 }

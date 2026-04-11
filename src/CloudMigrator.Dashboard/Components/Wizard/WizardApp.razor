@@ -25,12 +25,17 @@
                                     OnRouteSelected="OnRouteSelected" />
                 break;
 
+            case WizardStep.AzureAuth:
+                <AzureSetupPage OnBackClick="GoToRouteSelection"
+                                OnAuthCompleted="GoToPostAzureStep" />
+                break;
+
             case WizardStep.SharePointPlaceholder:
-                <SharePointPlaceholderPage OnBackClick="GoToRouteSelection" />
+                <SharePointPlaceholderPage OnBackClick="GoToAzureAuth" />
                 break;
 
             case WizardStep.DropboxOAuth:
-                <DropboxOAuthPage OnBackClick="GoToRouteSelection"
+                <DropboxOAuthPage OnBackClick="GoToAzureAuth"
                                   OnAuthCompleted="GoToConnectionTest" />
                 break;
 
@@ -53,6 +58,7 @@
     {
         Welcome,
         RouteSelection,
+        AzureAuth,
         SharePointPlaceholder,
         DropboxOAuth,
         ConnectionTest,
@@ -80,9 +86,25 @@
         _state.Step0RouteSelection = WizardStepState.Verified;
         await WizardStateService.SaveAsync(_state);
 
-        if (route == WizardRoute.OneDriveToDropbox)
+        // 両路線とも Step 1 (Azure 認証) へ
+        GoToAzureAuth();
+    }
+
+    private void GoToAzureAuth()
+    {
+        _state.Step1AzureAuth = WizardStepState.InProgress;
+        _currentStep = WizardStep.AzureAuth;
+    }
+
+    private async Task GoToPostAzureStep()
+    {
+        _state.Step1AzureAuth = WizardStepState.Verified;
+        await WizardStateService.SaveAsync(_state);
+
+        // 路線に応じて次のステップへ（Step 2a/#111 は未実装のため Dropbox 路線は Step 3 へ直進）
+        if (_state.SelectedRoute == WizardRoute.OneDriveToDropbox)
         {
-            _currentStep = WizardStep.DropboxOAuth;
+            GoToDropboxOAuth();
         }
         else
         {
@@ -128,6 +150,10 @@
         if (state.Step0RouteSelection != WizardStepState.Verified)
             return WizardStep.RouteSelection;
 
+        // Step 1 が未完了（両路線共通）
+        if (state.Step1AzureAuth != WizardStepState.Verified)
+            return WizardStep.AzureAuth;
+
         // Dropbox 路線: Step 3 が未完了
         if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
             state.Step3DropboxOAuth != WizardStepState.Verified)
@@ -138,7 +164,7 @@
             state.Step4ConnectionTest != WizardStepState.Verified)
             return WizardStep.ConnectionTest;
 
-        // SharePoint 路線（v0.5.0 予定）
+        // SharePoint 路線（#113残ステップで実装予定）
         if (state.SelectedRoute == WizardRoute.OneDriveToSharePoint)
             return WizardStep.SharePointPlaceholder;
 
@@ -149,7 +175,8 @@
     {
         WizardStep.Welcome               => "ようこそ",
         WizardStep.RouteSelection        => "Step 0: 移行路線の選択",
-        WizardStep.SharePointPlaceholder => "SharePoint 路線（v0.5.0 予定）",
+        WizardStep.AzureAuth             => "Step 1: Azure 認証設定",
+        WizardStep.SharePointPlaceholder => "SharePoint 路線（準備中）",
         WizardStep.DropboxOAuth          => "Step 3: Dropbox 連携",
         WizardStep.ConnectionTest        => "Step 4: 接続テスト",
         _                                => string.Empty,

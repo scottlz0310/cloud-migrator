@@ -250,25 +250,25 @@ Welcome
 
 ### 実装タスク
 
-- [ ] ウィザード Step 1 UI コンポーネント（各ステップのガイドパネル）
-- [ ] Application Permission / Delegated Permission の違いを説明するガイドテキスト
-- [ ] 最小権限セット（`Files.ReadWrite.All` / `Sites.Read.All` / `User.Read.All`）の説明テキスト（`User.Read.All` の用途を明示）
-- [ ] Step 1-3: Application Permission（App-only 認証）であることを UI 上で明示するテキスト
-- [ ] Step 1-4: 管理者同意 URL 生成・クリップボードコピー機能（ケース A/B 分岐）
-- [ ] Step 1-5: Secret 有効期限選択 UI + `clientSecretExpiry` の config.json 保存
-- [ ] ClientID / TenantID / ClientSecret 入力フォーム → Credential Manager 保存（#109 連携）
-- [ ] 入力後の接続テスト（Graph API App-only auth 疎通確認）
-- [ ] 起動時 Secret 期限チェック + 30 日前警告表示
+- [x] ウィザード Step 1 UI コンポーネント（各ステップのガイドパネル）
+- [x] Application Permission / Delegated Permission の違いを説明するガイドテキスト
+- [x] 最小権限セット（`Files.ReadWrite.All` / `Sites.Read.All` / `User.Read.All`）の説明テキスト（`User.Read.All` の用途を明示）
+- [x] Step 1-3: Application Permission（App-only 認証）であることを UI 上で明示するテキスト
+- [x] Step 1-4: 管理者同意 URL 生成・クリップボードコピー機能（ケース A/B 分岐）
+- [x] Step 1-5: Secret 有効期限選択 UI + `clientSecretExpiry` の config.json 保存
+- [x] ClientID / TenantID / ClientSecret 入力フォーム → Credential Manager 保存（#109 連携）
+- [x] 入力後の接続テスト（Graph API App-only auth 疎通確認）
+- [x] 起動時 Secret 期限チェック + 30 日前警告表示
 
 ### 受け入れ基準
 
-- [ ] Application Permission（App-only）フローで認証できることが確認できる
-- [ ] 最小権限セット（3権限）で移行が完結できる
-- [ ] 管理者同意が必要であることをウィザード内で認識できる
-- [ ] 一般ユーザーでも同意依頼 URL を生成して管理者に送付できる
-- [ ] `User.Read.All` の用途が UI 上で明示されている
-- [ ] Secret 有効期限が `clientSecretExpiry` キーとして config.json に保存される
-- [ ] Secret 期限 30 日前にダッシュボード警告が表示される
+- [x] Application Permission（App-only）フローで認証できることが確認できる
+- [x] 最小権限セット（3権限）で移行が完結できる
+- [x] 管理者同意が必要であることをウィザード内で認識できる
+- [x] 一般ユーザーでも同意依頼 URL を生成して管理者に送付できる
+- [x] `User.Read.All` の用途が UI 上で明示されている
+- [x] Secret 有効期限が `clientSecretExpiry` キーとして config.json に保存される
+- [x] Secret 期限 30 日前にダッシュボード警告が表示される
 
 ---
 

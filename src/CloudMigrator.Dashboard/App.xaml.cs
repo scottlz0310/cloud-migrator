@@ -8,6 +8,7 @@ using CloudMigrator.Core.Transfer;
 using CloudMigrator.Core.Wizard;
 using CloudMigrator.Observability;
 using CloudMigrator.Providers.Dropbox.Auth;
+using CloudMigrator.Providers.Graph.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
@@ -121,6 +122,7 @@ public partial class App : Application
         services.AddSingleton<ICredentialStore>(_ => CredentialStoreFactory.Create());
         services.AddSingleton<IDropboxOAuthService, DropboxOAuthService>();
         services.AddSingleton<IDropboxVerifyService, DropboxVerifyService>();
+        services.AddSingleton<IAzureAuthVerifyService, AzureAuthVerifyService>();
 
         // ── HTTP ─────────────────────────────────────────────────────────────
         services.AddHttpClient();
