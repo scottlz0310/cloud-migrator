@@ -43,21 +43,30 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
                 DriveId: drive.Id,
                 DisplayName: drive.Name ?? userId);
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
-            var odataCode = (ex as ODataError)?.Error?.Code;
             return new OneDriveDiscoveryResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
+        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
         {
             return new OneDriveDiscoveryResult(false,
                 ErrorMessage: $"ユーザー '{userId}' が見つかりませんでした。UPN またはユーザー ID を確認してください。");
         }
+        catch (ODataError ex)
+        {
+            return new OneDriveDiscoveryResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new OneDriveDiscoveryResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
+        }
         catch (ApiException ex)
         {
             return new OneDriveDiscoveryResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
         }
         catch (OperationCanceledException)
         {
@@ -102,16 +111,25 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointSiteSearchResult(Success: true, Sites: sites);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
+        }
+        catch (ODataError ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
-            var odataCode = (ex as ODataError)?.Error?.Code;
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
         }
         catch (ApiException ex)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
         }
         catch (OperationCanceledException)
         {
@@ -163,21 +181,30 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointSiteSearchResult(Success: true, Sites: [entry]);
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
-            var odataCode = (ex as ODataError)?.Error?.Code;
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
+        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
         {
             return new SharePointSiteSearchResult(false,
                 ErrorMessage: "指定された URL のサイトが見つかりませんでした。URL を確認してください。");
         }
+        catch (ODataError ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
+        }
         catch (ApiException ex)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
         }
         catch (OperationCanceledException)
         {
@@ -218,16 +245,25 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointDriveListResult(Success: true, Drives: drives);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new SharePointDriveListResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
+        }
+        catch (ODataError ex)
+        {
+            return new SharePointDriveListResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
-            var odataCode = (ex as ODataError)?.Error?.Code;
             return new SharePointDriveListResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
+                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
         }
         catch (ApiException ex)
         {
             return new SharePointDriveListResult(false,
-                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
         }
         catch (OperationCanceledException)
         {
@@ -262,19 +298,27 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
                 ? new DiscoveryVerifyResult(true)
                 : new DiscoveryVerifyResult(false, "Drive が見つかりませんでした。");
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
-            var odataCode = (ex as ODataError)?.Error?.Code;
-            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.ResponseStatusCode, odataCode));
+            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
         }
-        catch (ApiException ex) when (ex.ResponseStatusCode == 404)
+        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
         {
             return new DiscoveryVerifyResult(false, "指定された Drive ID が見つかりませんでした。");
+        }
+        catch (ODataError ex)
+        {
+            return new DiscoveryVerifyResult(false,
+                $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.ResponseStatusCode, null));
         }
         catch (ApiException ex)
         {
             return new DiscoveryVerifyResult(false,
-                $"Graph API エラー ({ex.ResponseStatusCode}): {(ex as ODataError)?.Error?.Message}");
+                $"Graph API エラー ({ex.ResponseStatusCode})");
         }
         catch (OperationCanceledException)
         {
@@ -308,7 +352,9 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
                 "Azure Portal の「API のアクセス許可」→「管理者の同意を与えます」で同意を付与するか、" +
                 "Step 1 の「管理者同意 URL を生成」ボタンで生成した URL をテナント管理者に送付してください。",
             _ =>
-                $"アクセスが拒否されました ({errorCode})。管理者の同意が必要な場合があります。",
+                string.IsNullOrEmpty(errorCode)
+                    ? "アクセスが拒否されました。管理者の同意が必要な場合があります。"
+                    : $"アクセスが拒否されました ({errorCode})。管理者の同意が必要な場合があります。",
         };
     }
 }
