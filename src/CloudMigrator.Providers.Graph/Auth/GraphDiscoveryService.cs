@@ -8,7 +8,7 @@ namespace CloudMigrator.Providers.Graph.Auth;
 /// <summary>
 /// Graph SDK を使用して OneDrive / SharePoint のリソースを発見する
 /// <see cref="IGraphDiscoveryService"/> 実装。
-/// 各メソッドで GraphServiceClient を都度生成するため、認証情報がメモリに残らない。
+/// GraphServiceClient は各メソッド内で都度生成し、このクラスのフィールドとしては保持しない。
 /// </summary>
 public sealed class GraphDiscoveryService : IGraphDiscoveryService
 {
@@ -46,7 +46,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new OneDriveDiscoveryResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
         }
         catch (ODataError ex) when (ex.ResponseStatusCode == 404)
         {
@@ -61,7 +61,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
             return new OneDriveDiscoveryResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
+                ErrorMessage: BuildAdminConsentError(null));
         }
         catch (ApiException ex)
         {
@@ -114,7 +114,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
         }
         catch (ODataError ex)
         {
@@ -124,7 +124,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
+                ErrorMessage: BuildAdminConsentError(null));
         }
         catch (ApiException ex)
         {
@@ -184,7 +184,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
         }
         catch (ODataError ex) when (ex.ResponseStatusCode == 404)
         {
@@ -199,7 +199,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointSiteSearchResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
+                ErrorMessage: BuildAdminConsentError(null));
         }
         catch (ApiException ex)
         {
@@ -248,7 +248,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointDriveListResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
         }
         catch (ODataError ex)
         {
@@ -258,7 +258,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointDriveListResult(false,
-                ErrorMessage: BuildAdminConsentError(ex.ResponseStatusCode, null));
+                ErrorMessage: BuildAdminConsentError(null));
         }
         catch (ApiException ex)
         {
@@ -300,7 +300,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
-            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.ResponseStatusCode, ex.Error?.Code));
+            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.Error?.Code));
         }
         catch (ODataError ex) when (ex.ResponseStatusCode == 404)
         {
@@ -313,7 +313,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
-            return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.ResponseStatusCode, null));
+            return new DiscoveryVerifyResult(false, BuildAdminConsentError(null));
         }
         catch (ApiException ex)
         {
@@ -341,9 +341,8 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
     /// <summary>
     /// 403 レスポンスを受けた際の管理者同意エラーメッセージを生成する。
     /// </summary>
-    /// <param name="statusCode">HTTP ステータスコード（403）。</param>
     /// <param name="errorCode">OData エラーコード（例: "Authorization_RequestDenied"）。null 可。</param>
-    internal static string BuildAdminConsentError(int statusCode, string? errorCode)
+    internal static string BuildAdminConsentError(string? errorCode)
     {
         return errorCode switch
         {

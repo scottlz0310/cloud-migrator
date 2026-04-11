@@ -172,7 +172,7 @@ public sealed class GraphDiscoveryServiceTests
     public void BuildAdminConsentError_WhenAuthorizationRequestDenied_ReturnsConsentGuide()
     {
         // 検証対象: BuildAdminConsentError  目的: "Authorization_RequestDenied" コード時に管理者同意ガイドが返されること
-        var message = GraphDiscoveryService.BuildAdminConsentError(403, "Authorization_RequestDenied");
+        var message = GraphDiscoveryService.BuildAdminConsentError("Authorization_RequestDenied");
 
         message.Should().Contain("管理者の同意");
         message.Should().Contain("Azure Portal");
@@ -182,7 +182,7 @@ public sealed class GraphDiscoveryServiceTests
     public void BuildAdminConsentError_WhenUnknownErrorCode_ReturnsGenericMessage()
     {
         // 検証対象: BuildAdminConsentError  目的: 未知コード時に汎用エラーメッセージが返されること
-        var message = GraphDiscoveryService.BuildAdminConsentError(403, "Authorization_Forbidden");
+        var message = GraphDiscoveryService.BuildAdminConsentError("Authorization_Forbidden");
 
         message.Should().Contain("アクセスが拒否");
         message.Should().Contain("Authorization_Forbidden");
@@ -192,7 +192,7 @@ public sealed class GraphDiscoveryServiceTests
     public void BuildAdminConsentError_WhenErrorCodeIsNull_ReturnsGenericMessage()
     {
         // 検証対象: BuildAdminConsentError  目的: errorCode が null でもクラッシュせず汎用メッセージが返されること
-        var message = GraphDiscoveryService.BuildAdminConsentError(403, null);
+        var message = GraphDiscoveryService.BuildAdminConsentError(null);
 
         message.Should().Contain("アクセスが拒否");
         message.Should().NotBeNullOrEmpty();

@@ -249,14 +249,14 @@ public sealed class ConfigurationService : IConfigurationService
         try
         {
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("migrator", out var m))
+            if (!doc.RootElement.TryGetProperty("migrator", out var m) || m.ValueKind != JsonValueKind.Object)
                 return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
 
-            var g = m.TryGetProperty("graph", out var gProp) ? gProp : default;
-            var oneDriveUserId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "oneDriveUserId", string.Empty) : string.Empty;
-            var oneDriveDriveId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "oneDriveDriveId", string.Empty) : string.Empty;
-            var sharePointSiteId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "sharePointSiteId", string.Empty) : string.Empty;
-            var sharePointDriveId = g.ValueKind != JsonValueKind.Undefined ? GetString(g, "sharePointDriveId", string.Empty) : string.Empty;
+            var hasGraphObject = m.TryGetProperty("graph", out var gProp) && gProp.ValueKind == JsonValueKind.Object;
+            var oneDriveUserId = hasGraphObject ? GetString(gProp, "oneDriveUserId", string.Empty) : string.Empty;
+            var oneDriveDriveId = hasGraphObject ? GetString(gProp, "oneDriveDriveId", string.Empty) : string.Empty;
+            var sharePointSiteId = hasGraphObject ? GetString(gProp, "sharePointSiteId", string.Empty) : string.Empty;
+            var sharePointDriveId = hasGraphObject ? GetString(gProp, "sharePointDriveId", string.Empty) : string.Empty;
             var migrationRoute = GetString(m, "migrationRoute", string.Empty);
             var destinationProvider = GetString(m, "destinationProvider", "sharepoint");
 
