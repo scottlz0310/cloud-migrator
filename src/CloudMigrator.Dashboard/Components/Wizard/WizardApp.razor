@@ -30,6 +30,11 @@
                                 OnAuthCompleted="GoToPostAzureStep" />
                 break;
 
+            case WizardStep.DriveDiscovery:
+                <DriveDiscoveryPage OnBackClick="GoToAzureAuth"
+                                    OnDiscoveryCompleted="GoToPostDiscoveryStep" />
+                break;
+
             case WizardStep.SharePointPlaceholder:
                 <SharePointPlaceholderPage OnBackClick="GoToAzureAuth" />
                 break;
@@ -59,6 +64,7 @@
         Welcome,
         RouteSelection,
         AzureAuth,
+        DriveDiscovery,
         SharePointPlaceholder,
         DropboxOAuth,
         ConnectionTest,
@@ -101,7 +107,22 @@
         _state.Step1AzureAuth = WizardStepState.Verified;
         await WizardStateService.SaveAsync(_state);
 
-        // 路線に応じて次のステップへ（Step 2a/#111 は未実装のため Dropbox 路線は Step 3 へ直進）
+        // 両路線とも Step 2a (Drive Discovery) へ
+        GoToDriveDiscovery();
+    }
+
+    private void GoToDriveDiscovery()
+    {
+        _state.Step2aOneDriveDiscovery = WizardStepState.InProgress;
+        _currentStep = WizardStep.DriveDiscovery;
+    }
+
+    private async Task GoToPostDiscoveryStep()
+    {
+        _state.Step2aOneDriveDiscovery = WizardStepState.Verified;
+        await WizardStateService.SaveAsync(_state);
+
+        // 路線に応じて次のステップへ
         if (_state.SelectedRoute == WizardRoute.OneDriveToDropbox)
         {
             GoToDropboxOAuth();
@@ -154,6 +175,10 @@
         if (state.Step1AzureAuth != WizardStepState.Verified)
             return WizardStep.AzureAuth;
 
+        // Step 2a が未完了（両路線共通）
+        if (state.Step2aOneDriveDiscovery != WizardStepState.Verified)
+            return WizardStep.DriveDiscovery;
+
         // Dropbox 路線: Step 3 が未完了
         if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
             state.Step3DropboxOAuth != WizardStepState.Verified)
@@ -176,6 +201,7 @@
         WizardStep.Welcome               => "ようこそ",
         WizardStep.RouteSelection        => "Step 0: 移行路線の選択",
         WizardStep.AzureAuth             => "Step 1: Azure 認証設定",
+        WizardStep.DriveDiscovery        => "Step 2a: OneDrive Drive ID 取得",
         WizardStep.SharePointPlaceholder => "SharePoint 路線（準備中）",
         WizardStep.DropboxOAuth          => "Step 3: Dropbox 連携",
         WizardStep.ConnectionTest        => "Step 4: 接続テスト",

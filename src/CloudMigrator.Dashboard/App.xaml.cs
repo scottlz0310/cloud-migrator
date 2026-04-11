@@ -123,6 +123,7 @@ public partial class App : Application
         services.AddSingleton<IDropboxOAuthService, DropboxOAuthService>();
         services.AddSingleton<IDropboxVerifyService, DropboxVerifyService>();
         services.AddSingleton<IAzureAuthVerifyService, AzureAuthVerifyService>();
+        services.AddSingleton<IGraphDiscoveryService, GraphDiscoveryService>();
 
         // ── HTTP ─────────────────────────────────────────────────────────────
         services.AddHttpClient();

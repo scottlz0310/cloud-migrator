@@ -1,0 +1,195 @@
+@using CloudMigrator.Core.Configuration
+@using CloudMigrator.Core.Credentials
+@using CloudMigrator.Core.Wizard
+@using CloudMigrator.Providers.Graph.Auth
+@inject IGraphDiscoveryService DiscoveryService
+@inject ICredentialStore CredentialStore
+@inject IConfigurationService ConfigurationService
+@inject ISnackbar Snackbar
+
+@* Step 2a: OneDrive Drive ID 取得 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
+    <MudStack Spacing="6">
+
+        <div>
+            <MudText Typo="Typo.h5">OneDrive の接続先を設定する</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                移行元の Personal OneDrive の Drive ID を取得します。
+            </MudText>
+        </div>
+
+        @* App-only 認証の制約説明 *@
+        <MudAlert Severity="Severity.Info" Dense="true" Icon="@Icons.Material.Filled.Info">
+            <strong>App-only 認証の制約</strong>: <code>/me/drive</code> は使用できません。
+            OneDrive の所有者の <strong>UPN（メールアドレス形式のユーザー名）</strong> またはユーザー ID を入力してください。
+        </MudAlert>
+
+        @* Graph Explorer リンク（補助参照） *@
+        <MudAlert Severity="Severity.Normal" Dense="true" Icon="@Icons.Material.Filled.OpenInBrowser">
+            UPN がわからない場合は
+            <MudLink Href="https://developer.microsoft.com/graph/graph-explorer" Target="_blank">
+                Graph Explorer
+            </MudLink>
+            で <code>GET /users</code> を実行して確認できます（管理者アカウントでサインイン要）。
+        </MudAlert>
+
+        @* UPN / ユーザー ID 入力 *@
+        <MudTextField T="string"
+                      Value="_userId"
+                      ValueChanged="@(v => { _userId = v; _discoveryResult = null; })"
+                      Label="UPN またはユーザー ID"
+                      Variant="Variant.Outlined"
+                      Placeholder="例: user@contoso.onmicrosoft.com"
+                      Disabled="@_isBusy"
+                      HelperText="OneDrive の所有者のメールアドレス（UPN）を入力してください。" />
+
+        @* 取得ボタン *@
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Search"
+                   Disabled="@(_isBusy || string.IsNullOrWhiteSpace(_userId))"
+                   OnClick="FetchDriveIdAsync">
+            @(_isBusy ? "取得中..." : "Drive ID を取得")
+        </MudButton>
+
+        @* 取得結果 *@
+        @if (_discoveryResult is { Success: true })
+        {
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Success">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                        Drive ID を取得しました
+                    </MudText>
+                    <MudText Typo="Typo.body2">
+                        <strong>表示名:</strong> @_discoveryResult.DisplayName
+                    </MudText>
+                    <MudText Typo="Typo.caption" Style="word-break: break-all; font-family: monospace;">
+                        <strong>Drive ID:</strong> @_discoveryResult.DriveId
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+        }
+
+        @if (_discoveryResult is { Success: false })
+        {
+            <MudAlert Severity="Severity.Error">
+                <MudText Style="white-space: pre-line;">@_discoveryResult.ErrorMessage</MudText>
+                @if (_isAdminConsentError)
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2">
+                        Step 1 の「管理者同意 URL を生成」ボタンで URL を生成し、テナント管理者に送付してください。
+                    </MudText>
+                }
+            </MudAlert>
+        }
+
+        @* ナビゲーションボタン *@
+        <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mt-4">
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       OnClick="@(() => OnBackClick.InvokeAsync())"
+                       Disabled="@_isBusy">
+                戻る
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       EndIcon="@Icons.Material.Filled.ArrowForward"
+                       Disabled="@(_isBusy || _discoveryResult is not { Success: true })"
+                       OnClick="SaveAndContinueAsync">
+                次へ
+            </MudButton>
+        </MudStack>
+
+    </MudStack>
+</MudContainer>
+
+@code {
+    /// <summary>「戻る」ボタンクリック時のコールバック。</summary>
+    [Parameter] public EventCallback OnBackClick { get; set; }
+
+    /// <summary>Drive ID 取得・保存完了時のコールバック。</summary>
+    [Parameter] public EventCallback OnDiscoveryCompleted { get; set; }
+
+    private string _userId = string.Empty;
+    private OneDriveDiscoveryResult? _discoveryResult;
+    private bool _isBusy;
+    private bool _isAdminConsentError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 既存の設定から UPN をプリロードする
+        var config = await ConfigurationService.GetDiscoveryConfigAsync();
+        _userId = config.OneDriveUserId;
+    }
+
+    private async Task FetchDriveIdAsync()
+    {
+        _isBusy = true;
+        _isAdminConsentError = false;
+        _discoveryResult = null;
+        StateHasChanged();
+
+        try
+        {
+            // config.json から ClientId / TenantId を取得し、Credential Manager から ClientSecret を取得する
+            var graphConfig = await ConfigurationService.GetGraphConfigAsync();
+            var clientId = graphConfig.ClientId;
+            var tenantId = graphConfig.TenantId;
+            var clientSecret = await CredentialStore.GetAsync(CredentialKeys.AzureClientSecret);
+
+            if (string.IsNullOrWhiteSpace(clientId) ||
+                string.IsNullOrWhiteSpace(tenantId) ||
+                string.IsNullOrWhiteSpace(clientSecret))
+            {
+                _discoveryResult = new OneDriveDiscoveryResult(false,
+                    ErrorMessage: "Azure 認証情報が保存されていません。Step 1 に戻って再設定してください。");
+                return;
+            }
+
+            _discoveryResult = await DiscoveryService.GetOneDriveDriveIdAsync(
+                clientId, tenantId, clientSecret, _userId.Trim());
+
+            if (!_discoveryResult.Success)
+            {
+                _isAdminConsentError = _discoveryResult.ErrorMessage?.Contains("管理者の同意") == true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _discoveryResult = new OneDriveDiscoveryResult(false,
+                ErrorMessage: $"予期しないエラーが発生しました: {ex.Message}");
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SaveAndContinueAsync()
+    {
+        if (_discoveryResult is not { Success: true, DriveId: { } driveId })
+            return;
+
+        _isBusy = true;
+        try
+        {
+            // Discovery 結果を config.json に保存する
+            await ConfigurationService.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+                OneDriveUserId: _userId.Trim(),
+                OneDriveDriveId: driveId));
+
+            Snackbar.Add("OneDrive の Drive ID を保存しました。", Severity.Success);
+            await OnDiscoveryCompleted.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"保存中にエラーが発生しました: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

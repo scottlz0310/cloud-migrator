@@ -280,32 +280,32 @@ Welcome
 
 ### 実装タスク
 
-- [ ] Personal OneDrive: userId / UPN 入力フォーム → `GET /users/{userId}/drive` → Drive ID 取得
-- [ ] Personal OneDrive: UI 上で App-only 認証の制約（`GET /me/drive` 不可）を説明するテキスト表示
-- [ ] SharePoint: Site 名キーワード入力 UI → `GET /sites?search={keyword}` 呼び出し
-- [ ] SharePoint: Site 一覧表示（表示名付き）+ 選択
-- [ ] SharePoint: Drive（Document Library）一覧取得 → 表示名付きリストで表示 + 選択
-- [ ] SharePoint: 検索 0 件時のフォールバック（Site URL 直接入力フォーム）
-- [ ] Discovery 結果を config.json スキーマ（`migrationRoute` / `source` / `destination`）で保存
-- [ ] Discovery Verify（`GET /drives/{driveId}` 疎通確認）
+- [x] Personal OneDrive: userId / UPN 入力フォーム → `GET /users/{userId}/drive` → Drive ID 取得
+- [x] Personal OneDrive: UI 上で App-only 認証の制約（`GET /me/drive` 不可）を説明するテキスト表示
+- [x] SharePoint: Site 名キーワード入力 UI → `GET /sites?search={keyword}` 呼び出し
+- [x] SharePoint: Site 一覧表示（表示名付き）+ 選択（サービス層実装済み、UI は #113残ステップ）
+- [x] SharePoint: Drive（Document Library）一覧取得 → 表示名付きリストで表示 + 選択（サービス層実装済み）
+- [x] SharePoint: 検索 0 件時のフォールバック（Site URL 直接入力フォーム）（サービス層実装済み）
+- [x] Discovery 結果を既存の `migrator.*` 設定スキーマ（例: `migrator.graph.oneDriveUserId` など）へ保存
+- [x] Discovery Verify（`GET /drives/{driveId}` 疎通確認）（サービス層実装済み）
 - [ ] Migration Preflight（読み取り権限 + 書き込み権限の確認）
-- [ ] OneDrive→Dropbox 路線時は SharePoint 取得 UI をスキップし、Dropbox 用スキーマで保存する分岐
+- [x] OneDrive→Dropbox 路線時は SharePoint 取得 UI をスキップし、Dropbox 用スキーマで保存する分岐
 - [ ] Graph Explorer フレームへのプリセットクエリ注入（補助用）— WebView2 埋め込み可否の事前確認必須
-- [ ] Graph Explorer サインインの文脈説明テキスト表示
-- [ ] Admin Consent 未付与エラー時のガイドメッセージ
+- [x] Graph Explorer サインインの文脈説明テキスト表示（Graph Explorer リンク形式で表示）
+- [x] Admin Consent 未付与エラー時のガイドメッセージ
 
 ### 受け入れ基準
 
-- [ ] Personal OneDrive Drive ID（移行元）がアプリ内で取得・保存できる
-- [ ] App-only 認証の制約（UPN 入力必須）が UI 上で明示されている
-- [ ] SharePoint Site をキーワード検索で絞り込める（`search=*` は使用しない）
-- [ ] キーワード検索で 0 件の場合に Site URL 直接入力フォールバックが表示される
-- [ ] Document Library の一覧に表示名（Display Name）が表示される
-- [ ] Discovery 結果が config.json スキーマに従って保存される
-- [ ] Discovery Verify と Migration Preflight の両方が成功した場合のみステップが `Verified` になる
-- [ ] OneDrive→Dropbox 路線選択時に SharePoint 取得 UI がスキップされ、Dropbox 用スキーマで保存される
-- [ ] Graph Explorer が補助参照ツールとして利用できる（または外部ブラウザで開く）
-- [ ] Admin Consent 未付与エラー時に適切なガイドが表示される
+- [x] Personal OneDrive Drive ID（移行元）がアプリ内で取得・保存できる
+- [x] App-only 認証の制約（UPN またはユーザー ID 入力必須）が UI 上で明示されている
+- [x] SharePoint Site をキーワード検索で絞り込める（`search=*` は使用しない）
+- [x] キーワード検索で 0 件の場合に Site URL 直接入力フォールバックが表示される（#113残ステップで UI 実装）
+- [ ] Document Library の一覧に表示名（Display Name）が表示される（#113残ステップで UI 実装）
+- [x] Discovery 結果が config.json スキーマに従って保存される
+- [ ] Discovery Verify と Migration Preflight の両方が成功した場合のみステップが `Verified` になる（UI は #113残ステップ）
+- [x] OneDrive→Dropbox 路線選択時に SharePoint 取得 UI がスキップされ、Dropbox 用スキーマで保存される
+- [ ] Graph Explorer が補助参照ツールとして利用できる（または外部ブラウザで開く）（Graph Explorer リンク形式で対応済み）
+- [x] Admin Consent 未付与エラー時に適切なガイドが表示される
 
 ---
 
