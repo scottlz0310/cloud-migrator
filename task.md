@@ -14,21 +14,22 @@ Epic ISSUE: [#108 v0.4.0 セットアップUX改善 — オンボーディング
 ### 概要
 
 環境変数依存のセットアップを廃止し、初回起動時のウィザードUI と Windows Credential Manager による安全な認証情報管理を実現する。  
-**v0.4.0 スコープ**: Personal OneDrive → Dropbox 路線のエンド・ツー・エンド対応。  
+**v0.4.0 スコープ**: Personal OneDrive → Dropbox 路線・Personal OneDrive → SharePoint 路線の両方をエンド・ツー・エンドで対応。  
 **プラットフォーム**: Windows 専用（`net10.0-windows`）。
 
 ### 対応路線（v0.4.0）
 
 ```
 Personal OneDrive → Dropbox（v0.4.0 でエンド・ツー・エンド対応）
-Personal OneDrive → SharePoint Document Library（v0.5.0 に分離）
+Personal OneDrive → SharePoint Document Library（v0.4.0 でエンド・ツー・エンド対応）
 ```
 
 ### 実装順序
 
 ```
-#109（Credential Store）→ #114（Blazor Hybrid 基盤）→ #112（Dropbox OAuth）→ #113（Wizard Skeleton）
+#109（Credential Store）→ #114（Blazor Hybrid 基盤）→ #110（Azure 認証ガイド）→ #111（Graph Discovery）→ #113残ステップ（SharePoint Wizard）
                                                       ↑
+                              #112（Dropbox OAuth）は #114 完了後に並行着手可能
                               #112 の Spike 1（リダイレクト URI 仕様確認）は #114 と並行して先行調査可能
 ```
 
@@ -193,11 +194,16 @@ cloud-migrator/dropbox/refresh-token
 ```
 Welcome
   └── Step 0: 移行路線選択
-        ├── [OneDrive→Dropbox 路線]（v0.4.0 実装）
-        │     └── Step 3: Dropbox OAuth 連携（#112）
-        │           └── Step 4: 接続テスト & 完了
-        └── [OneDrive→SharePoint 路線]（v0.5.0 予定）
-              └── 「この路線は v0.5.0 で対応予定です」プレースホルダー画面
+        ├── [OneDrive→Dropbox 路線]
+        │     └── Step 1: Azure 認証設定（#110）
+        │           └── Step 2a: OneDrive Drive ID 取得（#111）
+        │                 └── Step 3: Dropbox OAuth 連携（#112）
+        │                       └── Step 4: 接続テスト & 完了
+        └── [OneDrive→SharePoint 路線]
+              └── Step 1: Azure 認証設定（#110）
+                    └── Step 2a: OneDrive Drive ID 取得（#111）
+                          └── Step 2b: SharePoint Discovery（#111）
+                                └── Step 4: 接続テスト & 完了
 ```
 
 ### 実装タスク（v0.4.0）
@@ -210,11 +216,11 @@ Welcome
 - [x] アプリ終了時に `InProgress` → `NotStarted` で保存するシャットダウンフック実装
 - [x] Welcome 画面 UI（MudBlazor）
 - [x] Step 0: 移行路線選択 UI（MudBlazor）
-  - [x] SharePoint 路線選択時の「v0.5.0 で対応予定」プレースホルダー画面
+  - [x] SharePoint 路線選択時の未実装プレースホルダー画面（v0.4.0 スコープで #113残ステップにて本実装に置換）
 - [x] ステップ間の進行制御（前ステップが `Verified`/`Skipped` でないと進めない）
 - [x] 初回起動検出ロジック（`wizard-state.json` 不在 + Credential 未登録の複合判定）
 - [x] 中断再開ロジック（最初の `NotStarted`/`Failed` から再開）
-- [x] Step 4: 接続テスト UI（Dropbox 路線のみ・DI 経由で doctor/verify 呼び出し）
+- [x] Step 4: 接続テスト UI（DI 経由で doctor/verify 呼び出し・Dropbox／SharePoint 両路線対応）
   - [x] Credential Verify → Discovery Verify → Migration Preflight の 3 層を順に実行
   - [x] 失敗時の原因層・ステップ特定表示
 - [x] 「セットアップをやり直す」メニューエントリ（全ステップ `NotStarted` リセット）
@@ -223,10 +229,10 @@ Welcome
 ### 受け入れ基準（v0.4.0）
 
 - [x] 初回起動時にウィザードが自動表示される（`wizard-state.json` 不在が主判定条件）
-- [x] Step 0 で SharePoint 路線を選択すると「v0.5.0 で対応予定」画面が表示される
-- [x] Dropbox 路線でステップ 0→3→4 がエンド・ツー・エンドで動作する
+- [x] Step 0 で SharePoint 路線を選択するとプレースホルダー画面が表示される（v0.4.0 スコープで #113残ステップにて本実装に置換）
+- [x] Dropbox 路線でステップ 0→1→2a→3→4 がエンド・ツー・エンドで動作する（Step 1・2a は #110・#111 実装後）
 - [x] Step 4 が Credential Verify → Discovery Verify → Migration Preflight の 3 層を実行する
-- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される
+- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される（→ #113残ステップで対応）
 - [x] `InProgress` 状態でアプリを終了した場合、`wizard-state.json` には `NotStarted` として保存される
 - [x] 中断後の再起動で最初の未完了ステップから再開できる
 - [x] Step 4 接続テスト失敗時に失敗した層（Credential / Discovery / Preflight）が表示される
@@ -236,25 +242,107 @@ Welcome
 
 ---
 
+## ISSUE #110: Azure Entra ID アプリ登録 & API権限設定ガイド
+
+**Issue**: [#110 feat: Azure Entra ID アプリ登録 & API権限設定ガイド（オンボーディング Step 1）](https://github.com/scottlz0310/cloud-migrator/issues/110)  
+**Milestone**: v0.4.0  
+**依存**: #114（Blazor Hybrid 基盤）
+
+### 実装タスク
+
+- [ ] ウィザード Step 1 UI コンポーネント（各ステップのガイドパネル）
+- [ ] Application Permission / Delegated Permission の違いを説明するガイドテキスト
+- [ ] 最小権限セット（`Files.ReadWrite.All` / `Sites.Read.All` / `User.Read.All`）の説明テキスト（`User.Read.All` の用途を明示）
+- [ ] Step 1-3: Application Permission（App-only 認証）であることを UI 上で明示するテキスト
+- [ ] Step 1-4: 管理者同意 URL 生成・クリップボードコピー機能（ケース A/B 分岐）
+- [ ] Step 1-5: Secret 有効期限選択 UI + `clientSecretExpiry` の config.json 保存
+- [ ] ClientID / TenantID / ClientSecret 入力フォーム → Credential Manager 保存（#109 連携）
+- [ ] 入力後の接続テスト（Graph API App-only auth 疎通確認）
+- [ ] 起動時 Secret 期限チェック + 30 日前警告表示
+
+### 受け入れ基準
+
+- [ ] Application Permission（App-only）フローで認証できることが確認できる
+- [ ] 最小権限セット（3権限）で移行が完結できる
+- [ ] 管理者同意が必要であることをウィザード内で認識できる
+- [ ] 一般ユーザーでも同意依頼 URL を生成して管理者に送付できる
+- [ ] `User.Read.All` の用途が UI 上で明示されている
+- [ ] Secret 有効期限が `clientSecretExpiry` キーとして config.json に保存される
+- [ ] Secret 期限 30 日前にダッシュボード警告が表示される
+
+---
+
+## ISSUE #111: Graph API リソース発見（OneDrive + SharePoint）
+
+**Issue**: [#111 feat: Graph Explorer フレーム統合（Site ID / Drive ID 発見支援）（オンボーディング Step 2）](https://github.com/scottlz0310/cloud-migrator/issues/111)  
+**Milestone**: v0.4.0  
+**依存**: #110（Client Credentials フロー確定後に着手）
+
+### 実装タスク
+
+- [ ] Personal OneDrive: userId / UPN 入力フォーム → `GET /users/{userId}/drive` → Drive ID 取得
+- [ ] Personal OneDrive: UI 上で App-only 認証の制約（`GET /me/drive` 不可）を説明するテキスト表示
+- [ ] SharePoint: Site 名キーワード入力 UI → `GET /sites?search={keyword}` 呼び出し
+- [ ] SharePoint: Site 一覧表示（表示名付き）+ 選択
+- [ ] SharePoint: Drive（Document Library）一覧取得 → 表示名付きリストで表示 + 選択
+- [ ] SharePoint: 検索 0 件時のフォールバック（Site URL 直接入力フォーム）
+- [ ] Discovery 結果を config.json スキーマ（`migrationRoute` / `source` / `destination`）で保存
+- [ ] Discovery Verify（`GET /drives/{driveId}` 疎通確認）
+- [ ] Migration Preflight（読み取り権限 + 書き込み権限の確認）
+- [ ] OneDrive→Dropbox 路線時は SharePoint 取得 UI をスキップし、Dropbox 用スキーマで保存する分岐
+- [ ] Graph Explorer フレームへのプリセットクエリ注入（補助用）— WebView2 埋め込み可否の事前確認必須
+- [ ] Graph Explorer サインインの文脈説明テキスト表示
+- [ ] Admin Consent 未付与エラー時のガイドメッセージ
+
+### 受け入れ基準
+
+- [ ] Personal OneDrive Drive ID（移行元）がアプリ内で取得・保存できる
+- [ ] App-only 認証の制約（UPN 入力必須）が UI 上で明示されている
+- [ ] SharePoint Site をキーワード検索で絞り込める（`search=*` は使用しない）
+- [ ] キーワード検索で 0 件の場合に Site URL 直接入力フォールバックが表示される
+- [ ] Document Library の一覧に表示名（Display Name）が表示される
+- [ ] Discovery 結果が config.json スキーマに従って保存される
+- [ ] Discovery Verify と Migration Preflight の両方が成功した場合のみステップが `Verified` になる
+- [ ] OneDrive→Dropbox 路線選択時に SharePoint 取得 UI がスキップされ、Dropbox 用スキーマで保存される
+- [ ] Graph Explorer が補助参照ツールとして利用できる（または外部ブラウザで開く）
+- [ ] Admin Consent 未付与エラー時に適切なガイドが表示される
+
+---
+
+## ISSUE #113 残ステップ: SharePoint 路線 Wizard UI
+
+**Issue**: [#113 feat: オンボーディングウィザード UI（初回起動フロー統合）](https://github.com/scottlz0310/cloud-migrator/issues/113)  
+**Milestone**: v0.4.0（残ステップ: Step 1・2a・2b）  
+**依存**: #110, #111
+
+### 実装タスク（SharePoint 路線追加分）
+
+- [ ] Step 1（Azure 認証設定）: Step 1-1〜1-6 のウィザード UI（#110 連携）
+- [ ] Step 2a（OneDrive Discovery）: UPN 入力 → Drive ID 取得・確認画面（#111 連携）
+- [ ] Step 2b（SharePoint Discovery）: Site 検索 → Library 選択 → 確認画面（#111 連携）
+- [ ] Step 4 を SharePoint 路線でも動作させる（Dropbox 路線との分岐拡張）
+- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される実装
+- [ ] 失効時の UI 通知 + 該当ステップを `NotStarted` に戻す実装（#112 連携）
+
+### 受け入れ基準
+
+- [ ] Personal OneDrive → SharePoint 路線のウィザードがエンド・ツー・エンドで動作する
+- [ ] Step 1〜2a〜2b〜4 の順序でステップが進行できる
+- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される
+
+---
+
 ## v0.4.0 全体の受け入れ基準
 
 - [ ] 環境変数なしで初回セットアップが完結できる
 - [ ] アプリ起動時にネイティブウィンドウが自動的に開く（ブラウザの手動起動不要）
 - [ ] Personal OneDrive → Dropbox 路線のセットアップがウィザードで完結できる
+- [ ] Personal OneDrive → SharePoint 路線のセットアップがウィザードで完結できる
 - [ ] Dropbox 連携が App Secret なしの OAuth PKCE フローで完結できる
+- [ ] Azure 認証が Application Permission（Client Credentials）フローで完結できる
 - [ ] 認証情報が Windows Credential Manager に安全に保存される
 - [ ] オンボーディング完了後、Migration Runtime が追加操作なしに転送を開始できる
 - [ ] 非 Windows 環境で起動した際に明示的なエラーメッセージが表示される
-
----
-
-## v0.5.0 スコープ（今回対象外）
-
-| ISSUE | 内容 |
-|-------|------|
-| [#110](https://github.com/scottlz0310/cloud-migrator/issues/110) | Azure Entra ID アプリ登録 & API権限設定ガイド |
-| [#111](https://github.com/scottlz0310/cloud-migrator/issues/111) | Graph API リソース発見（OneDrive + SharePoint） |
-| #113（残ステップ） | Step 1・2a・2b の Wizard UI（SharePoint 路線） |
 
 ---
 
@@ -263,5 +351,5 @@ Welcome
 | 層 | 目的 | 実施タイミング | 担当 ISSUE |
 |----|------|--------------|-----------:|
 | **Credential Verify** | シークレット / トークンの存在と有効性確認 | 各ステップの入力完了直後 | #109 / #112 |
-| **Discovery Verify** | 対象リソース（Drive ID 等）が実際に到達できるか確認 | Discovery 完了後 | #111（v0.5.0）/ #112 |
+| **Discovery Verify** | 対象リソース（Drive ID 等）が実際に到達できるか確認 | Discovery 完了後 | #111 / #112 |
 | **Migration Preflight** | 実際の読み書き権限を小ファイルで確認 | Step 4（接続テスト） | #113 |
