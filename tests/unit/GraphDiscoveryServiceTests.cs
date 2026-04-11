@@ -453,4 +453,139 @@ public sealed class GraphDiscoveryServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("アクセスが拒否");
     }
+
+    [Fact]
+    public async Task VerifyDriveAsync_WhenGenericApiException_ReturnsGraphApiError()
+    {
+        // 検証対象: VerifyDriveAsync  目的: 汎用 ApiException で Graph API エラーメッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 500 })
+            .VerifyDriveAsync("c", "t", "s", "driveId");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Graph API エラー");
+    }
+
+    [Fact]
+    public async Task VerifyDriveAsync_WhenNetworkError_ReturnsConnectionError()
+    {
+        // 検証対象: VerifyDriveAsync  目的: ネットワークエラーで接続エラーメッセージが返されること
+        var result = await CreateSutThrowing(new HttpRequestException("Network error"))
+            .VerifyDriveAsync("c", "t", "s", "driveId");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("接続エラー");
+    }
+
+    // ── SearchSharePointSitesAsync 残欠落ブランチ ─────────────────────
+
+    [Fact]
+    public async Task SearchSharePointSitesAsync_WhenGenericApiException_ReturnsGraphApiError()
+    {
+        // 検証対象: SearchSharePointSitesAsync  目的: 汎用 ApiException（非 403）で Graph API エラーメッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 500 })
+            .SearchSharePointSitesAsync("c", "t", "s", "contoso");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Graph API エラー");
+    }
+
+    // ── GetSharePointSiteByUrlAsync 残欠落ブランチ ────────────────────
+
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenApiException403_ReturnsAdminConsentMessage()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: 非-OData ApiException 403 でも管理者同意メッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 403 })
+            .GetSharePointSiteByUrlAsync("c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("アクセスが拒否");
+    }
+
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenGenericApiException_ReturnsGraphApiError()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: 汎用 ApiException で Graph API エラーメッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 500 })
+            .GetSharePointSiteByUrlAsync("c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Graph API エラー");
+    }
+
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenNetworkError_ReturnsConnectionError()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: ネットワークエラーで接続エラーメッセージが返されること
+        var result = await CreateSutThrowing(new HttpRequestException("Network error"))
+            .GetSharePointSiteByUrlAsync("c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("接続エラー");
+    }
+
+    // ── GetSharePointDrivesAsync 残欠落ブランチ ───────────────────────
+
+    [Fact]
+    public async Task GetSharePointDrivesAsync_WhenApiException403_ReturnsAdminConsentMessage()
+    {
+        // 検証対象: GetSharePointDrivesAsync  目的: 非-OData ApiException 403 でも管理者同意メッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 403 })
+            .GetSharePointDrivesAsync("c", "t", "s", "site-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("アクセスが拒否");
+    }
+
+    // ── OperationCanceledException rethrow 確認（全メソッド）────────────
+
+    [Fact]
+    public async Task GetOneDriveDriveIdAsync_WhenCanceled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: GetOneDriveDriveIdAsync  目的: キャンセル時に OperationCanceledException が握り潰されず再スローされること
+        var act = async () => await CreateSutThrowing(new OperationCanceledException())
+            .GetOneDriveDriveIdAsync("c", "t", "s", "user@contoso.com");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task SearchSharePointSitesAsync_WhenCanceled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: SearchSharePointSitesAsync  目的: キャンセル時に OperationCanceledException が握り潰されず再スローされること
+        var act = async () => await CreateSutThrowing(new OperationCanceledException())
+            .SearchSharePointSitesAsync("c", "t", "s", "contoso");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenCanceled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: キャンセル時に OperationCanceledException が握り潰されず再スローされること
+        var act = async () => await CreateSutThrowing(new OperationCanceledException())
+            .GetSharePointSiteByUrlAsync("c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetSharePointDrivesAsync_WhenCanceled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: GetSharePointDrivesAsync  目的: キャンセル時に OperationCanceledException が握り潰されず再スローされること
+        var act = async () => await CreateSutThrowing(new OperationCanceledException())
+            .GetSharePointDrivesAsync("c", "t", "s", "site-id");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task VerifyDriveAsync_WhenCanceled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: VerifyDriveAsync  目的: キャンセル時に OperationCanceledException が握り潰されず再スローされること
+        var act = async () => await CreateSutThrowing(new OperationCanceledException())
+            .VerifyDriveAsync("c", "t", "s", "driveId");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }
