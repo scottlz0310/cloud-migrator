@@ -18,6 +18,10 @@ public sealed class WizardState
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public WizardStepState Step0RouteSelection { get; set; } = WizardStepState.NotStarted;
 
+    /// <summary>Step 1: Azure Entra ID 認証設定（両路線共通）。</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public WizardStepState Step1AzureAuth { get; set; } = WizardStepState.NotStarted;
+
     /// <summary>Step 3: Dropbox OAuth 連携（OneDrive→Dropbox 路線）。</summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public WizardStepState Step3DropboxOAuth { get; set; } = WizardStepState.NotStarted;
@@ -44,6 +48,7 @@ public sealed class WizardState
             SchemaVersion = WizardStateService.CurrentSchemaVersion,
             SelectedRoute = SelectedRoute,
             Step0RouteSelection = Safe(Step0RouteSelection),
+            Step1AzureAuth = Safe(Step1AzureAuth),
             Step3DropboxOAuth = Safe(Step3DropboxOAuth),
             Step4ConnectionTest = Safe(Step4ConnectionTest),
             IsCompleted = IsCompleted,

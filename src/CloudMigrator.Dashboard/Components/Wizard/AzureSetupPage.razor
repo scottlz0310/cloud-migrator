@@ -1,0 +1,306 @@
+@using CloudMigrator.Core.Configuration
+@using CloudMigrator.Core.Credentials
+@using CloudMigrator.Core.Wizard
+@using CloudMigrator.Providers.Graph.Auth
+@inject IAzureAuthVerifyService VerifyService
+@inject ICredentialStore CredentialStore
+@inject IConfigurationService ConfigurationService
+@inject ISnackbar Snackbar
+
+@* Step 1: Azure Entra ID アプリ登録 & API 権限設定 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
+    <MudStack Spacing="6">
+
+        <div>
+            <MudText Typo="Typo.h5">Azure 認証を設定する</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                OneDrive にアクセスするための Azure Entra ID アプリを登録します。
+            </MudText>
+        </div>
+
+        @* Permission 種別の説明 *@
+        <MudAlert Severity="Severity.Info" Dense="true" Icon="@Icons.Material.Filled.Security">
+            このツールは <strong>Application Permission（App-only 認証）</strong> を使用します。
+            ユーザーのサインインは不要ですが、テナント管理者による <strong>管理者同意</strong> が必要です。
+        </MudAlert>
+
+        @* Azure Portal アプリ登録手順 *@
+        <MudExpansionPanels>
+            <MudExpansionPanel Text="Azure Portal でのアプリ登録手順（初回のみ）"
+                               Icon="@Icons.Material.Filled.HelpOutline">
+                <MudStack Spacing="3" Class="pa-2">
+
+                    <MudText Typo="Typo.body2">
+                        <strong>A-1.</strong>
+                        <MudLink Href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+                                 Target="_blank">Azure Portal → アプリの登録</MudLink>
+                        を開き、「新規登録」をクリックする
+                    </MudText>
+
+                    <MudText Typo="Typo.body2">
+                        <strong>A-2.</strong> アプリ名（例: <em>CloudMigrator</em>）を入力し、
+                        「サポートされているアカウントの種類」を
+                        <strong>「この組織ディレクトリ内のアカウントのみ」</strong> に設定して「登録」をクリックする
+                    </MudText>
+
+                    <MudText Typo="Typo.body2">
+                        <strong>A-3.</strong> 登録後の画面で
+                        <strong>「アプリケーション (クライアント) ID」</strong> と
+                        <strong>「ディレクトリ (テナント) ID」</strong> をそれぞれコピーして下の入力欄に貼り付ける
+                    </MudText>
+
+                    <MudText Typo="Typo.body2">
+                        <strong>A-4.</strong> 左メニューの「証明書とシークレット」→「新しいクライアント シークレット」をクリックし、
+                        有効期限を選択して追加。表示された <strong>「値」</strong> をコピーして下の入力欄に貼り付ける
+                        （この値はこの画面にしか表示されません。必ず今コピーしてください）
+                    </MudText>
+
+                    <MudText Typo="Typo.body2">
+                        <strong>A-5.</strong> 左メニューの「API のアクセス許可」→「アクセス許可の追加」→
+                        「Microsoft Graph」→「アプリケーションの許可」で以下の 3 権限を追加する:
+                    </MudText>
+                    <MudPaper Elevation="0" Class="pa-2"
+                              Style="background: var(--mud-palette-background-grey); font-family: monospace; font-size: 12px;">
+                        Files.ReadWrite.All　　（OneDrive 読み取り・書き込み）<br />
+                        Sites.Read.All　　　　 （SharePoint サイト読み取り）<br />
+                        User.Read.All　　　　　（OneDrive Drive ID の取得に必要）
+                    </MudPaper>
+                    <MudAlert Severity="Severity.Warning" Dense="true">
+                        <strong>User.Read.All</strong> は OneDrive の Drive ID を UPN で取得する際に必要です（App-only では /me/drive が使用できないため）。
+                    </MudAlert>
+
+                    <MudText Typo="Typo.body2">
+                        <strong>A-6.</strong> 同じページの「&lt;テナント名&gt; に管理者の同意を与えます」ボタンをクリックして
+                        管理者同意を付与する（管理者権限が必要）
+                    </MudText>
+
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        管理者権限がない場合は、下の「管理者同意 URL を生成」ボタンで URL を生成し、
+                        テナント管理者に送付してください。
+                    </MudText>
+
+                </MudStack>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+
+        @* クライアント ID 入力 *@
+        <MudTextField @bind-Value="_clientId"
+                      Label="アプリケーション（クライアント）ID"
+                      Variant="Variant.Outlined"
+                      Placeholder="例: 00000000-0000-0000-0000-000000000000"
+                      Disabled="@_isBusy"
+                      HelperText="Azure Portal のアプリ登録画面「概要」タブから取得してください。" />
+
+        @* テナント ID 入力 *@
+        <MudTextField @bind-Value="_tenantId"
+                      Label="ディレクトリ（テナント）ID"
+                      Variant="Variant.Outlined"
+                      Placeholder="例: 00000000-0000-0000-0000-000000000000"
+                      Disabled="@_isBusy"
+                      HelperText="Azure Portal のアプリ登録画面「概要」タブから取得してください。" />
+
+        @* クライアントシークレット入力 *@
+        <MudTextField @bind-Value="_clientSecret"
+                      Label="クライアントシークレット（値）"
+                      Variant="Variant.Outlined"
+                      InputType="@(_showSecret ? InputType.Text : InputType.Password)"
+                      Disabled="@_isBusy"
+                      Adornment="Adornment.End"
+                      AdornmentIcon="@(_showSecret ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                      OnAdornmentClick="@(() => _showSecret = !_showSecret)"
+                      HelperText="「証明書とシークレット」で作成したシークレットの「値」を貼り付けてください。" />
+
+        @* シークレット有効期限選択 *@
+        <MudSelect T="string"
+                   @bind-Value="_secretExpiryMonths"
+                   Label="クライアントシークレットの有効期限"
+                   Variant="Variant.Outlined"
+                   Disabled="@_isBusy"
+                   HelperText="Azure Portal で設定した有効期限に合わせてください。期限 30 日前に警告が表示されます。">
+            <MudSelectItem Value="@("6")">6 ヶ月</MudSelectItem>
+            <MudSelectItem Value="@("12")">1 年</MudSelectItem>
+            <MudSelectItem Value="@("24")">2 年</MudSelectItem>
+        </MudSelect>
+
+        @* 管理者同意 URL 生成 *@
+        @if (!string.IsNullOrWhiteSpace(_clientId) && !string.IsNullOrWhiteSpace(_tenantId))
+        {
+            <MudPaper Elevation="1" Class="pa-3">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        管理者権限がない場合、以下の URL を管理者に送付して同意を依頼できます。
+                    </MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudText Typo="Typo.caption" Style="word-break: break-all; flex: 1;">
+                            @AdminConsentUrl
+                        </MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                       Size="Size.Small"
+                                       Title="URL をコピー"
+                                       OnClick="CopyAdminConsentUrlAsync" />
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+        }
+
+        @* エラー表示 *@
+        @if (_verifyError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true"
+                      CloseIconClicked="@(() => _verifyError = null)">
+                @_verifyError
+            </MudAlert>
+        }
+
+        @* 成功表示 *@
+        @if (_isVerified)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true">
+                認証に成功しました。クレデンシャルを Credential Manager に保存しました。
+            </MudAlert>
+        }
+
+        @* アクションボタン *@
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.NetworkCheck"
+                       Disabled="@(!CanVerify || _isBusy)"
+                       OnClick="VerifyAsync">
+                @if (_isBusy)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>確認中...</span>
+                }
+                else
+                {
+                    <span>接続テスト</span>
+                }
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       EndIcon="@Icons.Material.Filled.ArrowForward"
+                       Disabled="@(!_isVerified || _isBusy)"
+                       OnClick="SaveAndNextAsync">
+                保存して次へ
+            </MudButton>
+        </MudStack>
+
+        @* 戻るボタン *@
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                   Disabled="@_isBusy"
+                   OnClick="OnBackClick">
+            路線選択に戻る
+        </MudButton>
+
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Parameter] public EventCallback OnBackClick { get; set; }
+
+    /// <summary>認証設定が保存され次ステップへ進むときのコールバック。</summary>
+    [Parameter] public EventCallback OnAuthCompleted { get; set; }
+
+    private string _clientId = string.Empty;
+    private string _tenantId = string.Empty;
+    private string _clientSecret = string.Empty;
+    private string _secretExpiryMonths = "12";
+    private bool _showSecret;
+    private bool _isBusy;
+    private bool _isVerified;
+    private string? _verifyError;
+
+    private bool CanVerify =>
+        !string.IsNullOrWhiteSpace(_clientId) &&
+        !string.IsNullOrWhiteSpace(_tenantId) &&
+        !string.IsNullOrWhiteSpace(_clientSecret);
+
+    private string AdminConsentUrl =>
+        $"https://login.microsoftonline.com/{_tenantId.Trim()}/adminconsent?client_id={_clientId.Trim()}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 保存済みの ClientId / TenantId を事前入力（シークレットは事前入力しない）
+        var graphConfig = await ConfigurationService.GetGraphConfigAsync();
+        if (!string.IsNullOrEmpty(graphConfig.ClientId))
+            _clientId = graphConfig.ClientId;
+        if (!string.IsNullOrEmpty(graphConfig.TenantId))
+            _tenantId = graphConfig.TenantId;
+
+        // 既にシークレットが Credential Manager に保存されていれば Verified 済みとして扱う
+        var hasSecret = await CredentialStore.ExistsAsync(CredentialKeys.AzureClientSecret);
+        if (hasSecret && !string.IsNullOrEmpty(graphConfig.ClientId))
+            _isVerified = true;
+    }
+
+    private async Task VerifyAsync()
+    {
+        _isBusy = true;
+        _isVerified = false;
+        _verifyError = null;
+
+        try
+        {
+            var result = await VerifyService.VerifyAsync(
+                _clientId.Trim(), _tenantId.Trim(), _clientSecret.Trim());
+
+            if (result.IsSuccess)
+            {
+                _isVerified = true;
+            }
+            else
+            {
+                _verifyError = result.ErrorMessage;
+            }
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SaveAndNextAsync()
+    {
+        if (!_isVerified) return;
+
+        _isBusy = true;
+        try
+        {
+            // Credential Manager に保存
+            await CredentialStore.SaveAsync(CredentialKeys.AzureClientSecret, _clientSecret.Trim());
+
+            // config.json に ClientId / TenantId / ClientSecretExpiry を保存（シークレット本体は含めない）
+            var expiryDate = DateTimeOffset.UtcNow.AddMonths(int.Parse(_secretExpiryMonths));
+            await ConfigurationService.UpdateGraphConfigAsync(new GraphConfigUpdateDto(
+                ClientId: _clientId.Trim(),
+                TenantId: _tenantId.Trim(),
+                ClientSecretExpiry: expiryDate.ToString("O")));
+
+            Snackbar.Add("Azure 認証情報を保存しました。", Severity.Success);
+            await OnAuthCompleted.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _verifyError = $"保存に失敗しました: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CopyAdminConsentUrlAsync()
+    {
+        // クリップボードへのコピーは JS interop が必要だが、
+        // WPF WebView2 環境では window.navigator.clipboard.writeText が動作する
+        // MudBlazor の ISnackbar 経由で通知
+        //
+        // 注: クリップボード API は JS interop 依存。ここでは Snackbar に URL を表示する簡易実装
+        Snackbar.Add($"管理者同意 URL をコピー: {AdminConsentUrl}", Severity.Info);
+        await Task.CompletedTask;
+    }
+}

@@ -129,6 +129,12 @@ public sealed class GraphProviderOptions
 
     /// <summary>SharePoint ドキュメントライブラリ ID</summary>
     public string SharePointDriveId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// クライアントシークレットの有効期限（ISO 8601 文字列、例: "2027-04-11T00:00:00Z"）。
+    /// ウィザード Step 1 で設定し、30 日前にダッシュボード警告を表示するために使用。
+    /// </summary>
+    public string ClientSecretExpiry { get; set; } = string.Empty;
 }
 
 /// <summary>
