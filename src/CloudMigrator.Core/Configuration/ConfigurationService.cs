@@ -149,15 +149,23 @@ public sealed class ConfigurationService : IConfigurationService
             return new GraphConfigDto(string.Empty, string.Empty, string.Empty);
 
         var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("migrator", out var m) ||
-            !m.TryGetProperty("graph", out var g))
-            return new GraphConfigDto(string.Empty, string.Empty, string.Empty);
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("migrator", out var m) ||
+                !m.TryGetProperty("graph", out var g))
+                return new GraphConfigDto(string.Empty, string.Empty, string.Empty);
 
-        return new GraphConfigDto(
-            ClientId: GetString(g, "clientId", string.Empty),
-            TenantId: GetString(g, "tenantId", string.Empty),
-            ClientSecretExpiry: GetString(g, "clientSecretExpiry", string.Empty));
+            return new GraphConfigDto(
+                ClientId: GetString(g, "clientId", string.Empty),
+                TenantId: GetString(g, "tenantId", string.Empty),
+                ClientSecretExpiry: GetString(g, "clientSecretExpiry", string.Empty));
+        }
+        catch (JsonException)
+        {
+            // config.json が不正な JSON の場合は空の DTO を返す
+            return new GraphConfigDto(string.Empty, string.Empty, string.Empty);
+        }
     }
 
     /// <inheritdoc />

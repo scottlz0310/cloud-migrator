@@ -38,9 +38,9 @@ public sealed class AzureAuthVerifyService : IAzureAuthVerifyService
 
             return new AzureAuthVerifyResult(true);
         }
-        catch (MsalServiceException ex) when (ex.Message.Contains("AADSTS"))
+        catch (MsalServiceException ex)
         {
-            // Azure AD が返したエラー（無効な clientId/tenantId/secret、未同意など）
+            // Azure AD / MSAL サービス例外は安定したプロパティ（ErrorCode）ベースで整形する
             return new AzureAuthVerifyResult(false, FormatMsalError(ex));
         }
         catch (MsalException ex)

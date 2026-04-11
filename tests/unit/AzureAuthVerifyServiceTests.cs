@@ -1,7 +1,5 @@
 using CloudMigrator.Providers.Graph.Auth;
 using FluentAssertions;
-using Microsoft.Identity.Client;
-using Moq;
 
 namespace CloudMigrator.Tests.Unit;
 
@@ -66,10 +64,11 @@ public sealed class AzureAuthVerifyServiceTests
     }
 
     [Fact]
+    [Trait("Category", "E2E")]
     public async Task VerifyAsync_WhenInvalidCredentials_ReturnsFailureWithMessage()
     {
         // 検証対象: VerifyAsync  目的: 無効な認証情報（存在しない ClientId 等）で失敗結果とエラーメッセージが返されること
-        // 注意: このテストは実際に Azure AD に接続を試みる（ネットワーク不要のフォーマットエラーが期待される）
+        // 注意: このテストは実際に Azure AD に接続を試みるため E2E カテゴリに分類（CI 除外対象）
         var result = await _sut.VerifyAsync(
             clientId: "00000000-0000-0000-0000-000000000000",
             tenantId: "00000000-0000-0000-0000-000000000000",

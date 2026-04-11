@@ -6,6 +6,7 @@
 @inject ICredentialStore CredentialStore
 @inject IConfigurationService ConfigurationService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 
 @* Step 1: Azure Entra ID アプリ登録 & API 権限設定 *@
 <MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
@@ -84,7 +85,9 @@
         </MudExpansionPanels>
 
         @* クライアント ID 入力 *@
-        <MudTextField @bind-Value="_clientId"
+        <MudTextField T="string"
+                      Value="_clientId"
+                      ValueChanged="@(v => { _clientId = v; _isVerified = false; })"
                       Label="アプリケーション（クライアント）ID"
                       Variant="Variant.Outlined"
                       Placeholder="例: 00000000-0000-0000-0000-000000000000"
@@ -92,7 +95,9 @@
                       HelperText="Azure Portal のアプリ登録画面「概要」タブから取得してください。" />
 
         @* テナント ID 入力 *@
-        <MudTextField @bind-Value="_tenantId"
+        <MudTextField T="string"
+                      Value="_tenantId"
+                      ValueChanged="@(v => { _tenantId = v; _isVerified = false; })"
                       Label="ディレクトリ（テナント）ID"
                       Variant="Variant.Outlined"
                       Placeholder="例: 00000000-0000-0000-0000-000000000000"
@@ -100,7 +105,9 @@
                       HelperText="Azure Portal のアプリ登録画面「概要」タブから取得してください。" />
 
         @* クライアントシークレット入力 *@
-        <MudTextField @bind-Value="_clientSecret"
+        <MudTextField T="string"
+                      Value="_clientSecret"
+                      ValueChanged="@(v => { _clientSecret = v; _isVerified = false; })"
                       Label="クライアントシークレット（値）"
                       Variant="Variant.Outlined"
                       InputType="@(_showSecret ? InputType.Text : InputType.Password)"
@@ -156,7 +163,7 @@
         @if (_isVerified)
         {
             <MudAlert Severity="Severity.Success" Dense="true">
-                認証に成功しました。クレデンシャルを Credential Manager に保存しました。
+                認証に成功しました。クレデンシャルは「保存して次へ」をクリックすると Credential Manager に保存されます。
             </MudAlert>
         }
 
@@ -232,8 +239,9 @@
             _tenantId = graphConfig.TenantId;
 
         // 既にシークレットが Credential Manager に保存されていれば Verified 済みとして扱う
+        // ClientId ・ TenantId 両方が存在する場合のみ Verified にする
         var hasSecret = await CredentialStore.ExistsAsync(CredentialKeys.AzureClientSecret);
-        if (hasSecret && !string.IsNullOrEmpty(graphConfig.ClientId))
+        if (hasSecret && !string.IsNullOrEmpty(graphConfig.ClientId) && !string.IsNullOrEmpty(graphConfig.TenantId))
             _isVerified = true;
     }
 
@@ -295,12 +303,14 @@
 
     private async Task CopyAdminConsentUrlAsync()
     {
-        // クリップボードへのコピーは JS interop が必要だが、
-        // WPF WebView2 環境では window.navigator.clipboard.writeText が動作する
-        // MudBlazor の ISnackbar 経由で通知
-        //
-        // 注: クリップボード API は JS interop 依存。ここでは Snackbar に URL を表示する簡易実装
-        Snackbar.Add($"管理者同意 URL をコピー: {AdminConsentUrl}", Severity.Info);
-        await Task.CompletedTask;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", AdminConsentUrl);
+            Snackbar.Add("管理者同意 URL をクリップボードにコピーしました。", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add($"コピーに失敗しました。URL: {AdminConsentUrl}", Severity.Info);
+        }
     }
 }
