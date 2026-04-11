@@ -14,14 +14,14 @@ Epic ISSUE: [#108 v0.4.0 セットアップUX改善 — オンボーディング
 ### 概要
 
 環境変数依存のセットアップを廃止し、初回起動時のウィザードUI と Windows Credential Manager による安全な認証情報管理を実現する。  
-**v0.4.0 スコープ**: Personal OneDrive → Dropbox 路線のエンド・ツー・エンド対応。  
+**v0.4.0 スコープ**: Personal OneDrive → Dropbox 路線・Personal OneDrive → SharePoint 路線の両方をエンド・ツー・エンドで対応。  
 **プラットフォーム**: Windows 専用（`net10.0-windows`）。
 
 ### 対応路線（v0.4.0）
 
 ```
 Personal OneDrive → Dropbox（v0.4.0 でエンド・ツー・エンド対応）
-Personal OneDrive → SharePoint Document Library（v0.5.0 に分離）
+Personal OneDrive → SharePoint Document Library（v0.4.0 でエンド・ツー・エンド対応）
 ```
 
 ### 実装順序
@@ -216,11 +216,11 @@ Welcome
 - [x] アプリ終了時に `InProgress` → `NotStarted` で保存するシャットダウンフック実装
 - [x] Welcome 画面 UI（MudBlazor）
 - [x] Step 0: 移行路線選択 UI（MudBlazor）
-  - [x] SharePoint 路線選択時の「v0.5.0 で対応予定」プレースホルダー画面
+  - [x] SharePoint 路線選択時の未実装プレースホルダー画面（v0.4.0 スコープで #113残ステップにて本実装に置換）
 - [x] ステップ間の進行制御（前ステップが `Verified`/`Skipped` でないと進めない）
 - [x] 初回起動検出ロジック（`wizard-state.json` 不在 + Credential 未登録の複合判定）
 - [x] 中断再開ロジック（最初の `NotStarted`/`Failed` から再開）
-- [x] Step 4: 接続テスト UI（Dropbox 路線のみ・DI 経由で doctor/verify 呼び出し）
+- [x] Step 4: 接続テスト UI（DI 経由で doctor/verify 呼び出し・Dropbox／SharePoint 両路線対応）
   - [x] Credential Verify → Discovery Verify → Migration Preflight の 3 層を順に実行
   - [x] 失敗時の原因層・ステップ特定表示
 - [x] 「セットアップをやり直す」メニューエントリ（全ステップ `NotStarted` リセット）
@@ -229,8 +229,8 @@ Welcome
 ### 受け入れ基準（v0.4.0）
 
 - [x] 初回起動時にウィザードが自動表示される（`wizard-state.json` 不在が主判定条件）
-- [x] Step 0 で SharePoint 路線を選択すると「v0.5.0 で対応予定」プレースホルダー画面が表示される（→ #113残ステップで本実装に置換）
-- [x] Dropbox 路線でステップ 0→3→4 がエンド・ツー・エンドで動作する
+- [x] Step 0 で SharePoint 路線を選択するとプレースホルダー画面が表示される（v0.4.0 スコープで #113残ステップにて本実装に置換）
+- [x] Dropbox 路線でステップ 0→1→2a→3→4 がエンド・ツー・エンドで動作する（Step 1・2a は #110・#111 実装後）
 - [x] Step 4 が Credential Verify → Discovery Verify → Migration Preflight の 3 層を実行する
 - [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される（→ #113残ステップで対応）
 - [x] `InProgress` 状態でアプリを終了した場合、`wizard-state.json` には `NotStarted` として保存される
@@ -239,8 +239,6 @@ Welcome
 - [x] ウィザード完了後にダッシュボードに遷移し、ファイル転送が実行できる状態になっている
 - [x] `schemaVersion` が未知の `wizard-state.json` を読み込んだ際にバックアップ化・初期化が行われる
 - [x] オンボーディング完了後、Migration Runtime が config.json と Credential Manager の値を変換なしに読み込める
-
----
 
 ---
 
@@ -353,5 +351,5 @@ Welcome
 | 層 | 目的 | 実施タイミング | 担当 ISSUE |
 |----|------|--------------|-----------:|
 | **Credential Verify** | シークレット / トークンの存在と有効性確認 | 各ステップの入力完了直後 | #109 / #112 |
-| **Discovery Verify** | 対象リソース（Drive ID 等）が実際に到達できるか確認 | Discovery 完了後 | #111（v0.5.0）/ #112 |
+| **Discovery Verify** | 対象リソース（Drive ID 等）が実際に到達できるか確認 | Discovery 完了後 | #111 / #112 |
 | **Migration Preflight** | 実際の読み書き権限を小ファイルで確認 | Step 4（接続テスト） | #113 |
