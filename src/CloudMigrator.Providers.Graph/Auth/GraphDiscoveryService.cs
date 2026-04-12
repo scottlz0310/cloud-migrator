@@ -332,6 +332,130 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
     // ── プライベートヘルパー ────────────────────────────────────────────────
 
+    /// <inheritdoc/>
+    public async Task<DriveFolderListResult> ListDriveFoldersAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        string driveId,
+        string? folderId = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(driveId))
+            return new DriveFolderListResult(false, ErrorMessage: "Drive ID が指定されていません。");
+
+        try
+        {
+            var client = ClientFactory(clientId, tenantId, clientSecret);
+
+            Microsoft.Graph.Models.DriveItemCollectionResponse? response;
+            if (string.IsNullOrEmpty(folderId))
+            {
+                response = await client.Drives[driveId].Items["root"].Children
+                    .GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"],
+                        cancellationToken: ct)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                response = await client.Drives[driveId].Items[folderId].Children
+                    .GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"],
+                        cancellationToken: ct)
+                    .ConfigureAwait(false);
+            }
+
+            var folders = response?.Value?
+                .Where(item => item.Folder is not null && item.Id is not null)
+                .Select(item => new DriveFolderEntry(item.Id!, item.Name ?? item.Id!))
+                .ToList() ?? [];
+
+            return new DriveFolderListResult(Success: true, Folders: folders);
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: "指定されたフォルダが見つかりませんでした。");
+        }
+        catch (ODataError ex)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new DriveFolderListResult(false, ErrorMessage: $"接続エラー: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<SharePointSiteSearchResult> ListAllSharePointSitesAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var client = ClientFactory(clientId, tenantId, clientSecret);
+            var sitesResponse = await client.Sites
+                .GetAsync(r => r.QueryParameters.Search = "*", ct)
+                .ConfigureAwait(false);
+
+            var sites = sitesResponse?.Value?
+                .Where(s => s.Id is not null)
+                .Select(s => new SharePointSiteEntry(
+                    SiteId: s.Id!,
+                    DisplayName: s.DisplayName ?? s.Name ?? s.Id!,
+                    WebUrl: s.WebUrl ?? string.Empty))
+                .ToList() ?? [];
+
+            return new SharePointSiteSearchResult(Success: true, Sites: sites);
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
+        }
+        catch (ODataError ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: BuildAdminConsentError(null));
+        }
+        catch (ApiException ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"接続エラー: {ex.Message}");
+        }
+    }
+
     private static GraphServiceClient CreateClient(string clientId, string tenantId, string clientSecret)
     {
         var authenticator = new GraphAuthenticator(clientId, tenantId, clientSecret);

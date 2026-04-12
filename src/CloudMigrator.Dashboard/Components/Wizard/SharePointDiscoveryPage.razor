@@ -427,7 +427,7 @@
                 SharePointDestFolderId: folderId,
                 SharePointDestFolderPath: folderPath,
                 MigrationRoute: "OneDriveToSharePoint",
-                DestinationProvider: "Graph"));
+                DestinationProvider: "sharepoint"));
 
             Snackbar.Add("SharePoint の接続先を保存しました。", Severity.Success);
             await OnDiscoveryCompleted.InvokeAsync();

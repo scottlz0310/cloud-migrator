@@ -57,7 +57,43 @@ public interface IGraphDiscoveryService
         string clientSecret,
         string driveId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// 指定 Drive の直下または指定フォルダ配下のサブフォルダ一覧を取得する（<c>GET /drives/{driveId}/items/{folderId}/children</c>）。
+    /// <paramref name="folderId"/> が null の場合はルート直下を対象とする。
+    /// </summary>
+    Task<DriveFolderListResult> ListDriveFoldersAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        string driveId,
+        string? folderId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// テナント内のすべての SharePoint サイトを取得する（<c>GET /sites?search=*</c>）。
+    /// ページングを考慮した全件取得。
+    /// </summary>
+    Task<SharePointSiteSearchResult> ListAllSharePointSitesAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        CancellationToken ct = default);
 }
+
+/// <summary>Drive 内フォルダの一覧エントリ。</summary>
+/// <param name="FolderId">アイテム ID。</param>
+/// <param name="DisplayName">表示名。</param>
+public sealed record DriveFolderEntry(string FolderId, string DisplayName);
+
+/// <summary><see cref="IGraphDiscoveryService.ListDriveFoldersAsync"/> の結果。</summary>
+/// <param name="Success">成功かどうか。</param>
+/// <param name="Folders">フォルダ一覧。失敗時は null。</param>
+/// <param name="ErrorMessage">エラー詳細。成功時は null。</param>
+public sealed record DriveFolderListResult(
+    bool Success,
+    IReadOnlyList<DriveFolderEntry>? Folders = null,
+    string? ErrorMessage = null);
 
 /// <summary>OneDrive Drive ID 取得結果。</summary>
 public sealed record OneDriveDiscoveryResult(

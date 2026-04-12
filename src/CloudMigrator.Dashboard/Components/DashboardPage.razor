@@ -1,5 +1,6 @@
 @inject ITransferStateDb TransferStateDb
 @inject ITransferJobService JobService
+@inject ILogger<DashboardPage> Logger
 @implements IDisposable
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
@@ -440,7 +441,7 @@ else
     private async Task RefreshAllAsync(CancellationToken ct)
     {
         try { _summary = await TransferStateDb.GetSummaryAsync(ct); }
-        catch { _summary ??= new TransferDbSummary(); }
+        catch (Exception ex) { Logger.LogError(ex, "RefreshAllAsync: GetSummaryAsync 失敗"); _summary ??= new TransferDbSummary(); }
         if (_summary is null) return;
 
         // ジョブ状態を追従（セマフォで常に最新の実行状態を取得する）
@@ -492,6 +493,7 @@ else
     {
         var totalStr = await TransferStateDb.GetCheckpointAsync("folder_total", ct);
         if (int.TryParse(totalStr, out var total)) _folderTotal = total;
+        else { _folderTotal = 0; _folderDone = 0; }
 
         if (_folderTotal > 0)
         {
@@ -534,7 +536,7 @@ else
         if (_summary is null) return;
         var startedAt = _summary.PipelineStartedAt ?? _summary.FirstUpdatedAt;
         var minutes = startedAt.HasValue
-            ? Math.Max(60, (int)(DateTimeOffset.UtcNow - startedAt.Value).TotalMinutes + 10)
+            ? Math.Clamp((int)(DateTimeOffset.UtcNow - startedAt.Value).TotalMinutes + 10, 60, 120)
             : 60;
 
         var filesData = await TransferStateDb.GetMetricsAsync("throughput_files_per_min", minutes, ct);

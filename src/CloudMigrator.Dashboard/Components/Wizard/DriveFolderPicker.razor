@@ -155,12 +155,15 @@
 
     // パンくず表示用（名前のみ）
     private List<string> _breadcrumbs = [];
+    private bool _initialized;
 
     private string CurrentPathDisplay =>
         string.Join("/", _navStack.Select(n => n.DisplayName));
 
     protected override void OnParametersSet()
     {
+        if (_initialized) return;
+        _initialized = true;
         // 初期値をプロパティに反映（ページのプリロード対応）
         SelectedFolderId = InitialFolderId ?? string.Empty;
         SelectedFolderPath = InitialFolderPath ?? string.Empty;
@@ -225,7 +228,9 @@
     private async Task SelectCurrentFolder()
     {
         var folderId = _navStack.Last().FolderId;
-        var folderPath = CurrentPathDisplay == "ルート" ? string.Empty : CurrentPathDisplay;
+        var folderPath = _navStack.Count <= 1
+            ? string.Empty
+            : string.Join("/", _navStack.Skip(1).Select(n => n.DisplayName));
 
         SelectedFolderId = folderId;
         SelectedFolderPath = folderPath;

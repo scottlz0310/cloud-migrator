@@ -50,8 +50,12 @@ public sealed record GraphConfigUpdateDto(
 public sealed record DiscoveryConfigDto(
     string OneDriveUserId,
     string OneDriveDriveId,
+    string OneDriveSourceFolderId,
+    string OneDriveSourceFolderPath,
     string SharePointSiteId,
     string SharePointDriveId,
+    string SharePointDestFolderId,
+    string SharePointDestFolderPath,
     string MigrationRoute,
     string DestinationProvider);
 
@@ -61,8 +65,12 @@ public sealed record DiscoveryConfigDto(
 public sealed record DiscoveryConfigUpdateDto(
     string? OneDriveUserId = null,
     string? OneDriveDriveId = null,
+    string? OneDriveSourceFolderId = null,
+    string? OneDriveSourceFolderPath = null,
     string? SharePointSiteId = null,
     string? SharePointDriveId = null,
+    string? SharePointDestFolderId = null,
+    string? SharePointDestFolderPath = null,
     string? MigrationRoute = null,
     string? DestinationProvider = null);
 
@@ -243,28 +251,32 @@ public sealed class ConfigurationService : IConfigurationService
     public async Task<DiscoveryConfigDto> GetDiscoveryConfigAsync(CancellationToken ct = default)
     {
         if (!File.Exists(_configFilePath))
-            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
 
         var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
         try
         {
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("migrator", out var m) || m.ValueKind != JsonValueKind.Object)
-                return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+                return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
 
             var hasGraphObject = m.TryGetProperty("graph", out var gProp) && gProp.ValueKind == JsonValueKind.Object;
             var oneDriveUserId = hasGraphObject ? GetString(gProp, "oneDriveUserId", string.Empty) : string.Empty;
             var oneDriveDriveId = hasGraphObject ? GetString(gProp, "oneDriveDriveId", string.Empty) : string.Empty;
+            var oneDriveSourceFolderId = hasGraphObject ? GetString(gProp, "oneDriveSourceFolderId", string.Empty) : string.Empty;
+            var oneDriveSourceFolderPath = hasGraphObject ? GetString(gProp, "oneDriveSourceFolderPath", string.Empty) : string.Empty;
             var sharePointSiteId = hasGraphObject ? GetString(gProp, "sharePointSiteId", string.Empty) : string.Empty;
             var sharePointDriveId = hasGraphObject ? GetString(gProp, "sharePointDriveId", string.Empty) : string.Empty;
+            var sharePointDestFolderId = hasGraphObject ? GetString(gProp, "sharePointDestFolderId", string.Empty) : string.Empty;
+            var sharePointDestFolderPath = hasGraphObject ? GetString(gProp, "sharePointDestFolderPath", string.Empty) : string.Empty;
             var migrationRoute = GetString(m, "migrationRoute", string.Empty);
             var destinationProvider = GetString(m, "destinationProvider", "sharepoint");
 
-            return new DiscoveryConfigDto(oneDriveUserId, oneDriveDriveId, sharePointSiteId, sharePointDriveId, migrationRoute, destinationProvider);
+            return new DiscoveryConfigDto(oneDriveUserId, oneDriveDriveId, oneDriveSourceFolderId, oneDriveSourceFolderPath, sharePointSiteId, sharePointDriveId, sharePointDestFolderId, sharePointDestFolderPath, migrationRoute, destinationProvider);
         }
         catch (JsonException)
         {
-            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
         }
     }
 
@@ -295,8 +307,12 @@ public sealed class ConfigurationService : IConfigurationService
 
             if (update.OneDriveUserId is not null) g["oneDriveUserId"] = update.OneDriveUserId;
             if (update.OneDriveDriveId is not null) g["oneDriveDriveId"] = update.OneDriveDriveId;
+            if (update.OneDriveSourceFolderId is not null) g["oneDriveSourceFolderId"] = update.OneDriveSourceFolderId;
+            if (update.OneDriveSourceFolderPath is not null) g["oneDriveSourceFolderPath"] = update.OneDriveSourceFolderPath;
             if (update.SharePointSiteId is not null) g["sharePointSiteId"] = update.SharePointSiteId;
             if (update.SharePointDriveId is not null) g["sharePointDriveId"] = update.SharePointDriveId;
+            if (update.SharePointDestFolderId is not null) g["sharePointDestFolderId"] = update.SharePointDestFolderId;
+            if (update.SharePointDestFolderPath is not null) g["sharePointDestFolderPath"] = update.SharePointDestFolderPath;
             if (update.MigrationRoute is not null) m["migrationRoute"] = update.MigrationRoute;
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 
