@@ -120,7 +120,7 @@ jobs:
 
       - name: Published バイナリをアーティファクトに保存（MSI ビルド用 / win-x64 のみ）
         if: matrix.rid == 'win-x64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: publish-win-x64
           path: publish/win-x64/
@@ -145,7 +145,7 @@ jobs:
         run: dotnet tool install wix --version 4.0.5 --global
 
       - name: win-x64 バイナリをダウンロード
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: publish-win-x64
           path: published/win-x64
