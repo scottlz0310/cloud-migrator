@@ -1,5 +1,9 @@
 @inject IConfigurationService ConfigService
+@inject ITransferStateDb TransferStateDb
+@inject ITransferJobService JobService
+@inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<SettingsPage> Logger
 
 <MudText Typo="Typo.h5" Class="mb-4">設定</MudText>
 
@@ -79,10 +83,53 @@ else
             </MudButton>
         </MudCardActions>
     </MudCard>
+
+    <!-- 危険な操作 -->
+    <MudCard Elevation="2" Style="max-width: 600px;" Class="mt-6">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6" Color="Color.Error">危険な操作</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                以下の操作は転送状態・メトリクス・チェックポイントをすべて削除します。
+                元に戻すことはできません。転送をやり直したい場合にのみ使用してください。
+            </MudAlert>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                <b>フルリビルド</b>とは以下を実行します:
+            </MudText>
+            <MudList T="string" Dense="true" Class="mb-2">
+                <MudListItem Icon="@Icons.Material.Filled.DeleteForever" IconColor="Color.Error">SQLite DB の全データ削除（transfer_records / checkpoints / metrics）</MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.DeleteForever" IconColor="Color.Error">キャッシュファイル削除（OneDrive・SharePoint・Dropbox キャッシュ、skip_list）</MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.Info" IconColor="Color.Info">次回の転送開始ボタン押下でクロールから全フェーズを再実行</MudListItem>
+            </MudList>
+        </MudCardContent>
+        <MudCardActions>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.RestartAlt"
+                       Disabled="@_isRebuilding"
+                       OnClick="FullRebuildAsync">
+                @(_isRebuilding ? "実行中..." : "フルリビルド")
+            </MudButton>
+        </MudCardActions>
+    </MudCard>
 }
 
+<!-- 確認ダイアログ -->
+<MudMessageBox @ref="_confirmBox" Title="フルリビルドの確認" CancelText="キャンセル" YesText="実行する">
+    <MessageContent>
+        <MudText>
+            転送状態・メトリクス・チェックポイント・キャッシュファイルをすべて削除します。<br />
+            この操作は<b>元に戻せません</b>。本当に実行しますか？
+        </MudText>
+    </MessageContent>
+</MudMessageBox>
 @code {
     private ConfigDto? _config;
+    private bool _isRebuilding;
+    private MudMessageBox? _confirmBox;
 
     // 編集用フィールド
     private int _editMaxParallelTransfers;
@@ -189,5 +236,43 @@ else
         if (_config is not null)
             CopyToEditFields(_config);
         await Task.CompletedTask;
+    }
+
+    private async Task FullRebuildAsync()
+    {
+        // 1. 確認ダイアログ
+        var confirmed = await _confirmBox!.ShowAsync();
+        if (confirmed is not true) return;
+
+        // 2. ジョブ実行中ならブロック
+        if (JobService.IsRunning)
+        {
+            Snackbar.Add("転送ジョブが実行中です。ダッシュボードで停止してから再試行してください。", Severity.Error);
+            return;
+        }
+
+        _isRebuilding = true;
+        try
+        {
+            // 3. DB 全データ削除
+            await TransferStateDb.ResetAllAsync(CancellationToken.None);
+
+            // 4. キャッシュファイル削除（PathOptions はデフォルト値 = AppDataPaths.LogFile(...) と一致するため new() で十分）
+            var opts = new MigratorOptions();
+            ConfigHashChecker.ClearAll(opts.Paths, Logger);
+
+            Snackbar.Add("フルリビルドが完了しました。転送を再開するにはダッシュボードの「転送開始」ボタンを押してください。", Severity.Success, cfg =>
+            {
+                cfg.VisibleStateDuration = 6000;
+            });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"フルリビルドに失敗しました: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isRebuilding = false;
+        }
     }
 }

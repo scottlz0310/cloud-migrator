@@ -35,18 +35,21 @@
                                     OnDiscoveryCompleted="GoToPostDiscoveryStep" />
                 break;
 
-            case WizardStep.SharePointPlaceholder:
-                <SharePointPlaceholderPage OnBackClick="GoToAzureAuth" />
+            case WizardStep.SharePointDiscovery:
+                <SharePointDiscoveryPage OnBackClick="GoToDriveDiscovery"
+                                         OnDiscoveryCompleted="GoToSharePointConnectionTest" />
                 break;
 
             case WizardStep.DropboxOAuth:
                 <DropboxOAuthPage OnBackClick="GoToAzureAuth"
-                                  OnAuthCompleted="GoToConnectionTest" />
+                                  OnAuthCompleted="GoToDropboxConnectionTest" />
                 break;
 
             case WizardStep.ConnectionTest:
-                <ConnectionTestPage OnBackClick="GoToDropboxOAuth"
-                                    OnCompleteClick="CompleteWizardAsync" />
+                <ConnectionTestPage Route="_state.SelectedRoute"
+                                    OnBackClick="GoToPreConnectionTestStep"
+                                    OnCompleteClick="CompleteWizardAsync"
+                                    OnCredentialFailed="OnCredentialFailedAsync" />
                 break;
         }
     </MudMainContent>
@@ -65,7 +68,7 @@
         RouteSelection,
         AzureAuth,
         DriveDiscovery,
-        SharePointPlaceholder,
+        SharePointDiscovery,
         DropboxOAuth,
         ConnectionTest,
     }
@@ -129,8 +132,22 @@
         }
         else
         {
-            _currentStep = WizardStep.SharePointPlaceholder;
+            GoToSharePointDiscovery();
         }
+    }
+
+    private void GoToSharePointDiscovery()
+    {
+        _state.Step2bSharePointDiscovery = WizardStepState.InProgress;
+        _currentStep = WizardStep.SharePointDiscovery;
+    }
+
+    private async Task GoToSharePointConnectionTest()
+    {
+        _state.Step2bSharePointDiscovery = WizardStepState.Verified;
+        _state.Step4ConnectionTest = WizardStepState.InProgress;
+        await WizardStateService.SaveAsync(_state);
+        _currentStep = WizardStep.ConnectionTest;
     }
 
     private void GoToDropboxOAuth()
@@ -139,12 +156,35 @@
         _currentStep = WizardStep.DropboxOAuth;
     }
 
-    private async Task GoToConnectionTest()
+    private async Task GoToDropboxConnectionTest()
     {
         _state.Step3DropboxOAuth = WizardStepState.Verified;
         _state.Step4ConnectionTest = WizardStepState.InProgress;
         _currentStep = WizardStep.ConnectionTest;
         await WizardStateService.SaveAsync(_state);
+    }
+
+    private void GoToPreConnectionTestStep()
+    {
+        // 「戻る」ボタン: 路線に応じて direct back
+        if (_state.SelectedRoute == WizardRoute.OneDriveToDropbox)
+        {
+            GoToDropboxOAuth();
+        }
+        else
+        {
+            GoToSharePointDiscovery();
+        }
+    }
+
+    private async Task OnCredentialFailedAsync()
+    {
+        // Credential 失敗を検出 → Step 1 を Failed にして Step 1 に戻す
+        _state.Step1AzureAuth = WizardStepState.Failed;
+        await WizardStateService.SaveAsync(_state);
+
+        Snackbar.Add("認証情報が無効または期限切れです。Step 1 に戻って再設定してください。", Severity.Warning);
+        GoToAzureAuth();
     }
 
     private async Task CompleteWizardAsync()
@@ -179,32 +219,32 @@
         if (state.Step2aOneDriveDiscovery != WizardStepState.Verified)
             return WizardStep.DriveDiscovery;
 
+        // SharePoint 路線: Step 2b が未完了
+        if (state.SelectedRoute == WizardRoute.OneDriveToSharePoint &&
+            state.Step2bSharePointDiscovery != WizardStepState.Verified)
+            return WizardStep.SharePointDiscovery;
+
         // Dropbox 路線: Step 3 が未完了
         if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
             state.Step3DropboxOAuth != WizardStepState.Verified)
             return WizardStep.DropboxOAuth;
 
-        // Dropbox 路線: Step 4 が未完了
-        if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
-            state.Step4ConnectionTest != WizardStepState.Verified)
+        // Step 4 が未完了（両路線共通）
+        if (state.Step4ConnectionTest != WizardStepState.Verified)
             return WizardStep.ConnectionTest;
-
-        // SharePoint 路線（#113残ステップで実装予定）
-        if (state.SelectedRoute == WizardRoute.OneDriveToSharePoint)
-            return WizardStep.SharePointPlaceholder;
 
         return WizardStep.Welcome;
     }
 
     private static string StepLabel(WizardStep step) => step switch
     {
-        WizardStep.Welcome               => "ようこそ",
-        WizardStep.RouteSelection        => "Step 0: 移行路線の選択",
-        WizardStep.AzureAuth             => "Step 1: Azure 認証設定",
-        WizardStep.DriveDiscovery        => "Step 2a: OneDrive Drive ID 取得",
-        WizardStep.SharePointPlaceholder => "SharePoint 路線（準備中）",
-        WizardStep.DropboxOAuth          => "Step 3: Dropbox 連携",
-        WizardStep.ConnectionTest        => "Step 4: 接続テスト",
-        _                                => string.Empty,
+        WizardStep.Welcome              => "ようこそ",
+        WizardStep.RouteSelection       => "Step 0: 移行路線の選択",
+        WizardStep.AzureAuth            => "Step 1: Azure 認証設定",
+        WizardStep.DriveDiscovery       => "Step 2a: OneDrive Drive ID 取得",
+        WizardStep.SharePointDiscovery  => "Step 2b: SharePoint 接続先設定",
+        WizardStep.DropboxOAuth         => "Step 3: Dropbox 連携",
+        WizardStep.ConnectionTest       => "Step 4: 接続テスト",
+        _                               => string.Empty,
     };
 }

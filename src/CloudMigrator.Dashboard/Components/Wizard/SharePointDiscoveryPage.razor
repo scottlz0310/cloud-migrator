@@ -1,0 +1,445 @@
+@using CloudMigrator.Core.Configuration
+@using CloudMigrator.Core.Credentials
+@using CloudMigrator.Providers.Graph.Auth
+@inject IGraphDiscoveryService DiscoveryService
+@inject ICredentialStore CredentialStore
+@inject IConfigurationService ConfigurationService
+@inject ISnackbar Snackbar
+
+@* Step 2b: SharePoint Discovery — サイト候補一覧 → Library 選択 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
+    <MudStack Spacing="6">
+
+        <div>
+            <MudText Typo="Typo.h5">保存先を選択してください</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                移行先の SharePoint サイトと Document Library を選択します。
+            </MudText>
+        </div>
+
+        @* ── サイト候補一覧 ─────────────────────────────────────────── *@
+        @if (_isBusy && _phase is BusyPhase.SiteList)
+        {
+            <MudStack AlignItems="AlignItems.Center" Spacing="2" Class="py-4">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                <MudText Typo="Typo.body2" Color="Color.Secondary">サイト一覧を取得しています...</MudText>
+            </MudStack>
+        }
+
+        @if (_siteSearchResult is { Success: false })
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-2">
+                <MudText Style="white-space: pre-line;">@_siteSearchResult.ErrorMessage</MudText>
+            </MudAlert>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       Disabled="@_isBusy"
+                       OnClick="LoadAllSitesAsync">
+                再試行
+            </MudButton>
+        }
+
+        @if (_siteSearchResult is { Success: true })
+        {
+            var displaySites = _showAll
+                ? _siteSearchResult.Sites!
+                : _siteSearchResult.Sites!.Take(DisplayLimit).ToList();
+            var hiddenCount = _siteSearchResult.Sites!.Count - DisplayLimit;
+
+            @if (_siteSearchResult.Sites!.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    アクセス可能なサイトが見つかりませんでした。
+                    下の「名前で検索」または「URL で指定」からお試しください。
+                </MudAlert>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    移行先のサイトを選択してください。
+                </MudText>
+                <MudList T="SharePointSiteEntry" Dense="true">
+                    @foreach (var site in displaySites)
+                    {
+                        <MudListItem OnClick="@(() => SelectSiteAsync(site))"
+                                     Class="@(_selectedSite?.SiteId == site.SiteId ? "mud-selected-item" : "")">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.Web" Size="Size.Small" />
+                                <MudText Typo="Typo.body2"><strong>@site.DisplayName</strong></MudText>
+                            </MudStack>
+                        </MudListItem>
+                    }
+                </MudList>
+
+                @if (!_showAll && hiddenCount > 0)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.ExpandMore"
+                               OnClick="@(() => _showAll = true)">
+                        他にもあります（+@hiddenCount 件）
+                    </MudButton>
+                }
+            }
+        }
+
+        @* ── 名前で検索（任意・折りたたみ） ──────────────────────────── *@
+        <MudExpansionPanels Elevation="0">
+            <MudExpansionPanel Text="🔍 名前で検索する（任意）" Dense="true">
+                <MudStack Spacing="3" Class="pt-2">
+                    <MudTextField T="string"
+                                  Value="_keyword"
+                                  ValueChanged="@(v => _keyword = v)"
+                                  Label="サイト名キーワード"
+                                  Variant="Variant.Outlined"
+                                  Placeholder="例: Marketing, 社内ポータル"
+                                  Disabled="@_isBusy" />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Search"
+                               Disabled="@(_isBusy || string.IsNullOrWhiteSpace(_keyword))"
+                               OnClick="SearchSitesAsync">
+                        @(_isBusy && _phase == BusyPhase.SiteSearch ? "検索中..." : "検索")
+                    </MudButton>
+                </MudStack>
+            </MudExpansionPanel>
+
+            @* ── URL で直接指定（任意・折りたたみ） ──────────────── *@
+            <MudExpansionPanel Text="🔗 URL で直接指定する（任意）" Dense="true">
+                <MudStack Spacing="3" Class="pt-2">
+                    <MudTextField T="string"
+                                  @bind-Value="_directUrl"
+                                  Label="サイト URL"
+                                  Variant="Variant.Outlined"
+                                  Placeholder="例: https://contoso.sharepoint.com/sites/MyTeam"
+                                  Disabled="@_isBusy"
+                                  HelperText="ブラウザでサイトを開いた際のアドレスバーの URL を貼り付けてください。" />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Link"
+                               Disabled="@(_isBusy || string.IsNullOrWhiteSpace(_directUrl))"
+                               OnClick="GetSiteByUrlAsync">
+                        @(_isBusy && _phase == BusyPhase.SiteByUrl ? "取得中..." : "このサイトを使う")
+                    </MudButton>
+                </MudStack>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+
+        @* ── Document Library 選択 ──────────────────────────────────── *@
+        @if (_selectedSite is not null)
+        {
+            <MudDivider />
+            <MudText Typo="Typo.subtitle1">
+                <strong>保存先フォルダー（Document Library）</strong>
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                選択中のサイト: <strong>@_selectedSite.DisplayName</strong>
+            </MudText>
+
+            @if (_isBusy && _phase == BusyPhase.DriveList)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+
+            @if (_driveListResult is { Success: false })
+            {
+                <MudAlert Severity="Severity.Error">@_driveListResult.ErrorMessage</MudAlert>
+            }
+
+            @if (_driveListResult is { Success: true, Drives: { Count: > 0 } })
+            {
+                <MudList T="SharePointDriveEntry" Dense="true">
+                    @foreach (var drive in _driveListResult.Drives!)
+                    {
+                        <MudListItem OnClick="@(() => _selectedDrive = drive)"
+                                     Class="@(_selectedDrive?.DriveId == drive.DriveId ? "mud-selected-item" : "")">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" />
+                                <MudText Typo="Typo.body2"><strong>@drive.DisplayName</strong></MudText>
+                            </MudStack>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+
+            @if (_driveListResult is { Success: true, Drives.Count: 0 })
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    このサイトに Document Library が見つかりませんでした。
+                </MudAlert>
+            }
+        }
+
+        @* 選択確認パネル *@
+        @if (_selectedSite is not null && _selectedDrive is not null)
+        {
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudStack Spacing="1">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Success">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                        選択済み
+                    </MudText>
+                    <MudText Typo="Typo.body2">
+                        <strong>@_selectedSite.DisplayName</strong> › @_selectedDrive.DisplayName
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            @* 移行先フォルダ選択 *@
+            <div>
+                <MudText Typo="Typo.subtitle2" Class="mb-1">移行先フォルダ</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                    Library 内のどのフォルダに保存するか選択します。選択しない場合は Library ルートに保存します。
+                </MudText>
+                <DriveFolderPicker @ref="_destFolderPicker"
+                                   DriveId="@_selectedDrive.DriveId"
+                                   ClientId="@_cachedClientId"
+                                   TenantId="@_cachedTenantId"
+                                   ClientSecret="@_cachedClientSecret"
+                                   InitialFolderId="@_initialDestFolderId"
+                                   InitialFolderPath="@_initialDestFolderPath"
+                                   Disabled="@_isBusy" />
+            </div>
+        }
+
+        @* ナビゲーションボタン *@
+        <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mt-4">
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       OnClick="@(() => OnBackClick.InvokeAsync())"
+                       Disabled="@_isBusy">
+                戻る
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       EndIcon="@Icons.Material.Filled.ArrowForward"
+                       Disabled="@(_isBusy || _selectedSite is null || _selectedDrive is null)"
+                       OnClick="SaveAndContinueAsync">
+                次へ
+            </MudButton>
+        </MudStack>
+
+    </MudStack>
+</MudContainer>
+
+@code {
+    private const int DisplayLimit = 15;
+
+    [Parameter] public EventCallback OnBackClick { get; set; }
+    [Parameter] public EventCallback OnDiscoveryCompleted { get; set; }
+
+    private enum BusyPhase { None, SiteSearch, SiteList, SiteByUrl, DriveList }
+
+    private string _keyword = string.Empty;
+    private string _directUrl = string.Empty;
+    private SharePointSiteSearchResult? _siteSearchResult;
+    private SharePointSiteEntry? _selectedSite;
+    private SharePointDriveListResult? _driveListResult;
+    private SharePointDriveEntry? _selectedDrive;
+    private bool _isBusy;
+    private BusyPhase _phase = BusyPhase.None;
+    private bool _showAll;
+    private DriveFolderPicker? _destFolderPicker;
+    private string _cachedClientId = string.Empty;
+    private string _cachedTenantId = string.Empty;
+    private string _cachedClientSecret = string.Empty;
+    private string _initialDestFolderId = string.Empty;
+    private string _initialDestFolderPath = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var config = await ConfigurationService.GetDiscoveryConfigAsync();
+        _initialDestFolderId = config.SharePointDestFolderId;
+        _initialDestFolderPath = config.SharePointDestFolderPath;
+
+        await LoadAllSitesAsync();
+    }
+
+    private async Task<(string ClientId, string TenantId, string ClientSecret)?> GetGraphCredentialsAsync()
+    {
+        var graphConfig = await ConfigurationService.GetGraphConfigAsync();
+        var clientSecret = await CredentialStore.GetAsync(CredentialKeys.AzureClientSecret);
+
+        if (string.IsNullOrWhiteSpace(graphConfig.ClientId) ||
+            string.IsNullOrWhiteSpace(graphConfig.TenantId) ||
+            string.IsNullOrWhiteSpace(clientSecret))
+        {
+            Snackbar.Add("Azure 認証情報が保存されていません。Step 1 に戻って再設定してください。", Severity.Error);
+            return null;
+        }
+        _cachedClientId = graphConfig.ClientId;
+        _cachedTenantId = graphConfig.TenantId;
+        _cachedClientSecret = clientSecret;
+        return (graphConfig.ClientId, graphConfig.TenantId, clientSecret);
+    }
+
+    private async Task LoadAllSitesAsync()
+    {
+        var creds = await GetGraphCredentialsAsync();
+        if (creds is null) return;
+
+        _isBusy = true;
+        _phase = BusyPhase.SiteList;
+        _siteSearchResult = null;
+        _selectedSite = null;
+        _driveListResult = null;
+        _selectedDrive = null;
+        _showAll = false;
+        StateHasChanged();
+
+        try
+        {
+            _siteSearchResult = await DiscoveryService.ListAllSharePointSitesAsync(
+                creds.Value.ClientId, creds.Value.TenantId, creds.Value.ClientSecret);
+        }
+        catch (Exception ex)
+        {
+            _siteSearchResult = new SharePointSiteSearchResult(false, ErrorMessage: $"予期しないエラーが発生しました: {ex.Message}");
+        }
+        finally
+        {
+            _isBusy = false;
+            _phase = BusyPhase.None;
+        }
+    }
+
+    private async Task SearchSitesAsync()
+    {
+        var creds = await GetGraphCredentialsAsync();
+        if (creds is null) return;
+
+        _isBusy = true;
+        _phase = BusyPhase.SiteSearch;
+        _siteSearchResult = null;
+        _selectedSite = null;
+        _driveListResult = null;
+        _selectedDrive = null;
+        _showAll = true;
+        StateHasChanged();
+
+        try
+        {
+            _siteSearchResult = await DiscoveryService.SearchSharePointSitesAsync(
+                creds.Value.ClientId, creds.Value.TenantId, creds.Value.ClientSecret, _keyword.Trim());
+        }
+        catch (Exception ex)
+        {
+            _siteSearchResult = new SharePointSiteSearchResult(false, ErrorMessage: $"予期しないエラーが発生しました: {ex.Message}");
+        }
+        finally
+        {
+            _isBusy = false;
+            _phase = BusyPhase.None;
+        }
+    }
+
+    private async Task GetSiteByUrlAsync()
+    {
+        var creds = await GetGraphCredentialsAsync();
+        if (creds is null) return;
+
+        _isBusy = true;
+        _phase = BusyPhase.SiteByUrl;
+        _siteSearchResult = null;
+        _selectedSite = null;
+        _driveListResult = null;
+        _selectedDrive = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await DiscoveryService.GetSharePointSiteByUrlAsync(
+                creds.Value.ClientId, creds.Value.TenantId, creds.Value.ClientSecret, _directUrl.Trim());
+
+            if (result.Success && result.Sites?.Count > 0)
+            {
+                _siteSearchResult = result;
+                await SelectSiteAsync(result.Sites[0]);
+            }
+            else
+            {
+                _siteSearchResult = result;
+            }
+        }
+        catch (Exception ex)
+        {
+            _siteSearchResult = new SharePointSiteSearchResult(false, ErrorMessage: $"予期しないエラーが発生しました: {ex.Message}");
+        }
+        finally
+        {
+            _isBusy = false;
+            _phase = BusyPhase.None;
+        }
+    }
+
+    private async Task SelectSiteAsync(SharePointSiteEntry site)
+    {
+        _selectedSite = site;
+        _driveListResult = null;
+        _selectedDrive = null;
+        await LoadDrivesAsync();
+    }
+
+    private async Task LoadDrivesAsync()
+    {
+        if (_selectedSite is null) return;
+
+        var creds = await GetGraphCredentialsAsync();
+        if (creds is null) return;
+
+        _isBusy = true;
+        _phase = BusyPhase.DriveList;
+        _driveListResult = null;
+        _selectedDrive = null;
+        StateHasChanged();
+
+        try
+        {
+            _driveListResult = await DiscoveryService.GetSharePointDrivesAsync(
+                creds.Value.ClientId, creds.Value.TenantId, creds.Value.ClientSecret, _selectedSite.SiteId);
+        }
+        catch (Exception ex)
+        {
+            _driveListResult = new SharePointDriveListResult(false, ErrorMessage: $"予期しないエラーが発生しました: {ex.Message}");
+        }
+        finally
+        {
+            _isBusy = false;
+            _phase = BusyPhase.None;
+        }
+    }
+
+    private async Task SaveAndContinueAsync()
+    {
+        if (_selectedSite is null || _selectedDrive is null) return;
+
+        _isBusy = true;
+        try
+        {
+            var folderId = _destFolderPicker?.SelectedFolderId ?? string.Empty;
+            var folderPath = _destFolderPicker?.SelectedFolderPath ?? string.Empty;
+
+            await ConfigurationService.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+                SharePointSiteId: _selectedSite.SiteId,
+                SharePointDriveId: _selectedDrive.DriveId,
+                SharePointDestFolderId: folderId,
+                SharePointDestFolderPath: folderPath,
+                MigrationRoute: "OneDriveToSharePoint",
+                DestinationProvider: "Graph"));
+
+            Snackbar.Add("SharePoint の接続先を保存しました。", Severity.Success);
+            await OnDiscoveryCompleted.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"保存中にエラーが発生しました: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}
+
