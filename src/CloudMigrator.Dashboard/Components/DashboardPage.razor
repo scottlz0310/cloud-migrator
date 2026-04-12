@@ -452,17 +452,18 @@ else
             _currentJob = JobService.GetJob(_currentJob.JobId) ?? _currentJob;
 
         await RefreshPhaseAsync(ct);
+        await RefreshMetricsAsync(ct);
         await UpdateElapsedAndEtaAsync(ct);
         await RefreshFolderProgressAsync(ct);
-        await RefreshMetricsAsync(ct);
     }
 
     private async Task RefreshPhaseAsync(CancellationToken ct)
     {
         if (_summary is null) return;
 
-        // 完了判定: pending/processing がゼロかつ done が 1 件以上
-        if (_summary.Pending == 0 && _summary.Processing == 0 && _summary.Done > 0)
+        // 完了判定: ジョブが Completed 状態、または pending/processing がゼロかつ done が 1 件以上
+        var jobCompleted = _currentJob?.Status == CloudMigrator.Core.Transfer.JobStatus.Completed;
+        if (jobCompleted || (_summary.Pending == 0 && _summary.Processing == 0 && _summary.Done > 0))
         {
             if (_phase != "completed")
             {

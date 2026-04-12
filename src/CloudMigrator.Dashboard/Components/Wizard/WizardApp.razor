@@ -179,11 +179,21 @@
 
     private async Task OnCredentialFailedAsync()
     {
-        // Credential 失敗を検出 → Step 1 を Failed にして Step 1 に戻す
+        // Credential 失敗を検出 → 路線に応じて該当ステップを Failed にして戻す
+        if (_state.SelectedRoute == WizardRoute.OneDriveToDropbox)
+        {
+            _state.Step3DropboxOAuth = WizardStepState.Failed;
+            await WizardStateService.SaveAsync(_state);
+
+            Snackbar.Add("Dropbox の認証情報が無効または期限切れです。Dropbox OAuth に戻って再設定してください。", Severity.Warning);
+            GoToDropboxOAuth();
+            return;
+        }
+
         _state.Step1AzureAuth = WizardStepState.Failed;
         await WizardStateService.SaveAsync(_state);
 
-        Snackbar.Add("認証情報が無効または期限切れです。Step 1 に戻って再設定してください。", Severity.Warning);
+        Snackbar.Add("Azure の認証情報が無効または期限切れです。Step 1 に戻って再設定してください。", Severity.Warning);
         GoToAzureAuth();
     }
 

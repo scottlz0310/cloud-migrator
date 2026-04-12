@@ -348,26 +348,23 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             var client = ClientFactory(clientId, tenantId, clientSecret);
 
-            Microsoft.Graph.Models.DriveItemCollectionResponse? response;
+            List<DriveFolderEntry> folders;
             if (string.IsNullOrEmpty(folderId))
             {
-                response = await client.Drives[driveId].Items["root"].Children
-                    .GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"],
-                        cancellationToken: ct)
-                    .ConfigureAwait(false);
+                var builder = client.Drives[driveId].Items["root"].Children;
+                folders = await CollectFolderPagedAsync(
+                    () => builder.GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"], cancellationToken: ct),
+                    nextLink => builder.WithUrl(nextLink).GetAsync(cancellationToken: ct),
+                    ct).ConfigureAwait(false);
             }
             else
             {
-                response = await client.Drives[driveId].Items[folderId].Children
-                    .GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"],
-                        cancellationToken: ct)
-                    .ConfigureAwait(false);
+                var builder = client.Drives[driveId].Items[folderId].Children;
+                folders = await CollectFolderPagedAsync(
+                    () => builder.GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"], cancellationToken: ct),
+                    nextLink => builder.WithUrl(nextLink).GetAsync(cancellationToken: ct),
+                    ct).ConfigureAwait(false);
             }
-
-            var folders = response?.Value?
-                .Where(item => item.Folder is not null && item.Id is not null)
-                .Select(item => new DriveFolderEntry(item.Id!, item.Name ?? item.Id!))
-                .ToList() ?? [];
 
             return new DriveFolderListResult(Success: true, Folders: folders);
         }
@@ -411,17 +408,34 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         try
         {
             var client = ClientFactory(clientId, tenantId, clientSecret);
+
+            var allSites = new List<Microsoft.Graph.Models.Site>();
             var sitesResponse = await client.Sites
                 .GetAsync(r => r.QueryParameters.Search = "*", ct)
                 .ConfigureAwait(false);
+            if (sitesResponse?.Value is not null)
+                allSites.AddRange(sitesResponse.Value);
 
-            var sites = sitesResponse?.Value?
+            var nextLink = sitesResponse?.OdataNextLink;
+            while (!string.IsNullOrWhiteSpace(nextLink))
+            {
+                ct.ThrowIfCancellationRequested();
+                var nextPage = await client.Sites.WithUrl(nextLink)
+                    .GetAsync(cancellationToken: ct).ConfigureAwait(false);
+                if (nextPage?.Value is not null)
+                    allSites.AddRange(nextPage.Value);
+                nextLink = nextPage?.OdataNextLink;
+            }
+
+            var sites = allSites
                 .Where(s => s.Id is not null)
+                .GroupBy(s => s.Id!)
+                .Select(g => g.First())
                 .Select(s => new SharePointSiteEntry(
                     SiteId: s.Id!,
                     DisplayName: s.DisplayName ?? s.Name ?? s.Id!,
                     WebUrl: s.WebUrl ?? string.Empty))
-                .ToList() ?? [];
+                .ToList();
 
             return new SharePointSiteSearchResult(Success: true, Sites: sites);
         }
@@ -454,6 +468,26 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
             return new SharePointSiteSearchResult(false,
                 ErrorMessage: $"接続エラー: {ex.Message}");
         }
+    }
+
+    private static async Task<List<DriveFolderEntry>> CollectFolderPagedAsync(
+        Func<Task<Microsoft.Graph.Models.DriveItemCollectionResponse?>> getFirstPage,
+        Func<string, Task<Microsoft.Graph.Models.DriveItemCollectionResponse?>> getNextPage,
+        CancellationToken ct)
+    {
+        var result = new List<DriveFolderEntry>();
+        var response = await getFirstPage().ConfigureAwait(false);
+        while (response is not null)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (response.Value is not null)
+                result.AddRange(response.Value
+                    .Where(item => item.Folder is not null && item.Id is not null)
+                    .Select(item => new DriveFolderEntry(item.Id!, item.Name ?? item.Id!)));
+            if (string.IsNullOrWhiteSpace(response.OdataNextLink)) break;
+            response = await getNextPage(response.OdataNextLink).ConfigureAwait(false);
+        }
+        return result;
     }
 
     private static GraphServiceClient CreateClient(string clientId, string tenantId, string clientSecret)

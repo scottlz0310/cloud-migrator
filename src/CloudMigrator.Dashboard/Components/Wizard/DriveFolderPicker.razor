@@ -156,17 +156,35 @@
     // パンくず表示用（名前のみ）
     private List<string> _breadcrumbs = [];
     private bool _initialized;
+    private string? _previousDriveId;
 
     private string CurrentPathDisplay =>
         string.Join("/", _navStack.Select(n => n.DisplayName));
 
     protected override void OnParametersSet()
     {
-        if (_initialized) return;
-        _initialized = true;
-        // 初期値をプロパティに反映（ページのプリロード対応）
-        SelectedFolderId = InitialFolderId ?? string.Empty;
-        SelectedFolderPath = InitialFolderPath ?? string.Empty;
+        var driveChanged = _initialized && !string.Equals(_previousDriveId, DriveId, StringComparison.Ordinal);
+
+        if (!_initialized || driveChanged)
+        {
+            if (driveChanged)
+            {
+                _isOpen = false;
+                _isBusy = false;
+                _error = null;
+                _navStack.Clear();
+                _currentFolders.Clear();
+                _breadcrumbs.Clear();
+                SelectedFolderId = string.Empty;
+                SelectedFolderPath = string.Empty;
+            }
+
+            _initialized = true;
+            _previousDriveId = DriveId;
+            // 初期値をプロパティに反映（ページのプリロード対応）
+            SelectedFolderId = InitialFolderId ?? string.Empty;
+            SelectedFolderPath = InitialFolderPath ?? string.Empty;
+        }
     }
 
     private async Task OpenPicker()
