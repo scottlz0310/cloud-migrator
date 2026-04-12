@@ -122,6 +122,10 @@ public sealed class SharePointVerifyService : ISharePointVerifyService
             return (new SharePointVerifyCheck(SharePointVerifyLayer.Credential, true, "クレデンシャルと認証を確認しました。"),
                 clientId, tenantId, clientSecret);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Credential Verify 中にエラーが発生しました。");
@@ -159,6 +163,10 @@ public sealed class SharePointVerifyService : ISharePointVerifyService
 
             return (new SharePointVerifyCheck(SharePointVerifyLayer.Discovery, true,
                 "SharePoint Drive への到達を確認しました。"), driveId);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

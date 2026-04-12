@@ -14,7 +14,3 @@ ignore:
   - "src/CloudMigrator.Dashboard/WpfDialogService.cs"
   - "src/CloudMigrator.Cli/Commands/DashboardCommand.cs"
   - "src/CloudMigrator.Cli/Program.cs"
-  # インターフェース定義はカバレッジ対象外
-  - "src/CloudMigrator.Providers.Graph/Auth/ISharePointVerifyService.cs"
-  # テストは別 PR（issue: テスト追加）で対応予定
-  - "src/CloudMigrator.Providers.Graph/Auth/SharePointVerifyService.cs"
