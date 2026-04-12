@@ -1,5 +1,6 @@
 using CloudMigrator.Core.Transfer;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CloudMigrator.Tests.Unit;
 
@@ -13,7 +14,7 @@ public sealed class TransferJobServiceTests
     public async Task TryStartAsync_ReturnsJob_WhenNoJobRunning()
     {
         // 検証対象: TryStartAsync  目的: ジョブがない場合 Pending 状態の TransferJobInfo を返す
-        var service = new TransferJobService();
+        var service = new TransferJobService(NullLogger<TransferJobService>.Instance);
 
         var job = await service.TryStartAsync();
 
@@ -28,7 +29,7 @@ public sealed class TransferJobServiceTests
     {
         // 検証対象: TryStartAsync  目的: ジョブ実行中の場合 null を返す（HTTP 409 Conflict 用）
         var tcs = new TaskCompletionSource();
-        var service = new TransferJobService(_ => tcs.Task);
+        var service = new TransferJobService(NullLogger<TransferJobService>.Instance, _ => tcs.Task);
 
         var firstJob = await service.TryStartAsync();
         var secondJob = await service.TryStartAsync();
@@ -43,7 +44,7 @@ public sealed class TransferJobServiceTests
     public async Task GetJob_ReturnsJob_WhenExists()
     {
         // 検証対象: GetJob  目的: TryStartAsync で登録したジョブを jobId で取得できる
-        var service = new TransferJobService();
+        var service = new TransferJobService(NullLogger<TransferJobService>.Instance);
         var job = await service.TryStartAsync();
 
         var found = service.GetJob(job!.JobId);
@@ -56,7 +57,7 @@ public sealed class TransferJobServiceTests
     public void GetJob_ReturnsNull_WhenNotExists()
     {
         // 検証対象: GetJob  目的: 存在しない jobId に対して null を返す（HTTP 404 NotFound 用）
-        var service = new TransferJobService();
+        var service = new TransferJobService(NullLogger<TransferJobService>.Instance);
 
         var result = service.GetJob("nonexistent-id");
 
@@ -68,7 +69,7 @@ public sealed class TransferJobServiceTests
     {
         // 検証対象: RunJobAsync → Completed 遷移  目的: 正常完了後に Completed 状態になる
         var tcs = new TaskCompletionSource();
-        var service = new TransferJobService(_ => tcs.Task);
+        var service = new TransferJobService(NullLogger<TransferJobService>.Instance, _ => tcs.Task);
         var job = await service.TryStartAsync();
 
         tcs.SetResult();
@@ -84,6 +85,7 @@ public sealed class TransferJobServiceTests
     {
         // 検証対象: RunJobAsync → Failed 遷移  目的: 例外発生時に Failed 状態とエラーメッセージを設定する
         var service = new TransferJobService(
+            NullLogger<TransferJobService>.Instance,
             _ => Task.FromException(new InvalidOperationException("テストエラー")));
         var job = await service.TryStartAsync();
 
@@ -101,13 +103,12 @@ public sealed class TransferJobServiceTests
     public async Task RunJob_SetsStatusCancelled_WhenCancelled()
     {
         // 検証対象: RunJobAsync → Cancelled 遷移  目的: キャンセル時に Cancelled 状態になる
-        using var cts = new CancellationTokenSource();
-        var service = new TransferJobService(async ct => await Task.Delay(Timeout.Infinite, ct));
-        var job = await service.TryStartAsync(cts.Token);
+        var service = new TransferJobService(NullLogger<TransferJobService>.Instance, async ct => await Task.Delay(Timeout.Infinite, ct));
+        var job = await service.TryStartAsync();
 
         // ジョブが Running 状態に遷移するまで待ってからキャンセル
         await WaitUntilAsync(() => service.GetJob(job!.JobId)?.Status == JobStatus.Running);
-        cts.Cancel();
+        service.Cancel();
         await WaitUntilAsync(() => service.GetJob(job!.JobId)?.Status == JobStatus.Cancelled);
 
         var updated = service.GetJob(job!.JobId);
@@ -120,7 +121,7 @@ public sealed class TransferJobServiceTests
     {
         // 検証対象: SemaphoreSlim 解放  目的: 先行ジョブ完了後は新たなジョブを開始できる
         var tcs = new TaskCompletionSource();
-        var service = new TransferJobService(_ => tcs.Task);
+        var service = new TransferJobService(NullLogger<TransferJobService>.Instance, _ => tcs.Task);
 
         var job1 = await service.TryStartAsync();
         var midCheck = await service.TryStartAsync(); // Running 中は null

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Core.Transfer;
 
@@ -22,14 +23,24 @@ public interface ITransferJobService
     /// 新しい転送ジョブを開始する。
     /// 既にジョブが実行中または待機中の場合は <c>null</c> を返す（HTTP 409 Conflict 用）。
     /// </summary>
-    /// <param name="ct">ジョブ停止シグナルとして伝播するキャンセルトークン。</param>
-    Task<TransferJobInfo?> TryStartAsync(CancellationToken ct = default);
+    Task<TransferJobInfo?> TryStartAsync();
+
+    /// <summary>
+    /// 実行中のジョブをキャンセルする。ジョブがなければ何もしない。
+    /// </summary>
+    void Cancel();
 
     /// <summary>
     /// 指定 ID のジョブ状態を取得する。
     /// 存在しない jobId の場合は <c>null</c> を返す（HTTP 404 NotFound 用）。
     /// </summary>
     TransferJobInfo? GetJob(string jobId);
+
+    /// <summary>現在実行中のジョブ情報。なければ <c>null</c>。</summary>
+    TransferJobInfo? CurrentJob { get; }
+
+    /// <summary>ジョブが現在実行中（または待機中）かどうか。</summary>
+    bool IsRunning { get; }
 }
 
 /// <summary>
@@ -52,18 +63,24 @@ public sealed class TransferJobService : ITransferJobService
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly ConcurrentDictionary<string, TransferJobInfo> _jobs = new();
     private readonly Queue<string> _jobOrder = new();
+    private readonly ILogger<TransferJobService> _logger;
+    private CancellationTokenSource? _currentJobCts;
+    private string? _currentJobId;
 
     /// <param name="work">
     /// ジョブで実行する非同期処理。
-    /// <c>null</c> の場合は即時完了する（Phase 5 で実際の移行処理を注入予定）。
+    /// <c>null</c> の場合は即時完了する。
     /// </param>
-    public TransferJobService(Func<CancellationToken, Task>? work = null)
+    public TransferJobService(
+        ILogger<TransferJobService> logger,
+        Func<CancellationToken, Task>? work = null)
     {
+        _logger = logger;
         _work = work;
     }
 
     /// <inheritdoc />
-    public async Task<TransferJobInfo?> TryStartAsync(CancellationToken ct = default)
+    public async Task<TransferJobInfo?> TryStartAsync()
     {
         // ノンブロッキング取得: 既に別ジョブが保有中なら即座に false が返る
         if (!await _semaphore.WaitAsync(0, CancellationToken.None).ConfigureAwait(false))
@@ -73,6 +90,7 @@ public sealed class TransferJobService : ITransferJobService
         var job = new TransferJobInfo(jobId, JobStatus.Pending, null, null, null);
         _jobs[jobId] = job;
         _jobOrder.Enqueue(jobId);
+        _currentJobId = jobId;
 
         // 上限超過時は最古エントリを削除する
         while (_jobOrder.Count > MaxJobHistoryCount)
@@ -81,11 +99,15 @@ public sealed class TransferJobService : ITransferJobService
                 _jobs.TryRemove(oldId, out _);
         }
 
-        // セマフォは RunJobAsync の finally で解放する（fire-and-forget）
-        _ = RunJobAsync(jobId, ct);
+        // 内部 CTS を新規作成・セマフォは RunJobAsync の finally で解放（fire-and-forget）
+        _currentJobCts = new CancellationTokenSource();
+        _ = RunJobAsync(jobId, _currentJobCts.Token);
 
         return job;
     }
+
+    /// <inheritdoc />
+    public void Cancel() => _currentJobCts?.Cancel();
 
     /// <inheritdoc />
     public TransferJobInfo? GetJob(string jobId)
@@ -93,6 +115,13 @@ public sealed class TransferJobService : ITransferJobService
         _jobs.TryGetValue(jobId, out var job);
         return job;
     }
+
+    /// <inheritdoc />
+    public TransferJobInfo? CurrentJob =>
+        _currentJobId is null ? null : GetJob(_currentJobId);
+
+    /// <inheritdoc />
+    public bool IsRunning => _semaphore.CurrentCount == 0;
 
     private async Task RunJobAsync(string jobId, CancellationToken ct)
     {
@@ -109,12 +138,13 @@ public sealed class TransferJobService : ITransferJobService
                 CompletedAt = DateTimeOffset.UtcNow,
             };
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
             // ct 由来のキャンセルのみ Cancelled に遷移する。
             // ct と無関係な内部タイムアウト等の OCE は Failed として扱う。
             if (ct.IsCancellationRequested)
             {
+                _logger.LogInformation("ジョブ {JobId} はキャンセルされました。", jobId);
                 _jobs[jobId] = _jobs[jobId] with
                 {
                     Status = JobStatus.Cancelled,
@@ -123,7 +153,7 @@ public sealed class TransferJobService : ITransferJobService
             }
             else
             {
-                // TODO: Phase 5 でロガー注入後、ここで ex の詳細をログに記録する
+                _logger.LogError(ex, "ジョブ {JobId} が内部 OperationCanceledException で失敗しました。", jobId);
                 _jobs[jobId] = _jobs[jobId] with
                 {
                     Status = JobStatus.Failed,
@@ -132,9 +162,9 @@ public sealed class TransferJobService : ITransferJobService
                 };
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // TODO: Phase 5 でロガー注入後、ここで例外詳細をログに記録する
+            _logger.LogError(ex, "ジョブ {JobId} が予期せぬ例外で失敗しました。", jobId);
             _jobs[jobId] = _jobs[jobId] with
             {
                 Status = JobStatus.Failed,
@@ -144,6 +174,9 @@ public sealed class TransferJobService : ITransferJobService
         }
         finally
         {
+            _currentJobId = null;
+            _currentJobCts?.Dispose();
+            _currentJobCts = null;
             _semaphore.Release();
         }
     }
