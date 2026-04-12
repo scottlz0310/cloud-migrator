@@ -151,6 +151,90 @@ public sealed class ConfigurationServiceTests : IDisposable
         result.DestinationRoot.Should().Be("Documents/テスト");
     }
 
+    // ── NormalizeProvider: GetConfigAsync 経由での正規化検証 ─────────────
+
+    [Theory]
+    [InlineData("graph", "sharepoint")]
+    [InlineData("Graph", "sharepoint")]
+    [InlineData("GRAPH", "sharepoint")]
+    public async Task GetConfigAsync_WhenDestinationProviderIsGraphAlias_ReturnsSharepoint(
+        string rawValue, string expected)
+    {
+        // 検証対象: GetConfigAsync（NormalizeProvider）
+        // 目的: "graph" / "Graph" 等の旧エイリアスが "sharepoint" に正規化されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = rawValue
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.DestinationProvider.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("DROPBOX", "dropbox")]
+    [InlineData("Dropbox", "dropbox")]
+    public async Task GetConfigAsync_WhenDestinationProviderIsDropboxVariant_ReturnsDropbox(
+        string rawValue, string expected)
+    {
+        // 検証対象: GetConfigAsync（NormalizeProvider）
+        // 目的: 大文字バリアントの "DROPBOX" / "Dropbox" が "dropbox" に正規化されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = rawValue
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.DestinationProvider.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WhenDestinationProviderIsUnknown_ReturnsLowerCased()
+    {
+        // 検証対象: GetConfigAsync（NormalizeProvider）
+        // 目的: 未知のプロバイダー値は小文字化されて返されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "OneDrive"
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.DestinationProvider.Should().Be("onedrive");
+    }
+
     // ── ヘルパー ────────────────────────────────────────────────────────
 
     private void WriteConfig(object data)
