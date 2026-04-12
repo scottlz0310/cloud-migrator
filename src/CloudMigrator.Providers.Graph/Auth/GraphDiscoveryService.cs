@@ -416,7 +416,7 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
             var client = ClientFactory(clientId, tenantId, clientSecret);
 
             Microsoft.Graph.Models.DriveItemCollectionResponse? response;
-            if (folderId is null)
+            if (string.IsNullOrWhiteSpace(folderId))
             {
                 response = await client.Drives[driveId].Items["root"].Children
                     .GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"], ct)

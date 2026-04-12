@@ -18,7 +18,7 @@ internal sealed class RateLimitAwareHandler : DelegatingHandler
     private readonly ILogger? _logger;
 
     /// <param name="onRateLimit">429/503 検出時に呼び出すコールバック。引数は Retry-After 値（null の場合は不明）。</param>
-    /// <param name="logger">レートリミット標準放出用ロガー。null の場合はログ出力なし。</param>
+    /// <param name="logger">レートリミット検出時のログ出力用ロガー。null の場合はログ出力なし。</param>
     internal RateLimitAwareHandler(Action<TimeSpan?> onRateLimit, ILogger? logger = null)
     {
         _onRateLimit = onRateLimit;
