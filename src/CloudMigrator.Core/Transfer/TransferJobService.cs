@@ -26,6 +26,15 @@ public interface ITransferJobService
     Task<TransferJobInfo?> TryStartAsync();
 
     /// <summary>
+    /// 旧シグネチャとの互換用オーバーロード。
+    /// キャンセル制御は <see cref="Cancel"/> に移行したため、
+    /// 渡された <paramref name="cancellationToken"/> は使用せず
+    /// 現行の <see cref="TryStartAsync()"/> に委譲する。
+    /// </summary>
+    Task<TransferJobInfo?> TryStartAsync(CancellationToken cancellationToken)
+        => TryStartAsync();
+
+    /// <summary>
     /// 実行中のジョブをキャンセルする。ジョブがなければ何もしない。
     /// </summary>
     void Cancel();
@@ -107,7 +116,22 @@ public sealed class TransferJobService : ITransferJobService
     }
 
     /// <inheritdoc />
-    public void Cancel() => _currentJobCts?.Cancel();
+    public void Cancel()
+    {
+        var currentJobCts = _currentJobCts;
+        if (currentJobCts is null)
+            return;
+
+        try
+        {
+            currentJobCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // RunJobAsync の終了処理と競合して CTS が破棄済みでも、
+            // 外部から見れば「既に終了済みのためキャンセル不要」と同義として扱う。
+        }
+    }
 
     /// <inheritdoc />
     public TransferJobInfo? GetJob(string jobId)
