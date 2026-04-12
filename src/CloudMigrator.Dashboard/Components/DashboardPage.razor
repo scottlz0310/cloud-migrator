@@ -258,7 +258,7 @@ else
                     <MudCardContent>
                         <MudChart ChartType="ChartType.Line"
                                   ChartSeries="@_filesSeries"
-                                  XAxisLabels="@_filesLabels"
+                                  ChartLabels="@_filesLabels"
                                   Width="100%" Height="180px"
                                   ChartOptions="@_chartOptions" />
                     </MudCardContent>
@@ -275,7 +275,7 @@ else
                     <MudCardContent>
                         <MudChart ChartType="ChartType.Line"
                                   ChartSeries="@_bytesSeries"
-                                  XAxisLabels="@_bytesLabels"
+                                  ChartLabels="@_bytesLabels"
                                   Width="100%" Height="180px"
                                   ChartOptions="@_chartOptions" />
                     </MudCardContent>
@@ -292,7 +292,7 @@ else
                     <MudCardContent>
                         <MudChart ChartType="ChartType.Line"
                                   ChartSeries="@_rateLimitSeries"
-                                  XAxisLabels="@_rateLimitLabels"
+                                  ChartLabels="@_rateLimitLabels"
                                   Width="100%" Height="180px"
                                   ChartOptions="@_chartOptions" />
                     </MudCardContent>
@@ -309,7 +309,7 @@ else
                     <MudCardContent>
                         <MudChart ChartType="ChartType.Line"
                                   ChartSeries="@_parallelSeries"
-                                  XAxisLabels="@_parallelLabels"
+                                  ChartLabels="@_parallelLabels"
                                   Width="100%" Height="180px"
                                   ChartOptions="@_chartOptions" />
                     </MudCardContent>
@@ -404,15 +404,15 @@ else
     // ── メトリクスグラフ ───────────────────────────────────────────────────────
     private double _peakFilesPerMin;
     private double _peakBytesPerSec;
-    private List<ChartSeries> _filesSeries = [];
+    private List<ChartSeries<double>> _filesSeries = [];
     private string[] _filesLabels = [];
-    private List<ChartSeries> _bytesSeries = [];
+    private List<ChartSeries<double>> _bytesSeries = [];
     private string[] _bytesLabels = [];
-    private List<ChartSeries> _rateLimitSeries = [];
+    private List<ChartSeries<double>> _rateLimitSeries = [];
     private string[] _rateLimitLabels = [];
-    private List<ChartSeries> _parallelSeries = [];
+    private List<ChartSeries<double>> _parallelSeries = [];
     private string[] _parallelLabels = [];
-    private readonly ChartOptions _chartOptions = new() { LineStrokeWidth = 1.5, YAxisTicks = 4, MaxNumYAxisTicks = 6 };
+    private readonly MudBlazor.LineChartOptions _chartOptions = new() { LineStrokeWidth = 1.5, YAxisTicks = 4, MaxNumYAxisTicks = 6 };
 
     // ── タイマー ────────────────────────────────────────────────────────────────
     private CancellationTokenSource? _refreshCts;
@@ -565,7 +565,7 @@ else
         }
     }
 
-    private static (List<ChartSeries> series, string[] labels) BuildChartData(
+    private static (List<ChartSeries<double>> series, string[] labels) BuildChartData(
         IReadOnlyList<MetricPoint> points, string seriesName)
     {
         const int maxPoints = 60;
@@ -585,7 +585,7 @@ else
             .Select((l, i) => i % labelStep == 0 ? l : "")
             .ToArray();
 
-        return ([new ChartSeries { Name = seriesName, Data = [.. data] }], displayLabels);
+        return ([new ChartSeries<double> { Name = seriesName, Data = new MudBlazor.ChartData<double>(data) }], displayLabels);
     }
 
     private async Task StartJobAsync()
