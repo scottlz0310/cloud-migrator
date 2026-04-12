@@ -3,6 +3,8 @@ using CloudMigrator.Core.Credentials;
 using CloudMigrator.Providers.Graph.Auth;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Graph.Models.ODataErrors;
+using Microsoft.Kiota.Abstractions;
 using Moq;
 
 namespace CloudMigrator.Tests.Unit;
@@ -247,8 +249,6 @@ public sealed class SharePointVerifyServiceTests
             Times.Never);
     }
 
-    // ── キャンセル ────────────────────────────────────────────────────────
-
     [Fact]
     public async Task VerifyAsync_WhenCancelled_ThrowsOperationCanceledException()
     {
@@ -274,6 +274,93 @@ public sealed class SharePointVerifyServiceTests
             NullLogger<SharePointVerifyService>.Instance);
 
         var act = async () => await sut.VerifyAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // ── Preflight 層（ClientFactory 注入による例外分岐テスト）─────────────
+
+    private static ODataError MakeSPODataError(int statusCode, string? code = null, string? message = null) =>
+        new() { ResponseStatusCode = statusCode, Error = new MainError { Code = code, Message = message } };
+
+    [Fact]
+    public async Task VerifyAsync_WhenPreflight403WithAuthorizationRequestDenied_PreflightFailsWithPermissionError()
+    {
+        // 検証対象: VerifyAsync (Preflight 層)  目的: ClientFactory が Authorization_RequestDenied 403 をスローした場合に Preflight 失敗となること
+        var (sut, _, _, _, _) = Build();
+        sut.ClientFactory = (_, _, _) => throw MakeSPODataError(403, "Authorization_RequestDenied");
+
+        var result = await sut.VerifyAsync();
+
+        result.IsSuccess.Should().BeFalse();
+        result.Checks.Should().HaveCount(3);
+        result.Checks[0].IsSuccess.Should().BeTrue();
+        result.Checks[1].IsSuccess.Should().BeTrue();
+        result.Checks[2].Layer.Should().Be(SharePointVerifyLayer.Preflight);
+        result.Checks[2].IsSuccess.Should().BeFalse();
+        result.Checks[2].Detail.Should().Contain("権限");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenPreflight403UnknownCode_PreflightFails()
+    {
+        // 検証対象: VerifyAsync (Preflight 層)  目的: ClientFactory が 403（未知コード）をスローした場合に Preflight 失敗となること
+        var (sut, _, _, _, _) = Build();
+        sut.ClientFactory = (_, _, _) => throw MakeSPODataError(403, "Forbidden_Other");
+
+        var result = await sut.VerifyAsync();
+
+        result.Checks[2].IsSuccess.Should().BeFalse();
+        result.Checks[2].Detail.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenPreflightGenericODataError_PreflightFailsWithStatusCode()
+    {
+        // 検証対象: VerifyAsync (Preflight 層)  目的: ClientFactory が汎用 ODataError をスローした場合に Preflight 失敗となること
+        var (sut, _, _, _, _) = Build();
+        sut.ClientFactory = (_, _, _) => throw MakeSPODataError(500, message: "Internal Server Error");
+
+        var result = await sut.VerifyAsync();
+
+        result.Checks[2].IsSuccess.Should().BeFalse();
+        result.Checks[2].Detail.Should().Contain("500");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenPreflightApiException_PreflightFails()
+    {
+        // 検証対象: VerifyAsync (Preflight 層)  目的: ClientFactory が ApiException をスローした場合に Preflight 失敗となること
+        var (sut, _, _, _, _) = Build();
+        sut.ClientFactory = (_, _, _) => throw new ApiException { ResponseStatusCode = 403 };
+
+        var result = await sut.VerifyAsync();
+
+        result.Checks[2].IsSuccess.Should().BeFalse();
+        result.Checks[2].Detail.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenPreflightNetworkError_PreflightFailsWithMessage()
+    {
+        // 検証対象: VerifyAsync (Preflight 層)  目的: ClientFactory が汎用例外をスローした場合に Preflight 失敗となること
+        var (sut, _, _, _, _) = Build();
+        sut.ClientFactory = (_, _, _) => throw new HttpRequestException("Network unreachable");
+
+        var result = await sut.VerifyAsync();
+
+        result.Checks[2].IsSuccess.Should().BeFalse();
+        result.Checks[2].Detail.Should().Contain("Network unreachable");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WhenPreflightCancelled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: VerifyAsync (Preflight 層)  目的: ClientFactory が OperationCanceledException をスローした場合に握り潰されず再スローされること
+        var (sut, _, _, _, _) = Build();
+        sut.ClientFactory = (_, _, _) => throw new OperationCanceledException();
+
+        var act = async () => await sut.VerifyAsync();
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

@@ -42,6 +42,14 @@ public sealed class SharePointVerifyService : ISharePointVerifyService
         _logger = logger;
     }
 
+    /// <summary>テスト時に差し替え可能な GraphServiceClient ファクトリー。</summary>
+    internal Func<string, string, string, GraphServiceClient> ClientFactory { get; set; } =
+        (clientId, tenantId, clientSecret) =>
+        {
+            var authenticator = new GraphAuthenticator(clientId, tenantId, clientSecret);
+            return Http.GraphClientFactory.Create(authenticator);
+        };
+
     /// <inheritdoc/>
     public async Task<SharePointVerifyResult> VerifyAsync(CancellationToken cancellationToken = default)
     {
@@ -182,8 +190,7 @@ public sealed class SharePointVerifyService : ISharePointVerifyService
     {
         try
         {
-            var authenticator = new GraphAuthenticator(clientId, tenantId, clientSecret);
-            var graphClient = Http.GraphClientFactory.Create(authenticator);
+            var graphClient = ClientFactory(clientId, tenantId, clientSecret);
 
             // テストファイルをアップロード
             var contentBytes = System.Text.Encoding.UTF8.GetBytes(PreflightContent);
