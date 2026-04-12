@@ -1,8 +1,15 @@
 @inject ITransferStateDb TransferStateDb
 @inject ITransferJobService JobService
+@inject ILogger<DashboardPage> Logger
 @implements IDisposable
 
-<MudText Typo="Typo.h5" Class="mb-4">転送ダッシュボード</MudText>
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
+    <MudText Typo="Typo.h5">転送ダッシュボード</MudText>
+    @if (!string.IsNullOrEmpty(PhaseLabel))
+    {
+        <MudChip T="string" Color="@PhaseColor" Size="Size.Small">@PhaseLabel</MudChip>
+    }
+</MudStack>
 
 @if (_summary is null)
 {
@@ -11,59 +18,137 @@
 else
 {
     <MudGrid>
-        <!-- ステータスカード -->
-        <MudItem xs="12" sm="6" md="3">
+        <!-- ステータスカード: 完了 / 処理中 / 待機 / 失敗 / 永久失敗 / 合計 -->
+        <MudItem xs="6" sm="4" md="2">
             <MudCard Elevation="2">
                 <MudCardContent>
-                    <MudText Typo="Typo.overline" Color="Color.Default">完了</MudText>
-                    <MudText Typo="Typo.h4" Color="Color.Success">@_summary.Done</MudText>
-                    <MudText Typo="Typo.caption">/ @_summary.Total 件</MudText>
+                    <MudText Typo="Typo.overline">完了</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Success">@_summary.Done.ToString("N0")</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline">処理中</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Info">@_summary.Processing.ToString("N0")</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline">待機中</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Warning">@_summary.Pending.ToString("N0")</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline">失敗</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Error">@_summary.Failed.ToString("N0")</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline">永久失敗</MudText>
+                    <MudText Typo="Typo.h4" Color="Color.Error">@_summary.PermanentFailed.ToString("N0")</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="6" sm="4" md="2">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.overline">合計</MudText>
+                    <MudText Typo="Typo.h4">@Denominator.ToString("N0")</MudText>
+                    @if (!_summary.CrawlComplete)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning">※クロール中(推定)</MudText>
+                    }
                 </MudCardContent>
             </MudCard>
         </MudItem>
 
-        <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2">
-                <MudCardContent>
-                    <MudText Typo="Typo.overline" Color="Color.Default">処理中</MudText>
-                    <MudText Typo="Typo.h4" Color="Color.Info">@_summary.Processing</MudText>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
-        <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2">
-                <MudCardContent>
-                    <MudText Typo="Typo.overline" Color="Color.Default">待機中</MudText>
-                    <MudText Typo="Typo.h4" Color="Color.Warning">@_summary.Pending</MudText>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
-        <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2">
-                <MudCardContent>
-                    <MudText Typo="Typo.overline" Color="Color.Default">失敗</MudText>
-                    <MudText Typo="Typo.h4" Color="Color.Error">@(_summary.Failed + _summary.PermanentFailed)</MudText>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
-        <!-- 完了率プログレスバー -->
+        <!-- メインプログレスバー -->
         <MudItem xs="12">
             <MudCard Elevation="2">
                 <MudCardContent>
-                    <MudText Typo="Typo.subtitle1" Class="mb-2">完了率: @_summary.CompletionRate.ToString("F1")%</MudText>
-                    <MudProgressLinear Value="@_summary.CompletionRate" Max="100" Color="Color.Success" Size="Size.Large" Rounded="true" />
-                    <MudText Typo="Typo.caption" Class="mt-1">
-                        転送済みサイズ: @FormatBytes(_summary.TotalDoneSizeBytes)
-                    </MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                        <MudText Typo="Typo.subtitle1">完了率: @CompletionRate.ToString("F1")%</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @_summary.Done.ToString("N0") / @Denominator.ToString("N0") 件
+                            @(!_summary.CrawlComplete ? "（クロール中のため推定）" : "")
+                        </MudText>
+                    </MudStack>
+                    <MudProgressLinear Value="@CompletionRate" Max="100" Color="Color.Success" Size="Size.Large" Rounded="true" />
                 </MudCardContent>
             </MudCard>
         </MudItem>
 
+        <!-- 2次ステータス: 経過 / ETA / 並列数 / リトライ / エラー率 / 転送量 -->
+        <MudItem xs="12">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudGrid Spacing="1">
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">実稼働時間</MudText>
+                            <MudText Typo="Typo.body1"><b>@_workingElapsed</b></MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">総経過（壁時計）</MudText>
+                            <MudText Typo="Typo.body1" Color="Color.Secondary"><b>@_elapsed</b></MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">残り予測 (ETA)</MudText>
+                            <MudText Typo="Typo.body1"><b>@_eta</b></MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">現在並列数</MudText>
+                            <MudText Typo="Typo.body1"><b>@_currentParallelism</b></MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">リトライ総数</MudText>
+                            <MudText Typo="Typo.body1"><b>@_summary.TotalRetries.ToString("N0")</b></MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">エラー率</MudText>
+                            <MudText Typo="Typo.body1" Color="@(ErrorRate > 0 ? Color.Error : Color.Success)">
+                                <b>@ErrorRate.ToString("F1")%</b>
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudText Typo="Typo.overline" Color="Color.Secondary">転送済みデータ</MudText>
+                            <MudText Typo="Typo.body1"><b>@FormatBytes(_summary.TotalDoneSizeBytes)</b></MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- フォルダ作成進捗（folder_creation フェーズ、または transferring で folderTotal > 0） -->
+        @if ((_phase == "folder_creation" || _phase == "transferring") && _folderTotal > 0)
+        {
+            <MudItem xs="12">
+                <MudCard Elevation="2">
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                            <MudText Typo="Typo.subtitle2">フォルダ作成進捗</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @_folderDone.ToString("N0") / @_folderTotal.ToString("N0") 件
+                                (@(_phase == "folder_creation" ? "実行中" : "完了"))
+                            </MudText>
+                        </MudStack>
+                        <MudProgressLinear Value="@FolderRate" Max="100" Color="Color.Warning" Size="Size.Medium" Rounded="true" />
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+
         <!-- ジョブ操作 -->
-        <MudItem xs="12" md="6">
+        <MudItem xs="12" md="4">
             <MudCard Elevation="2">
                 <MudCardHeader>
                     <CardHeaderContent>
@@ -97,9 +182,140 @@ else
                                OnClick="StartJobAsync">
                         転送開始
                     </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.Stop"
+                               Disabled="@(!_isJobRunning)"
+                               OnClick="StopJob">
+                        停止
+                    </MudButton>
                 </MudCardActions>
             </MudCard>
         </MudItem>
+
+        <!-- 移行完了サマリー -->
+        @if (_phase == "completed" && _completedAt.HasValue)
+        {
+            <MudItem xs="12" md="8">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6" Color="Color.Success">移行完了サマリー</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">完了時刻</MudText>
+                                <MudText Typo="Typo.body2">@_completedAt.Value.LocalDateTime.ToString("MM/dd HH:mm:ss")</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">実稼働時間</MudText>
+                                <MudText Typo="Typo.body2">@_workingElapsed</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">総経過（壁時計）</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">@_elapsed</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">転送データ量</MudText>
+                                <MudText Typo="Typo.body2">@FormatBytes(_summary.TotalDoneSizeBytes)</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">平均ファイルサイズ</MudText>
+                                <MudText Typo="Typo.body2">@(_summary.Done > 0 ? FormatBytes(_summary.TotalDoneSizeBytes / _summary.Done) : "—")</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">ピーク (files/min)</MudText>
+                                <MudText Typo="Typo.body2">@(_peakFilesPerMin > 0 ? _peakFilesPerMin.ToString("F1") + " f/m" : "—")</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">ピーク (bytes/sec)</MudText>
+                                <MudText Typo="Typo.body2">@(_peakBytesPerSec > 0 ? FormatBytesPerSec(_peakBytesPerSec) : "—")</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">リトライ総数</MudText>
+                                <MudText Typo="Typo.body2">@_summary.TotalRetries.ToString("N0")</MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline">エラー率</MudText>
+                                <MudText Typo="Typo.body2" Color="@(ErrorRate > 5 ? Color.Error : ErrorRate > 0 ? Color.Warning : Color.Success)">@ErrorRate.ToString("F2")%</MudText>
+                            </MudItem>
+                        </MudGrid>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+
+        <!-- メトリクスグラフ（データが蓄積されたら表示） -->
+        @if (_filesSeries.Count > 0)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent><MudText Typo="Typo.subtitle2">スループット (files/min)</MudText></CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudChart ChartType="ChartType.Line"
+                                  ChartSeries="@_filesSeries"
+                                  XAxisLabels="@_filesLabels"
+                                  Width="100%" Height="180px"
+                                  ChartOptions="@_chartOptions" />
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+        @if (_bytesSeries.Count > 0)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent><MudText Typo="Typo.subtitle2">スループット (bytes/sec)</MudText></CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudChart ChartType="ChartType.Line"
+                                  ChartSeries="@_bytesSeries"
+                                  XAxisLabels="@_bytesLabels"
+                                  Width="100%" Height="180px"
+                                  ChartOptions="@_chartOptions" />
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+        @if (_rateLimitSeries.Count > 0)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent><MudText Typo="Typo.subtitle2">レートリミット率 (%)</MudText></CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudChart ChartType="ChartType.Line"
+                                  ChartSeries="@_rateLimitSeries"
+                                  XAxisLabels="@_rateLimitLabels"
+                                  Width="100%" Height="180px"
+                                  ChartOptions="@_chartOptions" />
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+        @if (_parallelSeries.Count > 0)
+        {
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent><MudText Typo="Typo.subtitle2">並列実行数</MudText></CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudChart ChartType="ChartType.Line"
+                                  ChartSeries="@_parallelSeries"
+                                  XAxisLabels="@_parallelLabels"
+                                  Width="100%" Height="180px"
+                                  ChartOptions="@_chartOptions" />
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
 
         <!-- 最近の失敗 -->
         @if (_summary.RecentFailed.Count > 0)
@@ -132,16 +348,78 @@ else
 }
 
 @code {
+    // ── サマリー & ジョブ ──────────────────────────────────────────────────────
     private TransferDbSummary? _summary;
     private TransferJobInfo? _currentJob;
     private bool _isJobRunning;
-    // 自動更新ループ用と転送ジョブ用で CTS を分離する
+
+    // ── フェーズ: idle / crawling / folder_creation / transferring / completed ─
+    private string _phase = "";
+    private int _folderTotal;
+    private int _folderDone;
+
+    // ── 計算プロパティ ─────────────────────────────────────────────────────────
+    // crawlTotal が確定している場合はそれを分母にする（クロール中は total が増加するため）
+    private int Denominator =>
+        _summary is null ? 0
+        : (_summary.CrawlComplete && (_summary.CrawlTotal ?? 0) > 0) ? _summary.CrawlTotal!.Value
+        : _summary.Total;
+
+    private double CompletionRate =>
+        Denominator > 0 ? (double)(_summary?.Done ?? 0) / Denominator * 100.0 : 0;
+
+    private double ErrorRate =>
+        _summary is null || _summary.Total == 0 ? 0
+        : (double)(_summary.Failed + _summary.PermanentFailed) / _summary.Total * 100;
+
+    private double FolderRate =>
+        _folderTotal > 0 ? (double)_folderDone / _folderTotal * 100 : 0;
+
+    private string PhaseLabel => _phase switch
+    {
+        "crawling"        => "クロール中",
+        "folder_creation" => "フォルダ作成中",
+        "transferring"    => "転送中",
+        "completed"       => "移行完了",
+        _                 => ""
+    };
+
+    private Color PhaseColor => _phase switch
+    {
+        "crawling"        => Color.Info,
+        "folder_creation" => Color.Warning,
+        "transferring"    => Color.Primary,
+        "completed"       => Color.Success,
+        _                 => Color.Default
+    };
+
+    // ── 2次ステータス ──────────────────────────────────────────────────────────
+    private int _currentParallelism;
+    private double _latestFilesPerMin;
+    private string _elapsed = "—";        // 総経過時間（壁時計時間）
+    private string _workingElapsed = "—"; // 実稼働時間（DB記録の累積秒数）
+    private string _eta = "—";
+    private DateTimeOffset? _completedAt;
+
+    // ── メトリクスグラフ ───────────────────────────────────────────────────────
+    private double _peakFilesPerMin;
+    private double _peakBytesPerSec;
+    private List<ChartSeries> _filesSeries = [];
+    private string[] _filesLabels = [];
+    private List<ChartSeries> _bytesSeries = [];
+    private string[] _bytesLabels = [];
+    private List<ChartSeries> _rateLimitSeries = [];
+    private string[] _rateLimitLabels = [];
+    private List<ChartSeries> _parallelSeries = [];
+    private string[] _parallelLabels = [];
+    private readonly ChartOptions _chartOptions = new() { LineStrokeWidth = 1.5, YAxisTicks = 4, MaxNumYAxisTicks = 6 };
+
+    // ── タイマー ────────────────────────────────────────────────────────────────
     private CancellationTokenSource? _refreshCts;
-    private CancellationTokenSource? _jobCts;
 
     protected override async Task OnInitializedAsync()
     {
-        await RefreshAsync(CancellationToken.None);
+        await RefreshAllAsync(CancellationToken.None);
         _refreshCts = new CancellationTokenSource();
         var token = _refreshCts.Token;
         // 5 秒ごとに自動更新（PeriodicTimer で再入防止）
@@ -152,7 +430,7 @@ else
             {
                 while (await timer.WaitForNextTickAsync(token))
                 {
-                    await RefreshAsync(token);
+                    await RefreshAllAsync(token);
                     await InvokeAsync(StateHasChanged);
                 }
             }
@@ -160,60 +438,201 @@ else
         }, token);
     }
 
-    private async Task RefreshAsync(CancellationToken cancellationToken)
+    private async Task RefreshAllAsync(CancellationToken ct)
     {
-        try
+        try { _summary = await TransferStateDb.GetSummaryAsync(ct); }
+        catch (Exception ex) { Logger.LogError(ex, "RefreshAllAsync: GetSummaryAsync 失敗"); _summary ??= new TransferDbSummary(); }
+        if (_summary is null) return;
+
+        // ジョブ状態を追従（セマフォで常に最新の実行状態を取得する）
+        _isJobRunning = JobService.IsRunning;
+        // 起動後にタブを切り替えた場合も CurrentJob から再アタッチする
+        _currentJob ??= JobService.CurrentJob;
+        if (_currentJob is not null)
+            _currentJob = JobService.GetJob(_currentJob.JobId) ?? _currentJob;
+
+        await RefreshPhaseAsync(ct);
+        await RefreshMetricsAsync(ct);
+        await UpdateElapsedAndEtaAsync(ct);
+        await RefreshFolderProgressAsync(ct);
+    }
+
+    private async Task RefreshPhaseAsync(CancellationToken ct)
+    {
+        if (_summary is null) return;
+
+        // 完了判定: ジョブが Completed 状態、または pending/processing がゼロかつ done が 1 件以上
+        var jobCompleted = _currentJob?.Status == CloudMigrator.Core.Transfer.JobStatus.Completed;
+        if (jobCompleted || (_summary.Pending == 0 && _summary.Processing == 0 && _summary.Done > 0))
         {
-            _summary = await TransferStateDb.GetSummaryAsync(cancellationToken);
-        }
-        catch
-        {
-            // DB が存在しない場合は空のサマリーを使用
-            _summary = new TransferDbSummary();
+            if (_phase != "completed")
+            {
+                _phase = "completed";
+                _completedAt ??= _summary.LastUpdatedAt ?? DateTimeOffset.UtcNow;
+            }
+            return;
         }
 
-        // ジョブの最新状態を追従させる（TryStartAsync の戻り値はスナップショットのため自動更新が必要）
-        if (_currentJob is not null)
+        // ジョブが動いていなければ未完了フェーズのバッジは表示しない
+        if (!_isJobRunning)
         {
-            _currentJob = JobService.GetJob(_currentJob.JobId) ?? _currentJob;
-            _isJobRunning = _currentJob.Status is JobStatus.Pending or JobStatus.Running;
+            _phase = "";
+            return;
         }
+
+        if (!_summary.CrawlComplete)
+        {
+            _phase = "crawling";
+            return;
+        }
+
+        var folderCreationDone = await TransferStateDb.GetCheckpointAsync("folder_creation_complete", ct);
+        _phase = folderCreationDone == "true" ? "transferring" : "folder_creation";
+    }
+
+    private async Task RefreshFolderProgressAsync(CancellationToken ct)
+    {
+        var totalStr = await TransferStateDb.GetCheckpointAsync("folder_total", ct);
+        if (int.TryParse(totalStr, out var total)) _folderTotal = total;
+        else { _folderTotal = 0; _folderDone = 0; }
+
+        if (_folderTotal > 0)
+        {
+            var metrics = await TransferStateDb.GetMetricsAsync("sp_folder_done", 120, ct);
+            if (metrics.Count > 0) _folderDone = (int)metrics[^1].Value;
+        }
+    }
+
+    private async Task UpdateElapsedAndEtaAsync(CancellationToken ct)
+    {
+        if (_summary is null) return;
+
+        // 実稼働時間: DBに累積保存された秒数（停止中の時間を含まない）
+        var workingSecondsStr = await TransferStateDb.GetCheckpointAsync("pipeline_working_seconds", ct);
+        if (double.TryParse(workingSecondsStr, out var workingSeconds) && workingSeconds > 0)
+        {
+            // ジョブ実行中は現在のセッション分も加算する
+            var additional = _isJobRunning
+                ? (_summary.LastUpdatedAt.HasValue ? (DateTimeOffset.UtcNow - _summary.LastUpdatedAt.Value).TotalSeconds : 0)
+                : 0;
+            _workingElapsed = FormatDuration(workingSeconds + Math.Max(0, additional));
+        }
+
+        // 総経過（壁時計）: PipelineStartedAt から現在/完了まで
+        var startedAt = _summary.PipelineStartedAt ?? _summary.FirstUpdatedAt;
+        if (startedAt.HasValue)
+        {
+            var end = _completedAt ?? DateTimeOffset.UtcNow;
+            _elapsed = FormatDuration((end - startedAt.Value).TotalSeconds);
+        }
+
+        var remaining = _summary.Pending + _summary.Processing + _summary.Failed;
+        _eta = (_latestFilesPerMin > 0 && remaining > 0)
+            ? FormatDuration(remaining / _latestFilesPerMin * 60)
+            : (remaining == 0 ? "完了" : "—");
+    }
+
+    private async Task RefreshMetricsAsync(CancellationToken ct)
+    {
+        if (_summary is null) return;
+        var startedAt = _summary.PipelineStartedAt ?? _summary.FirstUpdatedAt;
+        var minutes = startedAt.HasValue
+            ? Math.Clamp((int)(DateTimeOffset.UtcNow - startedAt.Value).TotalMinutes + 10, 60, 120)
+            : 60;
+
+        var filesData = await TransferStateDb.GetMetricsAsync("throughput_files_per_min", minutes, ct);
+        var bytesData = await TransferStateDb.GetMetricsAsync("throughput_bytes_per_sec", minutes, ct);
+        var rlData    = await TransferStateDb.GetMetricsAsync("rate_limit_pct",            minutes, ct);
+        var parData   = await TransferStateDb.GetMetricsAsync("current_parallelism",       minutes, ct);
+
+        if (filesData.Count > 0)
+        {
+            _latestFilesPerMin = filesData[^1].Value;
+            _peakFilesPerMin   = Math.Max(_peakFilesPerMin, filesData.Max(p => p.Value));
+            (_filesSeries, _filesLabels) = BuildChartData(filesData, "files/min");
+        }
+        if (bytesData.Count > 0)
+        {
+            _peakBytesPerSec = Math.Max(_peakBytesPerSec, bytesData.Max(p => p.Value));
+            (_bytesSeries, _bytesLabels) = BuildChartData(bytesData, "bytes/sec");
+        }
+        if (rlData.Count > 0)
+            (_rateLimitSeries, _rateLimitLabels) = BuildChartData(rlData, "rate_limit %");
+        if (parData.Count > 0)
+        {
+            _currentParallelism = (int)parData[^1].Value;
+            (_parallelSeries, _parallelLabels) = BuildChartData(parData, "並列数");
+        }
+    }
+
+    private static (List<ChartSeries> series, string[] labels) BuildChartData(
+        IReadOnlyList<MetricPoint> points, string seriesName)
+    {
+        const int maxPoints = 60;
+        const int maxLabels = 8;
+        int dataStep = Math.Max(1, points.Count / maxPoints);
+
+        List<double> data = [];
+        List<string> baseLabels = [];
+        for (int i = 0; i < points.Count; i += dataStep)
+        {
+            data.Add(points[i].Value);
+            baseLabels.Add(points[i].Timestamp.LocalDateTime.ToString("HH:mm"));
+        }
+
+        int labelStep = Math.Max(1, baseLabels.Count / maxLabels);
+        var displayLabels = baseLabels
+            .Select((l, i) => i % labelStep == 0 ? l : "")
+            .ToArray();
+
+        return ([new ChartSeries { Name = seriesName, Data = [.. data] }], displayLabels);
     }
 
     private async Task StartJobAsync()
     {
         if (_isJobRunning) return;
-        _jobCts = new CancellationTokenSource();
-        _currentJob = await JobService.TryStartAsync(_jobCts.Token);
+        _currentJob = await JobService.TryStartAsync();
         _isJobRunning = _currentJob?.Status is JobStatus.Pending or JobStatus.Running;
     }
 
+    private void StopJob() => JobService.Cancel();
+
     private static Color JobStatusColor(JobStatus status) => status switch
     {
-        JobStatus.Pending => Color.Warning,
-        JobStatus.Running => Color.Info,
+        JobStatus.Pending   => Color.Warning,
+        JobStatus.Running   => Color.Info,
         JobStatus.Completed => Color.Success,
-        JobStatus.Failed => Color.Error,
+        JobStatus.Failed    => Color.Error,
         JobStatus.Cancelled => Color.Default,
-        _ => Color.Default,
+        _                   => Color.Default,
     };
 
-    private static string FormatBytes(long bytes)
+    private static string FormatDuration(double seconds)
     {
-        return bytes switch
-        {
-            >= 1_073_741_824 => $"{bytes / 1_073_741_824.0:F1} GB",
-            >= 1_048_576 => $"{bytes / 1_048_576.0:F1} MB",
-            >= 1_024 => $"{bytes / 1_024.0:F1} KB",
-            _ => $"{bytes} B",
-        };
+        var sec = (int)Math.Round(Math.Abs(seconds));
+        if (sec < 60) return $"{sec}秒";
+        if (sec < 3600) return $"{sec / 60}m{sec % 60:D2}s";
+        return $"{sec / 3600}h{sec % 3600 / 60:D2}m";
     }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1_073_741_824 => $"{bytes / 1_073_741_824.0:F1} GB",
+        >= 1_048_576     => $"{bytes / 1_048_576.0:F1} MB",
+        >= 1_024         => $"{bytes / 1_024.0:F1} KB",
+        _                => $"{bytes} B",
+    };
+
+    private static string FormatBytesPerSec(double v) => v switch
+    {
+        >= 1_048_576 => $"{v / 1_048_576:F1} MB/s",
+        >= 1_024     => $"{v / 1_024:F1} KB/s",
+        _            => $"{v:F0} B/s",
+    };
 
     public void Dispose()
     {
         _refreshCts?.Cancel();
         _refreshCts?.Dispose();
-        _jobCts?.Cancel();
-        _jobCts?.Dispose();
     }
 }

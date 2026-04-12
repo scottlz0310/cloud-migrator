@@ -1,0 +1,264 @@
+@using CloudMigrator.Providers.Graph.Auth
+@inject IGraphDiscoveryService DiscoveryService
+
+@* ドライブ内のフォルダを階層ナビゲーションで選択するインラインコンポーネント *@
+
+<MudStack Spacing="2">
+
+    @* ── 現在の選択表示 ── *@
+    @if (!_isOpen)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">
+                @(string.IsNullOrEmpty(SelectedFolderPath)
+                    ? "（ルート — ドライブ全体）"
+                    : SelectedFolderPath)
+            </MudText>
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Primary"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Disabled="@Disabled"
+                       OnClick="OpenPicker">
+                変更
+            </MudButton>
+        </MudStack>
+    }
+
+    @* ── フォルダブラウザ（展開時） ── *@
+    @if (_isOpen)
+    {
+        <MudPaper Elevation="2" Class="pa-3">
+            <MudStack Spacing="2">
+
+                @* パンくずナビ *@
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
+                    @for (var i = 0; i < _breadcrumbs.Count; i++)
+                    {
+                        var depth = i;
+                        var name = _breadcrumbs[i];
+                        @if (i > 0)
+                        {
+                            <MudText Color="Color.Secondary"> › </MudText>
+                        }
+                        @if (i < _breadcrumbs.Count - 1)
+                        {
+                            <MudLink OnClick="@(() => NavigateToBreadcrumbDepth(depth))"
+                                     Style="cursor: pointer;">
+                                @name
+                            </MudLink>
+                        }
+                        else
+                        {
+                            <MudText><strong>@name</strong></MudText>
+                        }
+                    }
+                </MudStack>
+
+                @* フォルダ一覧 *@
+                @if (_isBusy)
+                {
+                    <MudStack AlignItems="AlignItems.Center" Spacing="1" Class="py-2">
+                        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">取得中...</MudText>
+                    </MudStack>
+                }
+                else if (_error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+                }
+                else if (_currentFolders.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        このフォルダにはサブフォルダがありません。
+                    </MudText>
+                }
+                else
+                {
+                    <MudList T="DriveFolderEntry" Dense="true" Style="max-height: 240px; overflow-y: auto;">
+                        @foreach (var folder in _currentFolders)
+                        {
+                            <MudListItem OnClick="@(() => NavigateIntoAsync(folder))">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Folder"
+                                             Size="Size.Small"
+                                             Color="Color.Warning" />
+                                    <MudText Typo="Typo.body2">@folder.DisplayName</MudText>
+                                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight"
+                                             Size="Size.Small"
+                                             Color="Color.Secondary" />
+                                </MudStack>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+
+                @* アクションボタン *@
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               Disabled="@_isBusy"
+                               OnClick="SelectCurrentFolder">
+                        @(CurrentPathDisplay == string.Empty
+                            ? "ルートを選択"
+                            : $"「{_breadcrumbs.Last()}」を選択")
+                    </MudButton>
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               Disabled="@_isBusy"
+                               OnClick="Cancel">
+                        キャンセル
+                    </MudButton>
+                </MudStack>
+
+            </MudStack>
+        </MudPaper>
+    }
+
+</MudStack>
+
+@code {
+    /// <summary>対象 Drive の ID。</summary>
+    [Parameter, EditorRequired] public string DriveId { get; set; } = string.Empty;
+
+    /// <summary>Graph 認証情報。</summary>
+    [Parameter, EditorRequired] public string ClientId { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string TenantId { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ClientSecret { get; set; } = string.Empty;
+
+    /// <summary>初期選択フォルダ ID（null = ルート）。</summary>
+    [Parameter] public string? InitialFolderId { get; set; }
+
+    /// <summary>初期選択フォルダパス（表示用）。</summary>
+    [Parameter] public string? InitialFolderPath { get; set; }
+
+    /// <summary>フォルダが選択されたときのコールバック。(FolderId="", FolderPath="") がルートを意味する。</summary>
+    [Parameter] public EventCallback<(string FolderId, string FolderPath)> OnFolderSelected { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    // ── 公開プロパティ（親が読む） ──
+    public string SelectedFolderId { get; private set; } = string.Empty;
+    public string SelectedFolderPath { get; private set; } = string.Empty;
+
+    // ── 内部状態 ──
+    private bool _isOpen;
+    private bool _isBusy;
+    private string? _error;
+
+    // ナビゲーションスタック用
+    private readonly List<(string FolderId, string DisplayName)> _navStack = [];
+    private List<DriveFolderEntry> _currentFolders = [];
+
+    // パンくず表示用（名前のみ）
+    private List<string> _breadcrumbs = [];
+    private bool _initialized;
+    private string? _previousDriveId;
+
+    private string CurrentPathDisplay =>
+        string.Join("/", _navStack.Select(n => n.DisplayName));
+
+    protected override void OnParametersSet()
+    {
+        var driveChanged = _initialized && !string.Equals(_previousDriveId, DriveId, StringComparison.Ordinal);
+
+        if (!_initialized || driveChanged)
+        {
+            if (driveChanged)
+            {
+                _isOpen = false;
+                _isBusy = false;
+                _error = null;
+                _navStack.Clear();
+                _currentFolders.Clear();
+                _breadcrumbs.Clear();
+                SelectedFolderId = string.Empty;
+                SelectedFolderPath = string.Empty;
+            }
+
+            _initialized = true;
+            _previousDriveId = DriveId;
+            // 初期値をプロパティに反映（ページのプリロード対応）
+            SelectedFolderId = InitialFolderId ?? string.Empty;
+            SelectedFolderPath = InitialFolderPath ?? string.Empty;
+        }
+    }
+
+    private async Task OpenPicker()
+    {
+        _isOpen = true;
+        _navStack.Clear();
+        _navStack.Add((string.Empty, "ルート"));
+        RebuildBreadcrumbs();
+        await LoadCurrentFoldersAsync();
+    }
+
+    private void Cancel()
+    {
+        _isOpen = false;
+        _error = null;
+    }
+
+    private async Task NavigateIntoAsync(DriveFolderEntry folder)
+    {
+        _navStack.Add((folder.FolderId, folder.DisplayName));
+        RebuildBreadcrumbs();
+        await LoadCurrentFoldersAsync();
+    }
+
+    private async Task NavigateToBreadcrumbDepth(int depth)
+    {
+        while (_navStack.Count > depth + 1)
+            _navStack.RemoveAt(_navStack.Count - 1);
+        RebuildBreadcrumbs();
+        await LoadCurrentFoldersAsync();
+    }
+
+    private async Task LoadCurrentFoldersAsync()
+    {
+        _isBusy = true;
+        _error = null;
+        _currentFolders = [];
+        StateHasChanged();
+
+        try
+        {
+            var currentFolderId = _navStack.Last().FolderId;
+            var result = await DiscoveryService.ListDriveFoldersAsync(
+                ClientId, TenantId, ClientSecret,
+                DriveId,
+                folderId: string.IsNullOrEmpty(currentFolderId) ? null : currentFolderId);
+
+            if (result.Success)
+                _currentFolders = result.Folders?.ToList() ?? [];
+            else
+                _error = result.ErrorMessage;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SelectCurrentFolder()
+    {
+        var folderId = _navStack.Last().FolderId;
+        var folderPath = _navStack.Count <= 1
+            ? string.Empty
+            : string.Join("/", _navStack.Skip(1).Select(n => n.DisplayName));
+
+        SelectedFolderId = folderId;
+        SelectedFolderPath = folderPath;
+        _isOpen = false;
+
+        await OnFolderSelected.InvokeAsync((folderId, folderPath));
+    }
+
+    private void RebuildBreadcrumbs()
+    {
+        _breadcrumbs = _navStack.Select(n => n.DisplayName).ToList();
+    }
+}

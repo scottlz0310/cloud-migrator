@@ -69,6 +69,22 @@
                     </MudText>
                 </MudStack>
             </MudPaper>
+
+            @* 移行元フォルダ選択 *@
+            <div>
+                <MudText Typo="Typo.subtitle2" Class="mb-1">移行元フォルダ</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                    OneDrive 内のどのフォルダから移行するか選択します。選択しない場合はドライブ全体を移行します。
+                </MudText>
+                <DriveFolderPicker @ref="_sourceFolderPicker"
+                                   DriveId="@(_discoveryResult.DriveId ?? string.Empty)"
+                                   ClientId="@_clientId"
+                                   TenantId="@_tenantId"
+                                   ClientSecret="@_clientSecret"
+                                   InitialFolderId="@_initialSourceFolderId"
+                                   InitialFolderPath="@_initialSourceFolderPath"
+                                   Disabled="@_isBusy" />
+            </div>
         }
 
         @if (_discoveryResult is { Success: false })
@@ -113,15 +129,29 @@
     [Parameter] public EventCallback OnDiscoveryCompleted { get; set; }
 
     private string _userId = string.Empty;
+    private string _clientId = string.Empty;
+    private string _tenantId = string.Empty;
+    private string _clientSecret = string.Empty;
     private OneDriveDiscoveryResult? _discoveryResult;
     private bool _isBusy;
     private bool _isAdminConsentError;
+    private DriveFolderPicker? _sourceFolderPicker;
+    private string _initialSourceFolderId = string.Empty;
+    private string _initialSourceFolderPath = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        // 既存の設定から UPN をプリロードする
+        // 既存の設定からプリロードする
         var config = await ConfigurationService.GetDiscoveryConfigAsync();
         _userId = config.OneDriveUserId;
+        _initialSourceFolderId = config.OneDriveSourceFolderId;
+        _initialSourceFolderPath = config.OneDriveSourceFolderPath;
+
+        // 認証情報もプリロード（フォルダピッカー渡し用）
+        var graphConfig = await ConfigurationService.GetGraphConfigAsync();
+        _clientId = graphConfig.ClientId;
+        _tenantId = graphConfig.TenantId;
+        _clientSecret = await CredentialStore.GetAsync(CredentialKeys.AzureClientSecret) ?? string.Empty;
     }
 
     private async Task FetchDriveIdAsync()
@@ -155,6 +185,13 @@
             {
                 _isAdminConsentError = _discoveryResult.ErrorMessage?.Contains("管理者の同意") == true;
             }
+            else
+            {
+                // 認証情報をフォルダピッカー用に保持
+                _clientId = clientId;
+                _tenantId = tenantId;
+                _clientSecret = clientSecret;
+            }
         }
         catch (Exception ex)
         {
@@ -176,9 +213,14 @@
         try
         {
             // Discovery 結果を config.json に保存する
+            var folderId = _sourceFolderPicker?.SelectedFolderId ?? string.Empty;
+            var folderPath = _sourceFolderPicker?.SelectedFolderPath ?? string.Empty;
+
             await ConfigurationService.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
                 OneDriveUserId: _userId.Trim(),
-                OneDriveDriveId: driveId));
+                OneDriveDriveId: driveId,
+                OneDriveSourceFolderId: folderId,
+                OneDriveSourceFolderPath: folderPath));
 
             Snackbar.Add("OneDrive の Drive ID を保存しました。", Severity.Success);
             await OnDiscoveryCompleted.InvokeAsync();

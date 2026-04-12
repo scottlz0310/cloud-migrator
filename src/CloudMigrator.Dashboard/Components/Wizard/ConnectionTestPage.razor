@@ -1,6 +1,8 @@
 @using CloudMigrator.Core.Wizard
 @using CloudMigrator.Providers.Dropbox.Auth
-@inject IDropboxVerifyService VerifyService
+@using CloudMigrator.Providers.Graph.Auth
+@inject IDropboxVerifyService DropboxVerifyService
+@inject ISharePointVerifyService SharePointVerifyService
 
 @* Step 4: 接続テスト & 完了 *@
 <MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
@@ -12,7 +14,7 @@
             </MudText>
         </div>
 
-        @if (_result is null && !_isRunning)
+        @if (_dropboxResult is null && _sharePointResult is null && !_isRunning)
         {
             <MudText Typo="Typo.body2" Color="Color.Secondary">
                 「テストを実行」ボタンをクリックして接続を確認してください。
@@ -25,14 +27,15 @@
             <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary">接続確認中...</MudText>
         }
 
-        @if (_result is not null)
+        @* Dropbox 路線の結果 *@
+        @if (_dropboxResult is not null)
         {
-            <MudAlert Severity="@(_result.IsSuccess ? Severity.Success : Severity.Error)" Dense="true">
-                @(_result.IsSuccess ? "すべてのチェックが完了しました。" : "接続テストに失敗しました。")
+            <MudAlert Severity="@(_dropboxResult.IsSuccess ? Severity.Success : Severity.Error)" Dense="true">
+                @(_dropboxResult.IsSuccess ? "すべてのチェックが完了しました。" : "接続テストに失敗しました。")
             </MudAlert>
 
             <MudList T="DropboxVerifyCheck" Dense="true">
-                @foreach (var check in _result.Checks)
+                @foreach (var check in _dropboxResult.Checks)
                 {
                     <MudListItem>
                         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
@@ -40,7 +43,35 @@
                                      Color="@(check.IsSuccess ? Color.Success : (check.Detail?.Contains("スキップ") == true ? Color.Default : Color.Error))"
                                      Size="Size.Small" />
                             <div>
-                                <MudText Typo="Typo.body2"><strong>@LayerLabel(check.Layer)</strong></MudText>
+                                <MudText Typo="Typo.body2"><strong>@DropboxLayerLabel(check.Layer)</strong></MudText>
+                                @if (!string.IsNullOrEmpty(check.Detail))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@check.Detail</MudText>
+                                }
+                            </div>
+                        </MudStack>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+
+        @* SharePoint 路線の結果 *@
+        @if (_sharePointResult is not null)
+        {
+            <MudAlert Severity="@(_sharePointResult.IsSuccess ? Severity.Success : Severity.Error)" Dense="true">
+                @(_sharePointResult.IsSuccess ? "すべてのチェックが完了しました。" : "接続テストに失敗しました。")
+            </MudAlert>
+
+            <MudList T="SharePointVerifyCheck" Dense="true">
+                @foreach (var check in _sharePointResult.Checks)
+                {
+                    <MudListItem>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@(check.IsSuccess ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)"
+                                     Color="@(check.IsSuccess ? Color.Success : (check.Detail?.Contains("スキップ") == true ? Color.Default : Color.Error))"
+                                     Size="Size.Small" />
+                            <div>
+                                <MudText Typo="Typo.body2"><strong>@SharePointLayerLabel(check.Layer)</strong></MudText>
                                 @if (!string.IsNullOrEmpty(check.Detail))
                                 {
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">@check.Detail</MudText>
@@ -61,7 +92,7 @@
                 テストを実行
             </MudButton>
 
-            @if (_result?.IsSuccess == true)
+            @if (IsCurrentResultSuccess)
             {
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Success"
@@ -77,7 +108,7 @@
                    StartIcon="@Icons.Material.Filled.ArrowBack"
                    Disabled="@_isRunning"
                    OnClick="OnBackClick">
-            Dropbox 連携に戻る
+            @BackButtonLabel
         </MudButton>
     </MudStack>
 </MudContainer>
@@ -88,18 +119,58 @@
     /// <summary>接続テストが全層成功し、完了ボタンが押されたときのコールバック。</summary>
     [Parameter] public EventCallback OnCompleteClick { get; set; }
 
-    private DropboxVerifyResult? _result;
+    /// <summary>
+    /// Credential 層の失敗を前のステップに通知するコールバック。
+    /// 期限切れ・無効なトークンの検出に使用する。
+    /// </summary>
+    [Parameter] public EventCallback OnCredentialFailed { get; set; }
+
+    /// <summary>現在の移行路線。</summary>
+    [Parameter] public WizardRoute Route { get; set; }
+
+    private DropboxVerifyResult? _dropboxResult;
+    private SharePointVerifyResult? _sharePointResult;
     private bool _isRunning;
+
+    private bool IsCurrentResultSuccess =>
+        Route == WizardRoute.OneDriveToDropbox
+            ? _dropboxResult?.IsSuccess == true
+            : _sharePointResult?.IsSuccess == true;
+
+    private string BackButtonLabel =>
+        Route == WizardRoute.OneDriveToDropbox ? "Dropbox 連携に戻る" : "SharePoint Discovery に戻る";
 
     private async Task RunVerifyAsync()
     {
         _isRunning = true;
-        _result = null;
+        _dropboxResult = null;
+        _sharePointResult = null;
         StateHasChanged();
 
         try
         {
-            _result = await VerifyService.VerifyAsync();
+            if (Route == WizardRoute.OneDriveToDropbox)
+            {
+                _dropboxResult = await DropboxVerifyService.VerifyAsync();
+
+                // Credential 層が失敗した場合は前のステップを Failed として通知
+                if (!_dropboxResult.IsSuccess &&
+                    _dropboxResult.Checks.Any(c => c.Layer == DropboxVerifyLayer.Credential && !c.IsSuccess))
+                {
+                    await OnCredentialFailed.InvokeAsync();
+                }
+            }
+            else
+            {
+                _sharePointResult = await SharePointVerifyService.VerifyAsync();
+
+                // Credential 層が失敗した場合は前のステップを Failed として通知
+                if (!_sharePointResult.IsSuccess &&
+                    _sharePointResult.Checks.Any(c => c.Layer == SharePointVerifyLayer.Credential && !c.IsSuccess))
+                {
+                    await OnCredentialFailed.InvokeAsync();
+                }
+            }
         }
         finally
         {
@@ -107,11 +178,19 @@
         }
     }
 
-    private static string LayerLabel(DropboxVerifyLayer layer) => layer switch
+    private static string DropboxLayerLabel(DropboxVerifyLayer layer) => layer switch
     {
         DropboxVerifyLayer.Credential => "Credential Verify（クレデンシャル確認）",
         DropboxVerifyLayer.Discovery  => "Discovery Verify（API 到達確認）",
         DropboxVerifyLayer.Preflight  => "Migration Preflight（読み書き権限確認）",
+        _ => layer.ToString(),
+    };
+
+    private static string SharePointLayerLabel(SharePointVerifyLayer layer) => layer switch
+    {
+        SharePointVerifyLayer.Credential => "Credential Verify（クレデンシャル・認証確認）",
+        SharePointVerifyLayer.Discovery  => "Discovery Verify（SharePoint Drive 到達確認）",
+        SharePointVerifyLayer.Preflight  => "Migration Preflight（読み書き権限確認）",
         _ => layer.ToString(),
     };
 }

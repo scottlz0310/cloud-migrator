@@ -332,6 +332,164 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
     // ── プライベートヘルパー ────────────────────────────────────────────────
 
+    /// <inheritdoc/>
+    public async Task<DriveFolderListResult> ListDriveFoldersAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        string driveId,
+        string? folderId = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(driveId))
+            return new DriveFolderListResult(false, ErrorMessage: "Drive ID が指定されていません。");
+
+        try
+        {
+            var client = ClientFactory(clientId, tenantId, clientSecret);
+
+            List<DriveFolderEntry> folders;
+            if (string.IsNullOrEmpty(folderId))
+            {
+                var builder = client.Drives[driveId].Items["root"].Children;
+                folders = await CollectFolderPagedAsync(
+                    () => builder.GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"], cancellationToken: ct),
+                    nextLink => builder.WithUrl(nextLink).GetAsync(cancellationToken: ct),
+                    ct).ConfigureAwait(false);
+            }
+            else
+            {
+                var builder = client.Drives[driveId].Items[folderId].Children;
+                folders = await CollectFolderPagedAsync(
+                    () => builder.GetAsync(r => r.QueryParameters.Select = ["id", "name", "folder"], cancellationToken: ct),
+                    nextLink => builder.WithUrl(nextLink).GetAsync(cancellationToken: ct),
+                    ct).ConfigureAwait(false);
+            }
+
+            return new DriveFolderListResult(Success: true, Folders: folders);
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 404)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: "指定されたフォルダが見つかりませんでした。");
+        }
+        catch (ODataError ex)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex)
+        {
+            return new DriveFolderListResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new DriveFolderListResult(false, ErrorMessage: $"接続エラー: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<SharePointSiteSearchResult> ListAllSharePointSitesAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var client = ClientFactory(clientId, tenantId, clientSecret);
+
+            var allSites = new List<Microsoft.Graph.Models.Site>();
+            var sitesResponse = await client.Sites
+                .GetAsync(r => r.QueryParameters.Search = "*", ct)
+                .ConfigureAwait(false);
+            if (sitesResponse?.Value is not null)
+                allSites.AddRange(sitesResponse.Value);
+
+            var nextLink = sitesResponse?.OdataNextLink;
+            while (!string.IsNullOrWhiteSpace(nextLink))
+            {
+                ct.ThrowIfCancellationRequested();
+                var nextPage = await client.Sites.WithUrl(nextLink)
+                    .GetAsync(cancellationToken: ct).ConfigureAwait(false);
+                if (nextPage?.Value is not null)
+                    allSites.AddRange(nextPage.Value);
+                nextLink = nextPage?.OdataNextLink;
+            }
+
+            var sites = allSites
+                .Where(s => s.Id is not null)
+                .GroupBy(s => s.Id!)
+                .Select(g => g.First())
+                .Select(s => new SharePointSiteEntry(
+                    SiteId: s.Id!,
+                    DisplayName: s.DisplayName ?? s.Name ?? s.Id!,
+                    WebUrl: s.WebUrl ?? string.Empty))
+                .ToList();
+
+            return new SharePointSiteSearchResult(Success: true, Sites: sites);
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: BuildAdminConsentError(ex.Error?.Code));
+        }
+        catch (ODataError ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 403)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: BuildAdminConsentError(null));
+        }
+        catch (ApiException ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode})");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new SharePointSiteSearchResult(false,
+                ErrorMessage: $"接続エラー: {ex.Message}");
+        }
+    }
+
+    private static async Task<List<DriveFolderEntry>> CollectFolderPagedAsync(
+        Func<Task<Microsoft.Graph.Models.DriveItemCollectionResponse?>> getFirstPage,
+        Func<string, Task<Microsoft.Graph.Models.DriveItemCollectionResponse?>> getNextPage,
+        CancellationToken ct)
+    {
+        var result = new List<DriveFolderEntry>();
+        var response = await getFirstPage().ConfigureAwait(false);
+        while (response is not null)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (response.Value is not null)
+                result.AddRange(response.Value
+                    .Where(item => item.Folder is not null && item.Id is not null)
+                    .Select(item => new DriveFolderEntry(item.Id!, item.Name ?? item.Id!)));
+            if (string.IsNullOrWhiteSpace(response.OdataNextLink)) break;
+            response = await getNextPage(response.OdataNextLink).ConfigureAwait(false);
+        }
+        return result;
+    }
+
     private static GraphServiceClient CreateClient(string clientId, string tenantId, string clientSecret)
     {
         var authenticator = new GraphAuthenticator(clientId, tenantId, clientSecret);

@@ -588,4 +588,155 @@ public sealed class GraphDiscoveryServiceTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
+
+    // ── ListDriveFoldersAsync 入力バリデーション ───────────────────────
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenDriveIdIsEmpty_ReturnsFailure()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: Drive ID 未入力時に失敗結果が返されること
+        var result = await _sut.ListDriveFoldersAsync(
+            clientId: "client-id",
+            tenantId: "tenant-id",
+            clientSecret: "secret",
+            driveId: string.Empty);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().NotBeNullOrEmpty();
+        result.Folders.Should().BeNull();
+    }
+
+    // ── ListDriveFoldersAsync 例外ハンドリング ─────────────────────────
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_When403ODataError_ReturnsAdminConsentMessage()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: 403 で管理者同意メッセージが返されること
+        var result = await CreateSutThrowing(MakeODataError(403, "Authorization_RequestDenied"))
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("管理者の同意");
+    }
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_When404ODataError_ReturnsFolderNotFound()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: 404 でフォルダ未発見メッセージが返されること
+        var result = await CreateSutThrowing(MakeODataError(404))
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("見つかりませんでした");
+    }
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenGenericODataError_ReturnsGraphApiError()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: 汎用 ODataError で Graph API エラーメッセージが返されること
+        var result = await CreateSutThrowing(MakeODataError(500, message: "error"))
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Graph API エラー");
+    }
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenApiException_ReturnsGraphApiError()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: ApiException で Graph API エラーメッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 500 })
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Graph API エラー");
+    }
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenNetworkError_ReturnsConnectionError()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: ネットワークエラーで接続エラーメッセージが返されること
+        var result = await CreateSutThrowing(new HttpRequestException("Network error"))
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("接続エラー");
+    }
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenCanceled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: キャンセル時に OperationCanceledException が握り潰されず再スローされること
+        var act = async () => await CreateSutThrowing(new OperationCanceledException())
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // ── ListAllSharePointSitesAsync 例外ハンドリング ───────────────────
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_When403ODataError_ReturnsAdminConsentMessage()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: 403 で管理者同意メッセージが返されること
+        var result = await CreateSutThrowing(MakeODataError(403, "Authorization_RequestDenied"))
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("管理者の同意");
+    }
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_WhenGenericODataError_ReturnsGraphApiError()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: 汎用 ODataError で Graph API エラーメッセージが返されること
+        var result = await CreateSutThrowing(MakeODataError(500, message: "error"))
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Graph API エラー");
+    }
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_WhenApiException403_ReturnsAdminConsentMessage()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: 非-OData ApiException 403 でも管理者同意メッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 403 })
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("アクセスが拒否");
+    }
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_WhenGenericApiException_ReturnsGraphApiError()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: 汎用 ApiException で Graph API エラーメッセージが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 500 })
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Graph API エラー");
+    }
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_WhenNetworkError_ReturnsConnectionError()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: ネットワークエラーで接続エラーメッセージが返されること
+        var result = await CreateSutThrowing(new HttpRequestException("Network error"))
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("接続エラー");
+    }
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_WhenCanceled_ThrowsOperationCanceledException()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: キャンセル時に OperationCanceledException が握り潰されず再スローされること
+        var act = async () => await CreateSutThrowing(new OperationCanceledException())
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }
