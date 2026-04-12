@@ -175,7 +175,7 @@ public sealed class SetupDoctorServiceTests
 
         result.OverallStatus.Should().Be(OverallStatus.Unhealthy);
         result.Checks[2].Status.Should().Be(DoctorStatus.Fail);
-        result.Checks[2].Detail.Should().Contain("destinationRoot が見つかりません");
+        result.Checks[2].Detail.Should().Contain("destinationRoot フォルダが未作成です");
         result.Checks[2].Detail.Should().Contain("Migration/2026");
     }
 

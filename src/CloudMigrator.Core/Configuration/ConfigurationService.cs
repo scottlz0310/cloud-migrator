@@ -180,7 +180,7 @@ public sealed class ConfigurationService : IConfigurationService
 
     /// <summary>
     /// プロバイダー文字列を正規化する。大文字小文字を吸収し、旧表記エイリアスをマップする。
-    /// 未知の値はそのまま返す（将来プロバイダー追加時に対応可能）。
+    /// 未知の値も小文字化したうえで返す（将来プロバイダー追加時に比較しやすくするため）。
     /// </summary>
     private static string NormalizeProvider(string value) => value.ToLowerInvariant() switch
     {

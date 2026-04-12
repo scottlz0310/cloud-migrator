@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading.Channels;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.State;
@@ -73,7 +74,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
 
         // 前回までの累積実稼働秒数を読み込む（再起動をまたいだ合計実稼働時間のため）
         var prevWorkingSecondsStr = await _stateDb.GetCheckpointAsync("pipeline_working_seconds", ct).ConfigureAwait(false);
-        double prevWorkingSeconds = double.TryParse(prevWorkingSecondsStr, out var parsed) ? parsed : 0;
+        double prevWorkingSeconds = double.TryParse(prevWorkingSecondsStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
 
         // ── Phase A: クラッシュリカバリ ────────────────────────────────────────────
         await _stateDb.ResetProcessingAsync(ct).ConfigureAwait(false);
@@ -137,7 +138,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
             // CancellationToken がキャンセル済みの場合は CancellationToken.None で保存する
             var saveToken = ct.IsCancellationRequested ? CancellationToken.None : ct;
             var totalWorking = prevWorkingSeconds + sw.Elapsed.TotalSeconds;
-            await _stateDb.SaveCheckpointAsync("pipeline_working_seconds", totalWorking.ToString("F3"), saveToken)
+            await _stateDb.SaveCheckpointAsync("pipeline_working_seconds", totalWorking.ToString("F3", CultureInfo.InvariantCulture), saveToken)
                           .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
         await producerTask.ConfigureAwait(false);
