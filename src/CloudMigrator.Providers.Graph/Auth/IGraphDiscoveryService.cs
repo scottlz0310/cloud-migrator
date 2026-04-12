@@ -28,6 +28,16 @@ public interface IGraphDiscoveryService
         CancellationToken ct = default);
 
     /// <summary>
+    /// アクセス可能なすべての SharePoint サイトを一覧取得する（<c>GET /sites/getAllSites</c>）。
+    /// ページング（@odata.nextLink）を追って全件取得する。全サイト一覧取得には Sites.Read.All 権限が必要。
+    /// </summary>
+    Task<SharePointSiteSearchResult> ListAllSharePointSitesAsync(
+        string clientId,
+        string tenantId,
+        string clientSecret,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Site URL を直接指定してサイトを取得する（<c>GET /sites/{hostname}:/{serverRelativePath}</c>）。
     /// キーワード検索で 0 件の場合のフォールバック用。
     /// </summary>
@@ -69,31 +79,7 @@ public interface IGraphDiscoveryService
         string driveId,
         string? folderId = null,
         CancellationToken ct = default);
-
-    /// <summary>
-    /// テナント内のすべての SharePoint サイトを取得する（<c>GET /sites?search=*</c>）。
-    /// ページングを考慮した全件取得。
-    /// </summary>
-    Task<SharePointSiteSearchResult> ListAllSharePointSitesAsync(
-        string clientId,
-        string tenantId,
-        string clientSecret,
-        CancellationToken ct = default);
 }
-
-/// <summary>Drive 内フォルダの一覧エントリ。</summary>
-/// <param name="FolderId">アイテム ID。</param>
-/// <param name="DisplayName">表示名。</param>
-public sealed record DriveFolderEntry(string FolderId, string DisplayName);
-
-/// <summary><see cref="IGraphDiscoveryService.ListDriveFoldersAsync"/> の結果。</summary>
-/// <param name="Success">成功かどうか。</param>
-/// <param name="Folders">フォルダ一覧。失敗時は null。</param>
-/// <param name="ErrorMessage">エラー詳細。成功時は null。</param>
-public sealed record DriveFolderListResult(
-    bool Success,
-    IReadOnlyList<DriveFolderEntry>? Folders = null,
-    string? ErrorMessage = null);
 
 /// <summary>OneDrive Drive ID 取得結果。</summary>
 public sealed record OneDriveDiscoveryResult(
@@ -124,6 +110,20 @@ public sealed record SharePointDriveEntry(
 public sealed record SharePointDriveListResult(
     bool Success,
     IReadOnlyList<SharePointDriveEntry>? Drives = null,
+    string? ErrorMessage = null);
+
+/// <summary>Drive 内フォルダエントリ。</summary>
+/// <param name="FolderId">アイテム ID。</param>
+/// <param name="DisplayName">表示名。</param>
+public sealed record DriveFolderEntry(string FolderId, string DisplayName);
+
+/// <summary><see cref="IGraphDiscoveryService.ListDriveFoldersAsync"/> の結果。</summary>
+/// <param name="Success">成功かどうか。</param>
+/// <param name="Folders">フォルダ一覧。失敗時は null。</param>
+/// <param name="ErrorMessage">エラー詳細。成功時は null。</param>
+public sealed record DriveFolderListResult(
+    bool Success,
+    IReadOnlyList<DriveFolderEntry>? Folders = null,
     string? ErrorMessage = null);
 
 /// <summary>Discovery Verify 結果。</summary>

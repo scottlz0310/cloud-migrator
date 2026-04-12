@@ -74,13 +74,27 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         if (existingStartedAt is null)
             await _stateDb.SaveCheckpointAsync("pipeline_started_at", _pipelineStartTime.ToString("O"), ct).ConfigureAwait(false);
 
+        // 前回までの累積実稼働秒数を読み込む（再起動をまたいだ合計実稼働時間のため）
+        var prevWorkingSecondsStr = await _stateDb.GetCheckpointAsync("pipeline_working_seconds", ct).ConfigureAwait(false);
+        double prevWorkingSeconds = double.TryParse(prevWorkingSecondsStr, out var parsed) ? parsed : 0;
+
         // Phase A + Phase B: クロールを完了まで先行実行（SQLite に登録し Channel には書かない）
         await PhasesABAsync(ct).ConfigureAwait(false);
 
         // Phase D: SQLite の pending/processing/failed を全件ストリームで転送
-        var (success, failed) = await PhaseDAsync(ct).ConfigureAwait(false);
-
-        sw.Stop();
+        int success, failed;
+        try
+        {
+            (success, failed) = await PhaseDAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            sw.Stop();
+            var saveToken = ct.IsCancellationRequested ? CancellationToken.None : ct;
+            var totalWorking = prevWorkingSeconds + sw.Elapsed.TotalSeconds;
+            await _stateDb.SaveCheckpointAsync("pipeline_working_seconds", totalWorking.ToString("F3"), saveToken)
+                          .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
 
         var totalRlCount = _concurrencyController is not null
             ? _concurrencyController.RateLimitCount

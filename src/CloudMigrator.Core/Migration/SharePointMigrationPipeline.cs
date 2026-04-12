@@ -71,6 +71,10 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         if (await _stateDb.GetCheckpointAsync("pipeline_started_at", ct).ConfigureAwait(false) is null)
             await _stateDb.SaveCheckpointAsync("pipeline_started_at", _pipelineStartTime.ToString("O"), ct).ConfigureAwait(false);
 
+        // 前回までの累積実稼働秒数を読み込む（再起動をまたいだ合計実稼働時間のため）
+        var prevWorkingSecondsStr = await _stateDb.GetCheckpointAsync("pipeline_working_seconds", ct).ConfigureAwait(false);
+        double prevWorkingSeconds = double.TryParse(prevWorkingSecondsStr, out var parsed) ? parsed : 0;
+
         // ── Phase A: クラッシュリカバリ ────────────────────────────────────────────
         await _stateDb.ResetProcessingAsync(ct).ConfigureAwait(false);
         var resetCount = await _stateDb.ResetPermanentFailedAsync(ct).ConfigureAwait(false);
@@ -79,12 +83,16 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         _logger.LogInformation("Phase A: クラッシュリカバリ完了（processing → pending リセット）");
 
         // ── Phase B: クロール ───────────────────────────────────────────────────────
-        if (await _stateDb.GetCheckpointAsync(CrawlCompleteKey, ct).ConfigureAwait(false) == "true")
+        var crawlCompleteVal = await _stateDb.GetCheckpointAsync(CrawlCompleteKey, ct).ConfigureAwait(false);
+        if (crawlCompleteVal == "true")
         {
             _logger.LogInformation("Phase B: クロール完了チェックポイントあり - スキップ");
         }
         else
         {
+            // フレッシュスタートまたはクロール未完了の場合は "false" を明示保存する。
+            // これによりダッシュボードが CrawlComplete=false を正しく読み取り "クロール中" を表示できる。
+            await _stateDb.SaveCheckpointAsync(CrawlCompleteKey, "false", ct).ConfigureAwait(false);
             await PhaseBCrawlAsync(ct).ConfigureAwait(false);
         }
 
@@ -122,9 +130,17 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
             await producerTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             throw;
         }
+        finally
+        {
+            sw.Stop();
+            // 中断・完了問わず今回の実稼働時間を累積保存する
+            // CancellationToken がキャンセル済みの場合は CancellationToken.None で保存する
+            var saveToken = ct.IsCancellationRequested ? CancellationToken.None : ct;
+            var totalWorking = prevWorkingSeconds + sw.Elapsed.TotalSeconds;
+            await _stateDb.SaveCheckpointAsync("pipeline_working_seconds", totalWorking.ToString("F3"), saveToken)
+                          .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
         await producerTask.ConfigureAwait(false);
-
-        sw.Stop();
 
         var totalRlCount = _concurrencyController is not null
             ? _concurrencyController.RateLimitCount

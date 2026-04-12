@@ -211,8 +211,9 @@ public sealed class SetupDoctorService : ISetupDoctorService
 
             if (res.StatusCode == System.Net.HttpStatusCode.NotFound && !string.IsNullOrWhiteSpace(root))
             {
-                return new DoctorCheck(CheckName, DoctorStatus.Fail,
-                    $"destinationRoot が見つかりません: /{root}");
+                // DestinationRoot フォルダはなくても転送時に自動作成されるため Warning 扱い
+                return new DoctorCheck(CheckName, DoctorStatus.Warning,
+                    $"destinationRoot フォルダが未作成です（転送時に自動作成されます）: /{root}");
             }
 
             if (!res.IsSuccessStatusCode)

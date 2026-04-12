@@ -129,7 +129,7 @@ public sealed class ConfigurationService : IConfigurationService
             RetryCount: GetInt(m, "retryCount", 3),
             TimeoutSec: GetInt(m, "timeoutSec", 300),
             DestinationRoot: GetString(m, "destinationRoot", string.Empty),
-            DestinationProvider: GetString(m, "destinationProvider", "sharepoint"));
+            DestinationProvider: NormalizeProvider(GetString(m, "destinationProvider", "sharepoint")));
     }
 
     /// <inheritdoc />
@@ -177,6 +177,17 @@ public sealed class ConfigurationService : IConfigurationService
         => element.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String
             ? prop.GetString() ?? defaultValue
             : defaultValue;
+
+    /// <summary>
+    /// プロバイダー文字列を正規化する。大文字小文字を吸収し、旧表記エイリアスをマップする。
+    /// 未知の値はそのまま返す（将来プロバイダー追加時に対応可能）。
+    /// </summary>
+    private static string NormalizeProvider(string value) => value.ToLowerInvariant() switch
+    {
+        "sharepoint" or "graph" => "sharepoint",  // "Graph" は旧表記エイリアス
+        "dropbox" => "dropbox",
+        var v => v  // 未知のプロバイダーはそのまま保持
+    };
 
     /// <inheritdoc />
     public async Task<GraphConfigDto> GetGraphConfigAsync(CancellationToken ct = default)
@@ -251,14 +262,16 @@ public sealed class ConfigurationService : IConfigurationService
     public async Task<DiscoveryConfigDto> GetDiscoveryConfigAsync(CancellationToken ct = default)
     {
         if (!File.Exists(_configFilePath))
-            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty,
+                string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
 
         var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
         try
         {
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("migrator", out var m) || m.ValueKind != JsonValueKind.Object)
-                return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+                return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty,
+                    string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
 
             var hasGraphObject = m.TryGetProperty("graph", out var gProp) && gProp.ValueKind == JsonValueKind.Object;
             var oneDriveUserId = hasGraphObject ? GetString(gProp, "oneDriveUserId", string.Empty) : string.Empty;
@@ -272,11 +285,15 @@ public sealed class ConfigurationService : IConfigurationService
             var migrationRoute = GetString(m, "migrationRoute", string.Empty);
             var destinationProvider = GetString(m, "destinationProvider", "sharepoint");
 
-            return new DiscoveryConfigDto(oneDriveUserId, oneDriveDriveId, oneDriveSourceFolderId, oneDriveSourceFolderPath, sharePointSiteId, sharePointDriveId, sharePointDestFolderId, sharePointDestFolderPath, migrationRoute, destinationProvider);
+            return new DiscoveryConfigDto(
+                oneDriveUserId, oneDriveDriveId, oneDriveSourceFolderId, oneDriveSourceFolderPath,
+                sharePointSiteId, sharePointDriveId, sharePointDestFolderId, sharePointDestFolderPath,
+                migrationRoute, destinationProvider);
         }
         catch (JsonException)
         {
-            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
+            return new DiscoveryConfigDto(string.Empty, string.Empty, string.Empty, string.Empty,
+                string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, "sharepoint");
         }
     }
 

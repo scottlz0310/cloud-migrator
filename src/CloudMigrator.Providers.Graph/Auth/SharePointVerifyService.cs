@@ -19,7 +19,8 @@ namespace CloudMigrator.Providers.Graph.Auth;
 /// </summary>
 public sealed class SharePointVerifyService : ISharePointVerifyService
 {
-    private const string PreflightFileName = ".cloudmigrator-preflight-check.tmp";
+    private static readonly string PreflightFileName =
+        $".cloudmigrator-preflight-check-{Guid.NewGuid():N}.tmp";
     private const string PreflightContent = "cloudmigrator-preflight\n";
 
     private readonly ICredentialStore _credentialStore;
