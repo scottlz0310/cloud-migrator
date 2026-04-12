@@ -1,17 +1,59 @@
 using CloudMigrator.Providers.Graph.Auth;
 using FluentAssertions;
+using Microsoft.Graph;
+using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Kiota.Abstractions;
+using Microsoft.Kiota.Abstractions.Serialization;
+using Moq;
 
 namespace CloudMigrator.Tests.Unit;
 
 /// <summary>
-/// GraphDiscoveryService のユニットテスト（入力バリデーション + エラーハンドリング）。
+/// GraphDiscoveryService のユニットテスト（入力バリデーション + エラーハンドリング + 正常系）。
 /// ネットワーク疎通が不要なケースのみテストする。実際の API 疎通は E2E テストで確認する。
 /// </summary>
 public sealed class GraphDiscoveryServiceTests
 {
     private readonly GraphDiscoveryService _sut = new();
+
+    // ── IRequestAdapter モック ヘルパー ────────────────────────────────
+
+    /// <summary>
+    /// IRequestAdapter をモックして単一の SendAsync レスポンスを設定する。
+    /// </summary>
+    private static GraphServiceClient BuildGraphClientReturning<T>(T? response)
+        where T : class, IParsable
+    {
+        var mockAdapter = new Mock<IRequestAdapter>(MockBehavior.Loose);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        mockAdapter
+            .Setup(a => a.SendAsync<T>(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<T>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        return new GraphServiceClient(mockAdapter.Object);
+    }
+
+    /// <summary>
+    /// IRequestAdapter をモックして DriveItemCollectionResponse を返す GraphServiceClient を生成する。
+    /// </summary>
+    private static GraphServiceClient BuildGraphClientReturningDriveItemCollection(
+        DriveItemCollectionResponse? response)
+    {
+        var mockAdapter = new Mock<IRequestAdapter>(MockBehavior.Loose);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        mockAdapter
+            .Setup(a => a.SendAsync<DriveItemCollectionResponse>(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<DriveItemCollectionResponse>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        return new GraphServiceClient(mockAdapter.Object);
+    }
 
     // ── GetOneDriveDriveIdAsync 入力バリデーション ─────────────────────
 
@@ -739,4 +781,215 @@ public sealed class GraphDiscoveryServiceTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
+
+    // ── GetOneDriveDriveIdAsync 正常系テスト ──────────────────────────
+
+    [Fact]
+    public async Task GetOneDriveDriveIdAsync_WhenDriveIdIsNullInResponse_ReturnsFailure()
+    {
+        // 検証対象: GetOneDriveDriveIdAsync  目的: API が Drive を返すが Id が null の場合に失敗結果が返されること
+        var sut = new GraphDiscoveryService();
+        sut.ClientFactory = (_, _, _) =>
+            BuildGraphClientReturning(new Drive { Id = null, Name = "My Drive" });
+
+        var result = await sut.GetOneDriveDriveIdAsync("c", "t", "s", "user@contoso.com");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Drive が見つかりませんでした");
+    }
+
+    [Fact]
+    public async Task GetOneDriveDriveIdAsync_WhenDriveIdExistsInResponse_ReturnsSuccess()
+    {
+        // 検証対象: GetOneDriveDriveIdAsync  目的: API が有効な Drive を返した場合に成功結果と Drive ID が返されること
+        var sut = new GraphDiscoveryService();
+        sut.ClientFactory = (_, _, _) =>
+            BuildGraphClientReturning(new Drive { Id = "test-drive-id", Name = "My Drive" });
+
+        var result = await sut.GetOneDriveDriveIdAsync("c", "t", "s", "user@contoso.com");
+
+        result.Success.Should().BeTrue();
+        result.DriveId.Should().Be("test-drive-id");
+        result.DisplayName.Should().Be("My Drive");
+    }
+
+    [Fact]
+    public async Task GetOneDriveDriveIdAsync_WhenDriveNameIsNull_UsesUserIdAsDisplayName()
+    {
+        // 検証対象: GetOneDriveDriveIdAsync  目的: Drive.Name が null の場合に userId が DisplayName として使われること
+        var sut = new GraphDiscoveryService();
+        sut.ClientFactory = (_, _, _) =>
+            BuildGraphClientReturning(new Drive { Id = "drive-id", Name = null });
+
+        var result = await sut.GetOneDriveDriveIdAsync("c", "t", "s", "user@contoso.com");
+
+        result.Success.Should().BeTrue();
+        result.DisplayName.Should().Be("user@contoso.com");
+    }
+
+    // ── GetSharePointSiteByUrlAsync 正常系テスト ──────────────────────
+
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenSiteIdIsNullInResponse_ReturnsFailure()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: API が Site を返すが Id が null の場合に失敗結果が返されること
+        var sut = new GraphDiscoveryService();
+        sut.ClientFactory = (_, _, _) =>
+            BuildGraphClientReturning<Site>(new Site { Id = null, DisplayName = "My Site" });
+
+        var result = await sut.GetSharePointSiteByUrlAsync(
+            "c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("見つかりませんでした");
+    }
+
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenSiteExists_ReturnsSuccess()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: API が有効な Site を返した場合に成功結果が返されること
+        var sut = new GraphDiscoveryService();
+        sut.ClientFactory = (_, _, _) =>
+            BuildGraphClientReturning<Site>(new Site
+            {
+                Id = "site-id",
+                DisplayName = "My Team",
+                WebUrl = "https://contoso.sharepoint.com/sites/MyTeam"
+            });
+
+        var result = await sut.GetSharePointSiteByUrlAsync(
+            "c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeTrue();
+        result.Sites.Should().ContainSingle(s => s.SiteId == "site-id");
+    }
+
+    // ── VerifyDriveAsync 正常系テスト ─────────────────────────────────
+
+    [Fact]
+    public async Task VerifyDriveAsync_WhenDriveExists_ReturnsSuccess()
+    {
+        // 検証対象: VerifyDriveAsync  目的: API が有効な Drive を返した場合に成功結果が返されること
+        var sut = new GraphDiscoveryService();
+        sut.ClientFactory = (_, _, _) =>
+            BuildGraphClientReturning(new Drive { Id = "drive-id" });
+
+        var result = await sut.VerifyDriveAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task VerifyDriveAsync_WhenDriveIdIsNullInResponse_ReturnsFailure()
+    {
+        // 検証対象: VerifyDriveAsync  目的: API が Drive を返すが Id が null の場合に失敗結果が返されること
+        var sut = new GraphDiscoveryService();
+        sut.ClientFactory = (_, _, _) =>
+            BuildGraphClientReturning(new Drive { Id = null });
+
+        var result = await sut.VerifyDriveAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("見つかりませんでした");
+    }
+
+    // ── GetSharePointDrivesAsync 正常系テスト ─────────────────────────
+
+    [Fact]
+    public async Task GetSharePointDrivesAsync_WhenDrivesExist_ReturnsSuccess()
+    {
+        // 検証対象: GetSharePointDrivesAsync  目的: API がドライブリストを返した場合に成功結果とドライブ一覧が返されること
+        var sut = new GraphDiscoveryService();
+        var drivesResponse = new DriveCollectionResponse
+        {
+            Value =
+            [
+                new Drive { Id = "drive-1", Name = "Documents", DriveType = "documentLibrary" },
+                new Drive { Id = "drive-2", Name = "Site Assets", DriveType = "documentLibrary" }
+            ]
+        };
+        var mockAdapter = new Mock<IRequestAdapter>(MockBehavior.Loose);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        mockAdapter
+            .Setup(a => a.SendAsync<DriveCollectionResponse>(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<DriveCollectionResponse>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(drivesResponse);
+        sut.ClientFactory = (_, _, _) => new GraphServiceClient(mockAdapter.Object);
+
+        var result = await sut.GetSharePointDrivesAsync("c", "t", "s", "site-id");
+
+        result.Success.Should().BeTrue();
+        result.Drives.Should().HaveCount(2);
+        result.Drives![0].DriveId.Should().Be("drive-1");
+    }
+
+    [Fact]
+    public async Task GetSharePointDrivesAsync_WhenResponseIsEmpty_ReturnsSuccessWithEmptyList()
+    {
+        // 検証対象: GetSharePointDrivesAsync  目的: API が空リストを返した場合に成功結果と空リストが返されること
+        var sut = new GraphDiscoveryService();
+        var drivesResponse = new DriveCollectionResponse { Value = [] };
+        var mockAdapter = new Mock<IRequestAdapter>(MockBehavior.Loose);
+        mockAdapter.SetupProperty(a => a.BaseUrl, "https://graph.microsoft.com/v1.0");
+        mockAdapter
+            .Setup(a => a.SendAsync<DriveCollectionResponse>(
+                It.IsAny<RequestInformation>(),
+                It.IsAny<ParsableFactory<DriveCollectionResponse>>(),
+                It.IsAny<Dictionary<string, ParsableFactory<IParsable>>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(drivesResponse);
+        sut.ClientFactory = (_, _, _) => new GraphServiceClient(mockAdapter.Object);
+
+        var result = await sut.GetSharePointDrivesAsync("c", "t", "s", "site-id");
+
+        result.Success.Should().BeTrue();
+        result.Drives.Should().BeEmpty();
+    }
+
+    // ── ListDriveFoldersAsync 正常系テスト ────────────────────────────
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenFolderIdIsNull_UsesRootChildren()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: folderId=null のとき root の子アイテムが取得されること
+        var sut = new GraphDiscoveryService();
+        var items = new DriveItemCollectionResponse
+        {
+            Value =
+            [
+                new DriveItem { Id = "folder-1", Name = "Documents", Folder = new Folder() },
+                new DriveItem { Id = "file-1", Name = "readme.txt", Folder = null } // フォルダでないのでフィルター除外
+            ]
+        };
+        sut.ClientFactory = (_, _, _) => BuildGraphClientReturningDriveItemCollection(items);
+
+        var result = await sut.ListDriveFoldersAsync("c", "t", "s", "drive-id", folderId: null);
+
+        result.Success.Should().BeTrue();
+        result.Folders.Should().ContainSingle(f => f.FolderId == "folder-1");
+    }
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenFolderIdIsSpecified_UsesItemChildren()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: folderId が指定されたとき、そのアイテムの子が取得されること
+        var sut = new GraphDiscoveryService();
+        var items = new DriveItemCollectionResponse
+        {
+            Value =
+            [
+                new DriveItem { Id = "sub-folder-1", Name = "SubFolder", Folder = new Folder() }
+            ]
+        };
+        sut.ClientFactory = (_, _, _) => BuildGraphClientReturningDriveItemCollection(items);
+
+        var result = await sut.ListDriveFoldersAsync("c", "t", "s", "drive-id", folderId: "parent-folder-id");
+
+        result.Success.Should().BeTrue();
+        result.Folders.Should().ContainSingle(f => f.FolderId == "sub-folder-1");
+    }
 }
+

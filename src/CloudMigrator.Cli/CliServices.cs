@@ -201,7 +201,8 @@ internal sealed class CliServices : IDisposable
             timeoutSec: options.TimeoutSec,
             maxRetry: options.RetryCount,
             onRateLimit: onRateLimit,
-            copyLocationCapture: copyCapture);
+            copyLocationCapture: copyCapture,
+            rateLimitLogger: loggerFactory.CreateLogger<CliServices>());
 
         var storageOptions = new GraphStorageOptions
         {

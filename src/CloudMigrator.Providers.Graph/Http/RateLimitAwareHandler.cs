@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Providers.Graph.Http;
 
@@ -14,11 +15,14 @@ namespace CloudMigrator.Providers.Graph.Http;
 internal sealed class RateLimitAwareHandler : DelegatingHandler
 {
     private readonly Action<TimeSpan?> _onRateLimit;
+    private readonly ILogger? _logger;
 
     /// <param name="onRateLimit">429/503 検出時に呼び出すコールバック。引数は Retry-After 値（null の場合は不明）。</param>
-    internal RateLimitAwareHandler(Action<TimeSpan?> onRateLimit)
+    /// <param name="logger">レートリミット検出時のログ出力用ロガー。null の場合はログ出力なし。</param>
+    internal RateLimitAwareHandler(Action<TimeSpan?> onRateLimit, ILogger? logger = null)
     {
         _onRateLimit = onRateLimit;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -39,6 +43,17 @@ internal sealed class RateLimitAwareHandler : DelegatingHandler
                 var delta = date - DateTimeOffset.UtcNow;
                 retryAfter = delta > TimeSpan.Zero ? delta : TimeSpan.Zero;
             }
+
+            var waitSec = retryAfter.HasValue ? (int)Math.Ceiling(retryAfter.Value.TotalSeconds) : (int?)null;
+            if (waitSec.HasValue)
+                _logger?.LogWarning(
+                    "429/503 レートリミット検出。{WaitSec}秒待機要求: {Method} {Url}",
+                    waitSec, request.Method, request.RequestUri?.AbsolutePath);
+            else
+                _logger?.LogWarning(
+                    "429/503 レートリミット検出（Retry-After なし）: {Method} {Url}",
+                    request.Method, request.RequestUri?.AbsolutePath);
+
             _onRateLimit(retryAfter);
         }
 

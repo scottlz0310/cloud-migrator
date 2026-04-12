@@ -211,8 +211,9 @@ public sealed class SetupDoctorService : ISetupDoctorService
 
             if (res.StatusCode == System.Net.HttpStatusCode.NotFound && !string.IsNullOrWhiteSpace(root))
             {
+                // GraphStorageProvider のアップロードでは親フォルダの事前存在が必要なため Fail 扱い
                 return new DoctorCheck(CheckName, DoctorStatus.Fail,
-                    $"destinationRoot が見つかりません: /{root}");
+                    $"destinationRoot フォルダが未作成です。転送前に作成してください: /{root}");
             }
 
             if (!res.IsSuccessStatusCode)

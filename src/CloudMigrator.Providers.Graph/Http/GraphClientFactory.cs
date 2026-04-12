@@ -1,4 +1,5 @@
 using CloudMigrator.Providers.Graph.Auth;
+using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.Kiota.Http.HttpClientLibrary;
@@ -32,7 +33,8 @@ public static class GraphClientFactory
         int timeoutSec = 300,
         int maxRetry = 3,
         Action<TimeSpan?>? onRateLimit = null,
-        CopyLocationCaptureHandler? copyLocationCapture = null)
+        CopyLocationCaptureHandler? copyLocationCapture = null,
+        ILogger? rateLimitLogger = null)
     {
         // Kiota 標準ミドルウェアスタック（RetryHandler / RedirectHandler 等）を組み込む
         var handlers = KiotaClientFactory.CreateDefaultHandlers();
@@ -58,7 +60,7 @@ public static class GraphClientFactory
                 // RetryHandler の内側（後段）に RateLimitAwareHandler を挿入する。
                 // これにより各リトライ試行ごとの 429/503 レスポンスを傍受できる。
                 if (onRateLimit is not null)
-                    handlers.Insert(i + 1, new RateLimitAwareHandler(onRateLimit));
+                    handlers.Insert(i + 1, new RateLimitAwareHandler(onRateLimit, rateLimitLogger));
 
                 break;
             }

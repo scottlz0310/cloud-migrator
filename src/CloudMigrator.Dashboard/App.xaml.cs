@@ -2,15 +2,19 @@ using System.IO;
 using System.Windows;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Credentials;
+using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.Setup;
 using CloudMigrator.Core.State;
 using CloudMigrator.Core.Transfer;
 using CloudMigrator.Core.Wizard;
 using CloudMigrator.Observability;
 using CloudMigrator.Providers.Dropbox.Auth;
+using CloudMigrator.Providers.Graph;
 using CloudMigrator.Providers.Graph.Auth;
+using CloudMigrator.Providers.Graph.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using MudBlazor.Services;
 
 namespace CloudMigrator.Dashboard;
@@ -71,7 +75,59 @@ public partial class App : Application
 
         // ── Application services ─────────────────────────────────────────────
         services.AddSingleton<IConfigurationService, ConfigurationService>();
-        services.AddSingleton<ITransferJobService, TransferJobService>();
+        services.AddSingleton<ITransferJobService>(sp =>
+        {
+            var loggerFactory2 = sp.GetRequiredService<ILoggerFactory>();
+            var stateDb = sp.GetRequiredService<ITransferStateDb>();
+
+            async Task MigrationWork(CancellationToken ct)
+            {
+                var configuration = AppConfiguration.Build();
+                var opts = configuration.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>() ?? new MigratorOptions();
+
+                ICredentialStore credentialStore = CredentialStoreFactory.Create();
+                var clientSecret = await credentialStore.GetAsync(CredentialKeys.AzureClientSecret).ConfigureAwait(false)
+                    ?? AppConfiguration.GetGraphClientSecret();
+
+                var auth = new GraphAuthenticator(opts.Graph.ClientId, opts.Graph.TenantId, clientSecret);
+                var graphClient = GraphClientFactory.Create(
+                    auth,
+                    timeoutSec: opts.TimeoutSec,
+                    maxRetry: opts.RetryCount,
+                    onRateLimit: _ => { },  // ダッシュボードでは並列度制御なし。ロガー経由でログのみ記録
+                    rateLimitLogger: loggerFactory2.CreateLogger<GraphStorageProvider>());
+
+                var storageOptions = new GraphStorageOptions
+                {
+                    OneDriveUserId = opts.Graph.OneDriveUserId,
+                    SharePointDriveId = opts.Graph.SharePointDriveId,
+                    OneDriveSourceFolder = opts.Graph.OneDriveSourceFolder,
+                };
+
+                var sessionStore = new UploadSessionStore(Path.Combine(AppDataPaths.LogsDirectory, "upload_sessions.json"));
+
+                var storageProvider = new GraphStorageProvider(
+                    graphClient,
+                    loggerFactory2.CreateLogger<GraphStorageProvider>(),
+                    storageOptions,
+                    largeFileThresholdMb: opts.LargeFileThresholdMb,
+                    chunkSizeMb: opts.ChunkSizeMb,
+                    sessionStore: sessionStore);
+
+                var pipeline = new SharePointMigrationPipeline(
+                    storageProvider,
+                    storageProvider,
+                    stateDb,
+                    opts,
+                    loggerFactory2.CreateLogger<SharePointMigrationPipeline>());
+
+                await pipeline.RunAsync(ct).ConfigureAwait(false);
+            }
+
+            return new TransferJobService(
+                loggerFactory2.CreateLogger<TransferJobService>(),
+                MigrationWork);
+        });
 
         // SetupDoctorService: Core と同じ設定解決順序（環境変数 > config.json > デフォルト値）で資格情報を読み取る
         services.AddSingleton<ISetupDoctorService>(sp =>
@@ -87,31 +143,27 @@ public partial class App : Application
             return new SetupDoctorService(opts, sp.GetRequiredService<System.Net.Http.IHttpClientFactory>());
         });
 
-        // ITransferStateDb: --db-path 引数 > MigratorOptions デフォルトパス > NullObject
+        // ITransferStateDb: --db-path 引数 > 選択済み DB > SharePoint デフォルト（初回実行時は DB を新規作成）
         services.AddSingleton<ITransferStateDb>(sp =>
         {
             var resolvedPath = dbPath ?? ResolveDefaultDbPath();
-            if (resolvedPath is not null && File.Exists(resolvedPath))
+            var db = new SqliteTransferStateDb(resolvedPath);
+            try
             {
-                var db = new SqliteTransferStateDb(resolvedPath);
-                try
-                {
-                    db.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
-                }
-                catch (Exception ex)
-                {
-                    // 初期化失敗: db を確実に破棄してからフォールバック（ファイルハンドルのリーク防止）
-                    db.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                    MessageBox.Show(
-                        $"DB の初期化に失敗しました。DB なしモードで起動します。\n\n{ex.Message}",
-                        "警告",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return NullTransferStateDb.Instance;
-                }
-                return db;
+                db.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
             }
-            return NullTransferStateDb.Instance;
+            catch (Exception ex)
+            {
+                // 初期化失敗: db を確実に破棄してからフォールバック（ファイルハンドルのリーク防止）
+                db.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                MessageBox.Show(
+                    $"DB の初期化に失敗しました。DB なしモードで起動します。\n\n{ex.Message}",
+                    "警告",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return NullTransferStateDb.Instance;
+            }
+            return db;
         });
 
         // ── WPF Host サービス ──────────────────────────────────────────────
@@ -143,7 +195,7 @@ public partial class App : Application
     /// デフォルトの DB パスを解決する。
     /// 両方の DB が存在する場合はユーザーに選択させる。
     /// </summary>
-    private static string? ResolveDefaultDbPath()
+    private static string ResolveDefaultDbPath()
     {
         var dropboxDb = AppDataPaths.LogFile("dropbox_transfer_state.db");
         var sharePointDb = AppDataPaths.LogFile("sharepoint_transfer_state.db");
@@ -155,21 +207,16 @@ public partial class App : Application
             var result = MessageBox.Show(
                 "Dropbox 用 DB と SharePoint 用 DB の両方が見つかりました。\n" +
                 "表示する DB を選択してください。\n\n" +
-                "はい: Dropbox\nいいえ: SharePoint\nキャンセル: 選択しない",
+                "はい: Dropbox\nいいえ: SharePoint",
                 "DB の選択",
-                MessageBoxButton.YesNoCancel,
+                MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
 
-            return result switch
-            {
-                MessageBoxResult.Yes => dropboxDb,
-                MessageBoxResult.No => sharePointDb,
-                _ => null,
-            };
+            return result == MessageBoxResult.Yes ? dropboxDb : sharePointDb;
         }
 
         if (hasDropbox) return dropboxDb;
-        if (hasSharePoint) return sharePointDb;
-        return null;
+        // SharePoint DB（既存または新規作成）をデフォルトとして返す
+        return sharePointDb;
     }
 }

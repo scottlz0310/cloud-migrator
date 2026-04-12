@@ -232,7 +232,7 @@ Welcome
 - [x] Step 0 で SharePoint 路線を選択するとプレースホルダー画面が表示される（v0.4.0 スコープで #113残ステップにて本実装に置換）
 - [x] Dropbox 路線でステップ 0→1→2a→3→4 がエンド・ツー・エンドで動作する（Step 1・2a は #110・#111 実装後）
 - [x] Step 4 が Credential Verify → Discovery Verify → Migration Preflight の 3 層を実行する
-- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される（→ #113残ステップで対応）
+- [x] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される（→ #113残ステップで対応）
 - [x] `InProgress` 状態でアプリを終了した場合、`wizard-state.json` には `NotStarted` として保存される
 - [x] 中断後の再起動で最初の未完了ステップから再開できる
 - [x] Step 4 接続テスト失敗時に失敗した層（Credential / Discovery / Preflight）が表示される
@@ -300,9 +300,9 @@ Welcome
 - [x] App-only 認証の制約（UPN またはユーザー ID 入力必須）が UI 上で明示されている
 - [x] SharePoint Site をキーワード検索で絞り込める（`search=*` は使用しない）
 - [x] キーワード検索で 0 件の場合に Site URL 直接入力フォールバックが表示される（#113残ステップで UI 実装）
-- [ ] Document Library の一覧に表示名（Display Name）が表示される（#113残ステップで UI 実装）
+- [x] Document Library の一覧に表示名（Display Name）が表示される（#113残ステップで UI 実装）
 - [x] Discovery 結果が config.json スキーマに従って保存される
-- [ ] Discovery Verify と Migration Preflight の両方が成功した場合のみステップが `Verified` になる（UI は #113残ステップ）
+- [x] Discovery Verify と Migration Preflight の両方が成功した場合のみステップが `Verified` になる（UI は #113残ステップ）
 - [x] OneDrive→Dropbox 路線選択時に SharePoint 取得 UI がスキップされ、Dropbox 用スキーマで保存される
 - [ ] Graph Explorer が補助参照ツールとして利用できる（または外部ブラウザで開く）（Graph Explorer リンク形式で対応済み）
 - [x] Admin Consent 未付与エラー時に適切なガイドが表示される
@@ -317,18 +317,18 @@ Welcome
 
 ### 実装タスク（SharePoint 路線追加分）
 
-- [ ] Step 1（Azure 認証設定）: Step 1-1〜1-6 のウィザード UI（#110 連携）
-- [ ] Step 2a（OneDrive Discovery）: UPN 入力 → Drive ID 取得・確認画面（#111 連携）
-- [ ] Step 2b（SharePoint Discovery）: Site 検索 → Library 選択 → 確認画面（#111 連携）
-- [ ] Step 4 を SharePoint 路線でも動作させる（Dropbox 路線との分岐拡張）
-- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される実装
-- [ ] 失効時の UI 通知 + 該当ステップを `NotStarted` に戻す実装（#112 連携）
+- [x] Step 1（Azure 認証設定）: Step 1-1〜1-6 のウィザード UI（#110 連携）← AzureSetupPage.razor で対応済み（両路線共通）
+- [x] Step 2a（OneDrive Discovery）: UPN 入力 → Drive ID 取得・確認画面（#111 連携）← DriveDiscoveryPage.razor で対応済み（両路線共通）
+- [x] Step 2b（SharePoint Discovery）: Site 検索 → Library 選択 → 確認画面（#111 連携）← SharePointDiscoveryPage.razor 実装
+- [x] Step 4 を SharePoint 路線でも動作させる（Dropbox 路線との分岐拡張）← ConnectionTestPage.razor + ISharePointVerifyService
+- [x] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される実装
+- [x] 失効時の UI 通知 + 該当ステップを `NotStarted` に戻す実装（#112 連携）
 
 ### 受け入れ基準
 
-- [ ] Personal OneDrive → SharePoint 路線のウィザードがエンド・ツー・エンドで動作する
-- [ ] Step 1〜2a〜2b〜4 の順序でステップが進行できる
-- [ ] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される
+- [x] Personal OneDrive → SharePoint 路線のウィザードがエンド・ツー・エンドで動作する
+- [x] Step 1〜2a〜2b〜4 の順序でステップが進行できる
+- [x] 期限切れ・無効なトークンの場合にステップが `Failed` として検出される
 
 ---
 
