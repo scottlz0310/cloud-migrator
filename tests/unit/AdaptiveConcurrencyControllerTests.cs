@@ -458,7 +458,7 @@ public sealed class AdaptiveConcurrencyControllerTests
         // 検証対象: Retry-After 加算  目的: Retry-After 付きのレート制限後、即座に NotifySuccess しても増速しないこと
         var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 30);
 
-        // Retry-After = 60秒 + IncreaseIntervalSec 30秒 = 合記90秒待機
+        // Retry-After = 60秒 + IncreaseIntervalSec 30秒 = 合計90秒待機
         controller.NotifyRateLimit(retryAfter: TimeSpan.FromSeconds(60));
 
         // SetIncreaseAvailableNow なしでは増速しない

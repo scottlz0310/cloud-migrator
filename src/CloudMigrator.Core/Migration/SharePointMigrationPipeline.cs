@@ -230,7 +230,11 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         await _stateDb.SaveCheckpointAsync(FolderTotalKey, allFolders.Count.ToString(), ct).ConfigureAwait(false);
 
         var controller = _concurrencyController;
-        var maxDegree = controller?.MaxDegree ?? _options.MaxParallelFolderCreations;
+        // MaxParallelFolderCreations を上限として維持する（controller.MaxDegree は MaxParallelTransfers ベースのため）
+        var maxFolderCreationDegree = Math.Max(1, _options.MaxParallelFolderCreations);
+        var maxDegree = controller is null
+            ? maxFolderCreationDegree
+            : Math.Min(maxFolderCreationDegree, controller.MaxDegree);
 
         // Phase C の初期並列度をメトリクスに記録（ダッシュボードの「現在並列数」表示用）
         try

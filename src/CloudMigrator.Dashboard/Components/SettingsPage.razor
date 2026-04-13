@@ -237,6 +237,11 @@ else
             Snackbar.Add("転送先プロバイダーは sharepoint または dropbox を選択してください。", Severity.Warning);
             return;
         }
+        if (_editAdaptiveConcurrencyInitialDegree is < 0 or > 256)
+        {
+            Snackbar.Add("初期並列数は 0〜256 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
 
         try
         {

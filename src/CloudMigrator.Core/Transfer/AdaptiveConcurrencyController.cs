@@ -144,7 +144,18 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         {
             // MinDegree 到達時はカウンターを増やさない（回復後の最初の通知で即減速しないようにする）
             if (_current > _min)
+            {
                 _pendingDecreases++;
+
+                // 429/503 を受けた時点で増速可能タイムスタンプを更新する。
+                // DecreaseTriggerCount > 1 の場合、減速発火前でも NotifySuccess による即時増速を防ぐ。
+                var retryAfterTicks = retryAfter.HasValue
+                    ? (long)(retryAfter.Value.TotalSeconds * Stopwatch.Frequency) : 0L;
+                var intervalTicks = (long)(IncreaseIntervalSec * Stopwatch.Frequency);
+                var available = Stopwatch.GetTimestamp() + retryAfterTicks + intervalTicks;
+                if (available > _increaseAvailableAfterTicks)
+                    _increaseAvailableAfterTicks = available;
+            }
 
             if (_pendingDecreases >= _decreaseTriggerCount && _current > _min)
             {
@@ -155,14 +166,6 @@ public sealed class AdaptiveConcurrencyController : IDisposable
                     : _current - Math.Min(_decreaseStep, _current - _min);
                 step = prevDegree - _current;
                 newDegree = _current;
-
-                // 減速発火時に次の増速可能タイムスタンプを更新（Retry-After + IncreaseIntervalSec）
-                var retryAfterTicks = retryAfter.HasValue
-                    ? (long)(retryAfter.Value.TotalSeconds * Stopwatch.Frequency) : 0L;
-                var intervalTicks = (long)(IncreaseIntervalSec * Stopwatch.Frequency);
-                var available = Stopwatch.GetTimestamp() + retryAfterTicks + intervalTicks;
-                if (available > _increaseAvailableAfterTicks)
-                    _increaseAvailableAfterTicks = available;
             }
         }
 
@@ -180,7 +183,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>
     /// 転送成功を通知する。
-    /// 連続成功数が <see cref="SuccessThreshold"/> に達した場合、
+    /// 最後の増減速から <see cref="IncreaseIntervalSec"/> 秒が経過している場合、
     /// ソフトスタート時の未使用ヘッドルームまたは吸収済みスロットを使って
     /// 並列度を <see cref="IncreaseStep"/> 回復する。
     /// </summary>
