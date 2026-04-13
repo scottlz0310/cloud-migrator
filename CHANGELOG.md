@@ -7,26 +7,27 @@
 
 ## [Unreleased]
 
-### Added
-- **オンボーディングウィザード UI スケルトン** (Issue #113)
-  - `WizardStepState` 列挙型: `NotStarted` / `InProgress` / `Verified` / `Failed` / `Skipped`
-  - `WizardRoute` 列挙型: `None` / `OneDriveToDropbox` / `OneDriveToSharePoint`
-  - `WizardState`: `wizard-state.json` 永続化モデル（`ToSafeForPersistence` で InProgress→NotStarted 変換）
-  - `IWizardStateService` / `WizardStateService` (Core.Wizard): ファイル読み書き・初期化・バックアップ・リセット
-  - `AppDataPaths.WizardStateFile()`: `%APPDATA%\CloudMigrator\wizard-state.json`
-  - `IDropboxVerifyService` / `DropboxVerifyService` (Providers.Dropbox): Credential / Discovery / Preflight 3層検証
-  - Blazor Wizard コンポーネント群 (Dashboard):
-    - `WelcomePage.razor`: 起動時の Welcome 画面
-    - `RouteSelectionPage.razor`: Step 0 移行路線選択（OneDrive→Dropbox / OneDrive→SharePoint）
-    - `SharePointPlaceholderPage.razor`: SharePoint 路線「v0.5.0 で対応予定」プレースホルダー
-    - `DropboxOAuthPage.razor`: Step 3 Dropbox OAuth 連携（App Console 手順ガイド D-1〜D-6 + App Key 入力 + 認証）
-    - `ConnectionTestPage.razor`: Step 4 接続テスト（3層 Verify 実行・失敗層の特定表示）
-    - `WizardApp.razor`: ステップルーティング・状態管理コンテナ（中断再開ロジック含む）
-  - `DashboardApp.razor`: 初回起動検出（`wizard-state.json` 不在またはウィザード未完了でウィザード表示）・「セットアップをやり直す」メニューエントリ
-  - `CloudMigrator.Dashboard.csproj`: `CloudMigrator.Providers.Dropbox` プロジェクト参照を追加
-  - `App.xaml.cs`: `IWizardStateService` / `ICredentialStore` / `IDropboxOAuthService` / `IDropboxVerifyService` の DI 登録
+---
 
-- **Dropbox OAuth 2.0 PKCE フロー** (Issue #112)
+## [0.4.0] - 2026-04-14
+
+### Added
+
+- **セキュアクレデンシャルストア（Windows Credential Manager）** (Issue #109, PR #115)
+  - `ICredentialStore` / `WindowsCredentialStore`: P/Invoke で Credential Manager R/W/Delete
+  - `EnvironmentCredentialStore`: 後方互換フォールバック（v0.4.x のみ・`[Obsolete]` 付与）
+  - `CredentialKeys.cs`: キー名定数（`cloud-migrator/azure/*` / `cloud-migrator/dropbox/*`）
+  - 非 Windows 環境で起動中断・明示的エラーメッセージ表示
+
+- **CloudMigrator.Dashboard を Blazor Hybrid（WPF + BlazorWebView）に移行** (Issue #114, PR #116)
+  - WPF + BlazorWebView + MudBlazor による完全インプロセス DI 構成
+  - `DashboardServer.cs`（ASP.NET Core HTTP レイヤー）を削除
+  - SSE ログストリームを `Channel` ベースのインプロセス配信に置き換え
+  - アプリ起動時に WPF ネイティブウィンドウが自動表示（ブラウザ手動起動不要）
+  - `IDialogService` / `LogsPage.razor` / `SettingsPage.razor` を MudBlazor コンポーネントとして実装
+  - WebView2 Evergreen Bootstrapper を MSI ビルドに統合
+
+- **Dropbox OAuth 2.0 PKCE フロー** (Issue #112, PR #120)
   - `IDropboxOAuthService` / `DropboxOAuthService`: PKCE（`code_challenge_method=S256`）+ 固定ポート `54321–54325` + ポート競合フォールバック
   - `DropboxTokenResult` / `DropboxRefreshResult`: OAuth 結果レコード
   - `DropboxOAuthException`: `ErrorCode` プロパティ付き認証例外（`IsTokenExpired` も維持）
@@ -35,6 +36,54 @@
   - `RefreshAccessTokenAsync` を `IDropboxOAuthService` パス対応に拡張（リフレッシュ後トークンをストアへ保存、失効時は削除して `DropboxOAuthException` を送出）
   - `DownloadStreamAsync` を async に変換
   - `DropboxOAuthServiceTests`: `RefreshTokenAsync` / Credential Store パスのユニットテスト 14 件
+
+- **オンボーディングウィザード UI** (Issue #113, PR #121 / #124 / #125 / #127 / #128 / #131 / #132)
+  - `WizardStepState` 列挙型: `NotStarted` / `InProgress` / `Verified` / `Failed` / `Skipped`
+  - `WizardRoute` 列挙型: `None` / `OneDriveToDropbox` / `OneDriveToSharePoint`
+  - `WizardState`: `wizard-state.json` 永続化モデル（`ToSafeForPersistence` で InProgress→NotStarted 変換）
+  - `IWizardStateService` / `WizardStateService`: ファイル読み書き・初期化・バックアップ・リセット
+  - `AppDataPaths.WizardStateFile()`: `%APPDATA%\CloudMigrator\wizard-state.json`
+  - `IDropboxVerifyService` / `DropboxVerifyService`: Credential / Discovery / Preflight 3 層検証
+  - Blazor Wizard コンポーネント群:
+    - `WelcomePage.razor`: 起動時の Welcome 画面
+    - `RouteSelectionPage.razor`: Step 0 移行路線選択
+    - `AzureSetupPage.razor`: Step 1 Azure Entra ID 認証設定ガイド（管理者同意 URL 生成含む）
+    - `DriveDiscoveryPage.razor`: Step 2a OneDrive Drive ID 取得（UPN 入力→API 取得）
+    - `SharePointDiscoveryPage.razor`: Step 2b SharePoint Site 検索 → Library 選択（表示名付き・URL 直接入力フォールバック）
+    - `DropboxOAuthPage.razor`: Step 3 Dropbox OAuth 連携（App Console 手順ガイド D-1〜D-6）
+    - `ConnectionTestPage.razor`: Step 4 接続テスト（両路線対応・3 層 Verify・失敗層の特定表示）
+    - `WizardApp.razor`: ステップルーティング・状態管理コンテナ（中断再開ロジック含む）
+  - `DashboardApp.razor`: 初回起動検出・「セットアップをやり直す」メニューエントリ
+
+- **Azure Entra ID アプリ登録 & API 権限設定ガイド UI** (Issue #110, PR #124)
+  - ウィザード Step 1 のサブステップ（1-1〜1-6）ガイドパネル
+  - 管理者同意 URL 生成・クリップボードコピー（ケース A/B 分岐）
+  - `clientSecretExpiry` を `config.json` に保存・30 日前警告表示
+
+- **Graph API リソース発見（OneDrive + SharePoint）** (Issue #111, PR #125 / #128)
+  - `GraphDiscoveryService`: `GET /users/{userId}/drive` による OneDrive Drive ID 取得
+  - SharePoint Site キーワード検索（`GET /sites?search={keyword}`）/ URL 直接入力フォールバック
+  - SharePoint Document Library 一覧取得（表示名付き・`GET /sites/{siteId}/drives`）
+  - Discovery Verify（`GET /drives/{driveId}`）+ Migration Preflight（読み書き権限確認）
+  - Discovery 結果を `config.json` に保存（`migrator.graph.*` スキーマ）
+
+- **AdaptiveConcurrencyController 改善** (PR #133 / #134)
+  - 増速制御を成功カウントから時間ベース（`IncreaseIntervalSec` 秒）に変更
+  - `decreaseMultiplier` による乗算的減速（固定値削減から変更）
+  - ダッシュボードに AdaptiveConcurrency 設定パネルを追加
+  - ダッシュボード Settings ページに上級者向け設定セクション追加
+
+### Changed
+
+- Dashboard サービス層（`ITransferStateDb` 等）を `CloudMigrator.Core.Observability` へ移動 (PR #119)
+
+### Fixed
+
+- ウィザードのフォルダ指定が転送処理に反映されないバグを修正 (PR #132)
+- v0.4.0 起動テスト UX 改善（OneDrive→SharePoint ハッピーパス）(PR #131)
+- `TransferJobService` バグ修正（ロガー注入・`Cancel()`/`CurrentJob`・例外握りつぶし解消）(PR #126)
+- プロバイダー正規化・クロール状態修正・RateLimit ログ追加 (PR #128)
+- 起動テストで発見したバグ修正 5 件 (PR #122)
 
 ---
 
