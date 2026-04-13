@@ -444,4 +444,53 @@ public class SharePointMigrationPipelineTests
         summary.Success.Should().Be(0);
         summary.Failed.Should().Be(0);
     }
+
+    // ── フェーズ切替: activateController の引数検証 ─────────────────────
+
+    [Fact]
+    public async Task RunAsync_CallsActivateController_WithFolderCreationControllerForPhaseC_ThenConcurrencyControllerForPhaseD()
+    {
+        // 検証対象: _activateController  目的: Phase C 開始時は folderCreationController、Phase D 開始時は concurrencyController が渡されること
+        // DB: Phase B スキップ（crawl_complete=true）、Phase C 実行（folder_creation_complete=null）、フォルダなし
+        _mockDb.Setup(db => db.InitializeAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDb.Setup(db => db.ResetProcessingAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDb.Setup(db => db.ResetPermanentFailedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(NoRecords());
+        _mockDb.Setup(db => db.GetCheckpointAsync("pipeline_started_at", It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        _mockDb.Setup(db => db.GetCheckpointAsync(SharePointMigrationPipeline.CrawlCompleteKey, It.IsAny<CancellationToken>())).ReturnsAsync("true");
+        _mockDb.Setup(db => db.GetCheckpointAsync(SharePointMigrationPipeline.FolderCreationCompleteKey, It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        _mockDb.Setup(db => db.GetCheckpointAsync(It.IsNotIn("pipeline_started_at", SharePointMigrationPipeline.CrawlCompleteKey, SharePointMigrationPipeline.FolderCreationCompleteKey), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        _mockDb.Setup(db => db.SaveCheckpointAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockDb.Setup(db => db.GetDistinctFolderPathsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _mockDb.Setup(db => db.GetSummaryAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new TransferDbSummary());
+        _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // activateController への引数をキャプチャする
+        var activatedControllers = new List<AdaptiveConcurrencyController?>();
+        Action<AdaptiveConcurrencyController?> activateController = ctrl => activatedControllers.Add(ctrl);
+
+        using var concurrencyController = new AdaptiveConcurrencyController(
+            initialDegree: 2, minDegree: 1, maxDegree: 2, increaseIntervalSec: 0,
+            NullLogger<AdaptiveConcurrencyController>.Instance);
+        using var folderCreationController = new AdaptiveConcurrencyController(
+            initialDegree: 2, minDegree: 1, maxDegree: 2, increaseIntervalSec: 0,
+            NullLogger<AdaptiveConcurrencyController>.Instance);
+
+        var pipeline = new SharePointMigrationPipeline(
+            _mockSource.Object, _mockDest.Object, _mockDb.Object, _options,
+            NullLogger<SharePointMigrationPipeline>.Instance,
+            concurrencyController,
+            folderCreationController,
+            activateController);
+
+        await pipeline.RunAsync(CancellationToken.None);
+
+        // Phase C 開始時: folderCreationController、Phase D 開始時: concurrencyController の順で呼ばれること
+        activatedControllers.Should().HaveCountGreaterThanOrEqualTo(2,
+            "activateController は Phase C と Phase D の開始時に少なくとも各 1 回呼ばれる");
+        activatedControllers[0].Should().BeSameAs(folderCreationController,
+            "Phase C 開始時は folderCreationController が渡されること");
+        activatedControllers[1].Should().BeSameAs(concurrencyController,
+            "Phase D 開始時は concurrencyController が渡されること");
+    }
 }

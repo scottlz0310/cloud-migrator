@@ -17,7 +17,9 @@ public sealed record ConfigDto(
     string DestinationRoot,
     string DestinationProvider,
     bool AdaptiveConcurrencyEnabled = false,
-    int AdaptiveConcurrencyInitialDegree = 0);
+    int AdaptiveConcurrencyInitialDegree = 0,
+    int AdaptiveConcurrencyDecreasePercent = 50,
+    int AdaptiveConcurrencyIncreaseIntervalSec = 60);
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -32,7 +34,9 @@ public sealed record ConfigUpdateDto(
     string? DestinationRoot = null,
     string? DestinationProvider = null,
     bool? AdaptiveConcurrencyEnabled = null,
-    int? AdaptiveConcurrencyInitialDegree = null);
+    int? AdaptiveConcurrencyInitialDegree = null,
+    int? AdaptiveConcurrencyDecreasePercent = null,
+    int? AdaptiveConcurrencyIncreaseIntervalSec = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -128,6 +132,8 @@ public sealed class ConfigurationService : IConfigurationService
         // adaptiveConcurrency.sharepoint セクションを読み取る（なければ default プロファイルにフォールバック）
         var adaptiveEnabled = false;
         var adaptiveInitialDegree = 0;
+        var adaptiveDecreasePercent = 50;
+        var adaptiveIncreaseIntervalSec = 60;
         if (m.TryGetProperty("adaptiveConcurrency", out var acProp) && acProp.ValueKind == JsonValueKind.Object)
         {
             // sharepoint キーがなければ default プロファイルを試みる
@@ -138,6 +144,10 @@ public sealed class ConfigurationService : IConfigurationService
             {
                 adaptiveEnabled = acProfile.TryGetProperty("enabled", out var enProp) && enProp.ValueKind == JsonValueKind.True;
                 adaptiveInitialDegree = GetInt(acProfile, "initialDegree", 0);
+                // decreaseMultiplier (double) を % (int) に変換して返す
+                if (acProfile.TryGetProperty("decreaseMultiplier", out var dmProp) && dmProp.TryGetDouble(out var dm) && dm > 0 && dm < 1)
+                    adaptiveDecreasePercent = Math.Clamp((int)Math.Floor(dm * 100), 1, 99);
+                adaptiveIncreaseIntervalSec = GetInt(acProfile, "increaseIntervalSec", 60);
             }
         }
 
@@ -151,7 +161,9 @@ public sealed class ConfigurationService : IConfigurationService
             DestinationRoot: GetString(m, "destinationRoot", string.Empty),
             DestinationProvider: NormalizeProvider(GetString(m, "destinationProvider", "sharepoint")),
             AdaptiveConcurrencyEnabled: adaptiveEnabled,
-            AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree);
+            AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree,
+            AdaptiveConcurrencyDecreasePercent: adaptiveDecreasePercent,
+            AdaptiveConcurrencyIncreaseIntervalSec: adaptiveIncreaseIntervalSec);
     }
 
     /// <inheritdoc />
@@ -172,11 +184,18 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.LargeFileThresholdMb.HasValue) m["largeFileThresholdMb"] = update.LargeFileThresholdMb.Value;
             if (update.RetryCount.HasValue) m["retryCount"] = update.RetryCount.Value;
             if (update.TimeoutSec.HasValue) m["timeoutSec"] = update.TimeoutSec.Value;
-            if (update.DestinationRoot is not null) m["destinationRoot"] = update.DestinationRoot;
+            if (update.DestinationRoot is not null)
+            {
+                m["destinationRoot"] = update.DestinationRoot;
+                // sharePointDestFolderPath（Discovery 表示用）と同期する
+                if (m["graph"] is JsonObject gObj)
+                    gObj["sharePointDestFolderPath"] = update.DestinationRoot;
+            }
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 
             // adaptiveConcurrency.sharepoint セクションを更新
-            if (update.AdaptiveConcurrencyEnabled.HasValue || update.AdaptiveConcurrencyInitialDegree.HasValue)
+            if (update.AdaptiveConcurrencyEnabled.HasValue || update.AdaptiveConcurrencyInitialDegree.HasValue
+                || update.AdaptiveConcurrencyDecreasePercent.HasValue || update.AdaptiveConcurrencyIncreaseIntervalSec.HasValue)
             {
                 if (m["adaptiveConcurrency"] is not JsonObject acObj)
                 {
@@ -192,6 +211,10 @@ public sealed class ConfigurationService : IConfigurationService
                     spAcObj["enabled"] = update.AdaptiveConcurrencyEnabled.Value;
                 if (update.AdaptiveConcurrencyInitialDegree.HasValue)
                     spAcObj["initialDegree"] = update.AdaptiveConcurrencyInitialDegree.Value;
+                if (update.AdaptiveConcurrencyDecreasePercent.HasValue)
+                    spAcObj["decreaseMultiplier"] = update.AdaptiveConcurrencyDecreasePercent.Value / 100.0;
+                if (update.AdaptiveConcurrencyIncreaseIntervalSec.HasValue)
+                    spAcObj["increaseIntervalSec"] = update.AdaptiveConcurrencyIncreaseIntervalSec.Value;
             }
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム
@@ -383,7 +406,21 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.SharePointSiteId is not null) g["sharePointSiteId"] = update.SharePointSiteId;
             if (update.SharePointDriveId is not null) g["sharePointDriveId"] = update.SharePointDriveId;
             if (update.SharePointDestFolderId is not null) g["sharePointDestFolderId"] = update.SharePointDestFolderId;
-            if (update.SharePointDestFolderPath is not null) g["sharePointDestFolderPath"] = update.SharePointDestFolderPath;
+
+            // sharePointDestFolderPath（Discovery 表示用）と destinationRoot（転送処理用）を常に同値へ正規化する。
+            // update が null の場合は既存値をフォールバックとして双方に同期し、
+            // 設定タブ等の別経路で destinationRoot だけが更新された場合の乖離を防ぐ。
+            var existingDestFolderPath = g["sharePointDestFolderPath"]?.GetValue<string>();
+            var existingDestinationRoot = m["destinationRoot"]?.GetValue<string>();
+            var effectiveDestFolderPath = update.SharePointDestFolderPath
+                ?? existingDestFolderPath
+                ?? existingDestinationRoot;
+            if (effectiveDestFolderPath is not null)
+            {
+                g["sharePointDestFolderPath"] = effectiveDestFolderPath;
+                m["destinationRoot"] = effectiveDestFolderPath;
+            }
+
             if (update.MigrationRoute is not null) m["migrationRoute"] = update.MigrationRoute;
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 

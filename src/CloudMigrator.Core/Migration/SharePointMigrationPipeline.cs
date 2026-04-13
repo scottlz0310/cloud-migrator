@@ -34,6 +34,8 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
     private readonly ITransferStateDb _stateDb;
     private readonly MigratorOptions _options;
     private readonly AdaptiveConcurrencyController? _concurrencyController;
+    private readonly AdaptiveConcurrencyController? _folderCreationController;
+    private readonly Action<AdaptiveConcurrencyController?>? _activateController;
     private readonly ILogger<SharePointMigrationPipeline> _logger;
 
     // Phase D メトリクスカウンタ（Interlocked によるスレッドセーフな並列カウント）
@@ -50,7 +52,9 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         ITransferStateDb stateDb,
         MigratorOptions options,
         ILogger<SharePointMigrationPipeline> logger,
-        AdaptiveConcurrencyController? concurrencyController = null)
+        AdaptiveConcurrencyController? concurrencyController = null,
+        AdaptiveConcurrencyController? folderCreationController = null,
+        Action<AdaptiveConcurrencyController?>? activateController = null)
     {
         _sourceProvider = sourceProvider;
         _destinationProvider = destinationProvider;
@@ -58,6 +62,8 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         _options = options;
         _logger = logger;
         _concurrencyController = concurrencyController;
+        _folderCreationController = folderCreationController;
+        _activateController = activateController;
     }
 
     /// <inheritdoc/>
@@ -98,6 +104,8 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         }
 
         // ── Phase C: フォルダ先行作成 ───────────────────────────────────────────────
+        // フォルダ作成専用コントローラーがある場合は、429 通知先を切り替える
+        _activateController?.Invoke(_folderCreationController);
         if (await _stateDb.GetCheckpointAsync(FolderCreationCompleteKey, ct).ConfigureAwait(false) == "true")
         {
             _logger.LogInformation("Phase C: フォルダ作成完了チェックポイントあり - スキップ");
@@ -108,6 +116,8 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         }
 
         // ── Phase D: ファイル転送 ───────────────────────────────────────────────────
+        // 転送用コントローラーに戻す
+        _activateController?.Invoke(_concurrencyController);
         var channel = Channel.CreateBounded<TransferJob>(new BoundedChannelOptions(ChannelCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -229,8 +239,10 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         // folder_total チェックポイント保存（ダッシュボードの進捗バー用）
         await _stateDb.SaveCheckpointAsync(FolderTotalKey, allFolders.Count.ToString(), ct).ConfigureAwait(false);
 
-        var controller = _concurrencyController;
-        // MaxParallelFolderCreations を上限として維持する（controller.MaxDegree は MaxParallelTransfers ベースのため）
+        // Phase C 専用コントローラーがあればそちらを優先する（MaxParallelFolderCreations ベース）
+        // ない場合は転送用コントローラーにフォールバックし、maxDegree で上限を補正する
+        var controller = _folderCreationController ?? _concurrencyController;
+        // MaxParallelFolderCreations を上限として維持する（転送用 controller.MaxDegree は MaxParallelTransfers ベースのため）
         var maxFolderCreationDegree = Math.Max(1, _options.MaxParallelFolderCreations);
         var maxDegree = controller is null
             ? maxFolderCreationDegree

@@ -76,14 +76,14 @@ public sealed class AdaptiveConcurrencyControllerTests
     // ─── NotifyRateLimit ──────────────────────────────────────────────────────
 
     [Fact]
-    public void NotifyRateLimit_DecreasesCurrentDegreeByOne()
+    public void NotifyRateLimit_DecreasesDegreeByMultiplier()
     {
-        // 検証対象: NotifyRateLimit  目的: 現在の並列度が 1 減少すること
+        // 検証対象: NotifyRateLimit  目的: 現在の並列度が decreaseMultiplier（デフォルト 0.5）倍に削減されること
         var controller = CreateController(initial: 4, min: 1, max: 4);
 
         controller.NotifyRateLimit(retryAfter: null);
 
-        controller.CurrentDegree.Should().Be(3);
+        controller.CurrentDegree.Should().Be(2); // 4 * 0.5 = 2
     }
 
     [Fact]
@@ -92,11 +92,11 @@ public sealed class AdaptiveConcurrencyControllerTests
         // 検証対象: NotifyRateLimit  目的: 減速後はインターバル時間経過前に NotifySuccess を呼んでも増速しないこと
         var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 30);
 
-        controller.NotifyRateLimit(null); // 減速により _increaseAvailableAfterTicks = now + 30s
+        controller.NotifyRateLimit(null); // 減速: 4 * 0.5 = 2、_increaseAvailableAfterTicks = now + 30s
 
         // 時間が経過していないので増速しない
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(3); // 3 のまま
+        controller.CurrentDegree.Should().Be(2); // 2 のまま
     }
 
     [Fact]
@@ -182,20 +182,20 @@ public sealed class AdaptiveConcurrencyControllerTests
         await controller.AcquireAsync(CancellationToken.None);
         await controller.AcquireAsync(CancellationToken.None);
 
-        controller.NotifyRateLimit(null); // 4 -> 3、ただし吸収は in-flight のため未完了
+        controller.NotifyRateLimit(null); // 4 -> 2（4 * 0.5 = 2）、ただし吸収は in-flight のため未完了
 
         // SetIncreaseAvailableNow で待機解除して増速を試みても、吸収未完なので増速しない
         controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
 
-        controller.CurrentDegree.Should().Be(3);
+        controller.CurrentDegree.Should().Be(2);
 
         controller.Release();
         controller.Release();
         controller.Release();
         controller.Release();
 
-        var absorbed = await WaitUntilAsync(() => controller.AbsorbedSlotCount == 1, timeoutMs: 1000);
+        var absorbed = await WaitUntilAsync(() => controller.AbsorbedSlotCount == 2, timeoutMs: 1000);
         absorbed.Should().BeTrue("解放後にバックグラウンド吸収が完了するはず");
     }
 
@@ -205,24 +205,24 @@ public sealed class AdaptiveConcurrencyControllerTests
         // 検証対象: NotifySuccess  目的: 増速後に再度インターバル待機が起き、SetIncreaseAvailableNow 後に次の増速が可能なこと
         var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 30);
 
-        // rate limit ×2 → degree 2、吸収を待機
+        // rate limit ×2 → degree 1（4*0.5=2、2*0.5=1）、吸収を待機（計3スロット）
         controller.NotifyRateLimit(null);
         controller.NotifyRateLimit(null);
         await WaitUntilAsync(() => controller.AbsorbedSlotCount >= 2, timeoutMs: 1000);
 
-        // 1 回目の増速
+        // 1 回目の増速（1→2）
         controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(3);
+        controller.CurrentDegree.Should().Be(2);
 
         // 増速後は即座に増速できない（インターバル待機）
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(3);
+        controller.CurrentDegree.Should().Be(2);
 
-        // SetIncreaseAvailableNow 後は再増速可能
+        // SetIncreaseAvailableNow 後は再増速可能（2→3）
         controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(4);
+        controller.CurrentDegree.Should().Be(3);
     }
 
     // ─── AcquireAsync / Release ──────────────────────────────────────────────
@@ -306,8 +306,8 @@ public sealed class AdaptiveConcurrencyControllerTests
         controller.NotifyRateLimit(null); // 1 回目: まだ下がらない
         controller.CurrentDegree.Should().Be(4);
 
-        controller.NotifyRateLimit(null); // 2 回目: 減速
-        controller.CurrentDegree.Should().Be(3);
+        controller.NotifyRateLimit(null); // 2 回目: 減速（4 * 0.5 = 2）
+        controller.CurrentDegree.Should().Be(2);
     }
 
     [Fact]
@@ -320,42 +320,42 @@ public sealed class AdaptiveConcurrencyControllerTests
             decreaseTriggerCount: 2);
 
         controller.NotifyRateLimit(null);
-        controller.NotifyRateLimit(null); // 1 回目の減速: 4→3
-        controller.CurrentDegree.Should().Be(3);
+        controller.NotifyRateLimit(null); // 1 回目の減速: 4→2（4 * 0.5 = 2）
+        controller.CurrentDegree.Should().Be(2);
 
         controller.NotifyRateLimit(null); // カウンター 1: まだ下がらない
-        controller.CurrentDegree.Should().Be(3);
-
-        controller.NotifyRateLimit(null); // カウンター 2: 2 回目の減速: 3→2
         controller.CurrentDegree.Should().Be(2);
+
+        controller.NotifyRateLimit(null); // カウンター 2: 2 回目の減速: 2→1（2 * 0.5 = 1）
+        controller.CurrentDegree.Should().Be(1);
     }
 
-    // ─── decreaseStep ────────────────────────────────────────────────────────
+    // ─── decreaseMultiplier ──────────────────────────────────────────────────
 
     [Fact]
-    public void NotifyRateLimit_WithDecreaseStep2_DecreasesByTwo()
+    public void NotifyRateLimit_WithDecreaseMultiplier025_QuartersAndCeils()
     {
-        // 検証対象: decreaseStep  目的: 1 回のイベントで並列度が 2 下がること
+        // 検証対象: decreaseMultiplier  目的: multiplier=0.25 のとき 4*0.25=1.0→Ceiling→1 になること
         var controller = new AdaptiveConcurrencyController(
             4, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
-            decreaseStep: 2);
+            decreaseMultiplier: 0.25);
 
         controller.NotifyRateLimit(null);
-        controller.CurrentDegree.Should().Be(2);
+        controller.CurrentDegree.Should().Be(1);
     }
 
     [Fact]
-    public void NotifyRateLimit_WithDecreaseStep_ClampsAtMinDegree()
+    public void NotifyRateLimit_WithOddDegreeAndDecreaseMultiplier05_UsesCeiling()
     {
-        // 検証対象: decreaseStep  目的: step が大きくても MinDegree を下回らないこと
+        // 検証対象: decreaseMultiplier（Ceiling 丸め）  目的: 3 * 0.5 = 1.5 → Ceiling → 2 になること（切り捨てではなく切り上げ）
         var controller = new AdaptiveConcurrencyController(
-            2, 1, 4, 30,
+            3, 1, 3, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
-            decreaseStep: 5);
+            decreaseMultiplier: 0.5);
 
         controller.NotifyRateLimit(null);
-        controller.CurrentDegree.Should().Be(1); // 2-5 → clamp → 1
+        controller.CurrentDegree.Should().Be(2); // Ceiling(3*0.5=1.5)=2（切り捨てなら1になる）
     }
 
     // ─── increaseStep ────────────────────────────────────────────────────────
@@ -369,15 +369,15 @@ public sealed class AdaptiveConcurrencyControllerTests
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
             increaseStep: 2);
 
-        // rate limit ×2 → degree 2, absorbed = 2
+        // rate limit ×2 → degree 1（4*0.5=2、2*0.5=1）, absorbed = 3
         controller.NotifyRateLimit(null);
         controller.NotifyRateLimit(null);
         await WaitUntilAsync(() => controller.AbsorbedSlotCount >= 2, timeoutMs: 1000);
 
-        // SetIncreaseAvailableNow 後に 1 回成功で +2 回復
+        // SetIncreaseAvailableNow 後に 1 回成功で +2 回復（1+2=3、absorb残り1）
         controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(4);
+        controller.CurrentDegree.Should().Be(3);
     }
 
     [Fact]
@@ -458,12 +458,12 @@ public sealed class AdaptiveConcurrencyControllerTests
         // 検証対象: Retry-After 加算  目的: Retry-After 付きのレート制限後、即座に NotifySuccess しても増速しないこと
         var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 30);
 
-        // Retry-After = 60秒 + IncreaseIntervalSec 30秒 = 合計90秒待機
+        // Retry-After = 60秒 + IncreaseIntervalSec 30秒 = 合計90秒待機、減速: 4 * 0.5 = 2
         controller.NotifyRateLimit(retryAfter: TimeSpan.FromSeconds(60));
 
         // SetIncreaseAvailableNow なしでは増速しない
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(3);
+        controller.CurrentDegree.Should().Be(2);
     }
 
     // ─── ヘルパー ─────────────────────────────────────────────────────────────

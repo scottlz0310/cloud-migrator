@@ -114,6 +114,31 @@ internal static class TransferCommand
         logger.LogInformation("SharePoint 移行パイプラインを開始します…");
 
         svc.ActivateController("sharepoint");
+
+        // Phase C（フォルダ先行作成）専用コントローラー（maxDegree = MaxParallelFolderCreations）
+        // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
+        var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
+        AdaptiveConcurrencyController? folderCreationController = null;
+        Action<AdaptiveConcurrencyController?>? activateController = null;
+        if (adaptiveOpts.Enabled)
+        {
+            var maxFolderCreationDegree = Math.Max(1, opts.MaxParallelFolderCreations);
+            var folderInitialDegree = adaptiveOpts.InitialDegree > 0
+                ? Math.Min(adaptiveOpts.InitialDegree, maxFolderCreationDegree)
+                : maxFolderCreationDegree;
+            folderCreationController = new AdaptiveConcurrencyController(
+                initialDegree: folderInitialDegree,
+                minDegree: Math.Min(adaptiveOpts.MinDegree, maxFolderCreationDegree),
+                maxDegree: maxFolderCreationDegree,
+                increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
+                logger: svc.LoggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
+                increaseStep: adaptiveOpts.IncreaseStep,
+                decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
+                decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
+            // フェーズ切り替え時に onRateLimit の通知先を切り替えるコールバック
+            activateController = ctrl => svc.SetActiveController(ctrl ?? svc.GetController("sharepoint"));
+        }
+
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
 
         // フルリビルド or 設定変更時は SQL で全テーブルをクリア（ファイル削除不要のためダッシュボード開放中でも動作可）
@@ -148,25 +173,34 @@ internal static class TransferCommand
         // stateDb は SQLite 状態を保持するため使い回す
         TransferSummary summary;
         var autoRetryRemaining = autoRetry;
-        while (true)
+        try
         {
-            var pipeline = new SharePointMigrationPipeline(
-                svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
-                svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
-                stateDb,
-                opts,
-                svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
-                svc.GetController("sharepoint"));
+            while (true)
+            {
+                var pipeline = new SharePointMigrationPipeline(
+                    svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
+                    svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
+                    stateDb,
+                    opts,
+                    svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
+                    svc.GetController("sharepoint"),
+                    folderCreationController,
+                    activateController);
 
-            summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
-            logger.LogInformation(
-                "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
-                summary.Success, summary.Failed, summary.Elapsed);
+                summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
+                logger.LogInformation(
+                    "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
+                    summary.Success, summary.Failed, summary.Elapsed);
 
-            if (summary.Failed == 0 || !ShouldRetry(summary.Failed, ref autoRetryRemaining, logger))
-                break;
+                if (summary.Failed == 0 || !ShouldRetry(summary.Failed, ref autoRetryRemaining, logger))
+                    break;
 
-            logger.LogInformation("失敗ファイルを再試行します…");
+                logger.LogInformation("失敗ファイルを再試行します…");
+            }
+        }
+        finally
+        {
+            folderCreationController?.Dispose();
         }
 
         if (summary.Failed > 0)

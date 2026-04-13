@@ -91,6 +91,25 @@ else
                                          Variant="Variant.Outlined"
                                          HelperText="0: 最大並行転送数から開始（スロースタートなし）。1〜n: その数から徐々に増加（スロースタート）。" />
                     </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_editAdaptiveConcurrencyDecreasePercent"
+                                         Label="429 減速率 (%)"
+                                         Min="1" Max="99"
+                                         Variant="Variant.Outlined"
+                                         HelperText="429 発生時に並列度をこの割合に削減します。例: 50 = 半減（MinDegree 下限）。デフォルト: 50" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect T="int"
+                                   @bind-Value="_editAdaptiveConcurrencyIncreaseIntervalSec"
+                                   Label="増速インターバル (秒)"
+                                   Variant="Variant.Outlined"
+                                   HelperText="429 後に並列度の回復を開始するまでの待機時間。デフォルト: 60 秒">
+                            <MudSelectItem Value="30">30 秒</MudSelectItem>
+                            <MudSelectItem Value="60">60 秒</MudSelectItem>
+                            <MudSelectItem Value="90">90 秒</MudSelectItem>
+                            <MudSelectItem Value="120">120 秒</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
                 }
             </MudGrid>
         </MudCardContent>
@@ -166,6 +185,8 @@ else
     private string _editDestinationProvider = string.Empty;
     private bool _editAdaptiveConcurrencyEnabled;
     private int _editAdaptiveConcurrencyInitialDegree;
+    private int _editAdaptiveConcurrencyDecreasePercent;
+    private int _editAdaptiveConcurrencyIncreaseIntervalSec;
 
     protected override async Task OnInitializedAsync()
     {
@@ -197,6 +218,8 @@ else
         _editDestinationProvider = cfg.DestinationProvider;
         _editAdaptiveConcurrencyEnabled = cfg.AdaptiveConcurrencyEnabled;
         _editAdaptiveConcurrencyInitialDegree = cfg.AdaptiveConcurrencyInitialDegree;
+        _editAdaptiveConcurrencyDecreasePercent = cfg.AdaptiveConcurrencyDecreasePercent;
+        _editAdaptiveConcurrencyIncreaseIntervalSec = cfg.AdaptiveConcurrencyIncreaseIntervalSec;
     }
 
     private async Task SaveAsync()
@@ -237,6 +260,16 @@ else
             Snackbar.Add("転送先プロバイダーは sharepoint または dropbox を選択してください。", Severity.Warning);
             return;
         }
+        if (_editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyDecreasePercent is < 1 or > 99)
+        {
+            Snackbar.Add("減速率は 1〜99 の範囲で入力してください。", Severity.Warning);
+            return;
+        }
+        if (_editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyIncreaseIntervalSec is not (30 or 60 or 90 or 120))
+        {
+            Snackbar.Add("増速インターバルは 30 / 60 / 90 / 120 秒から選択してください。", Severity.Warning);
+            return;
+        }
         if (_editAdaptiveConcurrencyInitialDegree is < 0 or > 256)
         {
             Snackbar.Add("初期並列数は 0〜256 の範囲で入力してください。", Severity.Warning);
@@ -255,7 +288,9 @@ else
                 DestinationRoot: _editDestinationRoot,
                 DestinationProvider: _editDestinationProvider,
                 AdaptiveConcurrencyEnabled: _editAdaptiveConcurrencyEnabled,
-                AdaptiveConcurrencyInitialDegree: _editAdaptiveConcurrencyInitialDegree);
+                AdaptiveConcurrencyInitialDegree: _editAdaptiveConcurrencyInitialDegree,
+                AdaptiveConcurrencyDecreasePercent: _editAdaptiveConcurrencyDecreasePercent,
+                AdaptiveConcurrencyIncreaseIntervalSec: _editAdaptiveConcurrencyIncreaseIntervalSec);
             await ConfigService.UpdateConfigAsync(update);
             _config = await ConfigService.GetConfigAsync();
             Snackbar.Add("設定を保存しました。", Severity.Success);

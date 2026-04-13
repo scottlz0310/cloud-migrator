@@ -180,17 +180,20 @@ public sealed class AdaptiveConcurrencyOptions
     /// <summary>並列度の下限。レート制限が続いてもこの値より下がらない。デフォルト 1</summary>
     public int MinDegree { get; set; } = 1;
 
-    /// <summary>並列度を回復させるまでの待機時間（秒）。0 = 即時増速可能。429 後に N 秒経過してから増速を許可する。デフォルト 30</summary>
-    public int IncreaseIntervalSec { get; set; } = 30;
+    /// <summary>並列度を回復させるまでの待機時間（秒）。0 = 即時増速可能。429 後に N 秒経過してから増速を許可する。デフォルト 60</summary>
+    public int IncreaseIntervalSec { get; set; } = 60;
 
     /// <summary>1 回の回復で増加する並列度の幅（増速のスピード）。デフォルト 1</summary>
     public int IncreaseStep { get; set; } = 1;
 
-    /// <summary>1 回の減速イベントで減少する並列度の幅（減速のスピード）。デフォルト 1</summary>
-    public int DecreaseStep { get; set; } = 1;
-
     /// <summary>減速を発火するために必要な 429/503 の累積回数（減速の条件）。デフォルト 1</summary>
     public int DecreaseTriggerCount { get; set; } = 1;
+
+    /// <summary>
+    /// 429 発生時に並列度に掛ける乗数（0 より大きく 1 未満）。
+    /// 例: 0.5 = 現在の並列度を半減（MinDegree 下限）。デフォルト 0.5
+    /// </summary>
+    public double DecreaseMultiplier { get; set; } = 0.5;
 }
 
 /// <summary>
