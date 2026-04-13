@@ -114,6 +114,28 @@ internal static class TransferCommand
         logger.LogInformation("SharePoint 移行パイプラインを開始します…");
 
         svc.ActivateController("sharepoint");
+
+        // Phase C（フォルダ先行作成）専用コントローラー（maxDegree = MaxParallelFolderCreations）
+        // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
+        var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
+        AdaptiveConcurrencyController? folderCreationController = null;
+        if (adaptiveOpts.Enabled)
+        {
+            var maxFolderCreationDegree = Math.Max(1, opts.MaxParallelFolderCreations);
+            var folderInitialDegree = adaptiveOpts.InitialDegree > 0
+                ? Math.Min(adaptiveOpts.InitialDegree, maxFolderCreationDegree)
+                : maxFolderCreationDegree;
+            folderCreationController = new AdaptiveConcurrencyController(
+                initialDegree: folderInitialDegree,
+                minDegree: adaptiveOpts.MinDegree,
+                maxDegree: maxFolderCreationDegree,
+                increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
+                logger: svc.LoggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
+                increaseStep: adaptiveOpts.IncreaseStep,
+                decreaseStep: adaptiveOpts.DecreaseStep,
+                decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
+        }
+
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
 
         // フルリビルド or 設定変更時は SQL で全テーブルをクリア（ファイル削除不要のためダッシュボード開放中でも動作可）
@@ -156,7 +178,8 @@ internal static class TransferCommand
                 stateDb,
                 opts,
                 svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
-                svc.GetController("sharepoint"));
+                svc.GetController("sharepoint"),
+                folderCreationController);
 
             summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
             logger.LogInformation(
@@ -168,6 +191,8 @@ internal static class TransferCommand
 
             logger.LogInformation("失敗ファイルを再試行します…");
         }
+
+        folderCreationController?.Dispose();
 
         if (summary.Failed > 0)
             Environment.ExitCode = 1;

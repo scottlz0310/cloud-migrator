@@ -94,6 +94,7 @@ public partial class App : Application
                 // AdaptiveConcurrencyController の初期化（config.json の AdaptiveConcurrency.sharepoint.Enabled = true で有効）
                 var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
                 AdaptiveConcurrencyController? concurrencyController = null;
+                AdaptiveConcurrencyController? folderCreationController = null;
                 Action<TimeSpan?>? onRateLimit = null;
                 if (adaptiveOpts.Enabled)
                 {
@@ -110,6 +111,22 @@ public partial class App : Application
                         decreaseStep: adaptiveOpts.DecreaseStep,
                         decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
                     onRateLimit = retryAfter => concurrencyController.NotifyRateLimit(retryAfter);
+
+                    // Phase C（フォルダ先行作成）専用コントローラー（maxDegree = MaxParallelFolderCreations）
+                    // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
+                    var maxFolderCreationDegree = Math.Max(1, opts.MaxParallelFolderCreations);
+                    var folderInitialDegree = adaptiveOpts.InitialDegree > 0
+                        ? Math.Min(adaptiveOpts.InitialDegree, maxFolderCreationDegree)
+                        : maxFolderCreationDegree;
+                    folderCreationController = new AdaptiveConcurrencyController(
+                        initialDegree: folderInitialDegree,
+                        minDegree: adaptiveOpts.MinDegree,
+                        maxDegree: maxFolderCreationDegree,
+                        increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
+                        logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
+                        increaseStep: adaptiveOpts.IncreaseStep,
+                        decreaseStep: adaptiveOpts.DecreaseStep,
+                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
                 }
 
                 try
@@ -144,13 +161,15 @@ public partial class App : Application
                         stateDb,
                         opts,
                         loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
-                        concurrencyController);
+                        concurrencyController,
+                        folderCreationController);
 
                     await pipeline.RunAsync(ct).ConfigureAwait(false);
                 }
                 finally
                 {
                     concurrencyController?.Dispose();
+                    folderCreationController?.Dispose();
                 }
             }
 
