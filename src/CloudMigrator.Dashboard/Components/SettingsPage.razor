@@ -67,6 +67,31 @@ else
                         <MudSelectItem Value="@("dropbox")">dropbox</MudSelectItem>
                     </MudSelect>
                 </MudItem>
+
+                @* ── 動的並列制御 ──────────────────────────────────────── *@
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">動的並列制御（レート制限対応）</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudSwitch @bind-Value="_editAdaptiveConcurrencyEnabled"
+                               Label="動的並列制御を有効にする"
+                               Color="Color.Primary" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Graph API から 429 を受信したとき、自動的に並列数を減らして再加速します。
+                        無効時は「最大並行転送数」の固定値で動作します。
+                    </MudText>
+                </MudItem>
+                @if (_editAdaptiveConcurrencyEnabled)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_editAdaptiveConcurrencyInitialDegree"
+                                         Label="初期並列数（0 = 最大と同じ）"
+                                         Min="0" Max="256"
+                                         Variant="Variant.Outlined"
+                                         HelperText="0: 最大並行転送数から開始（スロースタートなし）。1〜n: その数から徐々に増加（スロースタート）。" />
+                    </MudItem>
+                }
             </MudGrid>
         </MudCardContent>
         <MudCardActions>
@@ -139,6 +164,8 @@ else
     private int _editTimeoutSec;
     private string _editDestinationRoot = string.Empty;
     private string _editDestinationProvider = string.Empty;
+    private bool _editAdaptiveConcurrencyEnabled;
+    private int _editAdaptiveConcurrencyInitialDegree;
 
     protected override async Task OnInitializedAsync()
     {
@@ -168,6 +195,8 @@ else
         _editTimeoutSec = cfg.TimeoutSec;
         _editDestinationRoot = cfg.DestinationRoot;
         _editDestinationProvider = cfg.DestinationProvider;
+        _editAdaptiveConcurrencyEnabled = cfg.AdaptiveConcurrencyEnabled;
+        _editAdaptiveConcurrencyInitialDegree = cfg.AdaptiveConcurrencyInitialDegree;
     }
 
     private async Task SaveAsync()
@@ -219,7 +248,9 @@ else
                 RetryCount: _editRetryCount,
                 TimeoutSec: _editTimeoutSec,
                 DestinationRoot: _editDestinationRoot,
-                DestinationProvider: _editDestinationProvider);
+                DestinationProvider: _editDestinationProvider,
+                AdaptiveConcurrencyEnabled: _editAdaptiveConcurrencyEnabled,
+                AdaptiveConcurrencyInitialDegree: _editAdaptiveConcurrencyInitialDegree);
             await ConfigService.UpdateConfigAsync(update);
             _config = await ConfigService.GetConfigAsync();
             Snackbar.Add("設定を保存しました。", Severity.Success);

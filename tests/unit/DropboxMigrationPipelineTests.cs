@@ -495,7 +495,7 @@ public class DropboxMigrationPipelineTests
             SetupDestBase();
 
             using var controller = new AdaptiveConcurrencyController(
-                initialDegree: 4, minDegree: 1, maxDegree: 4, successThreshold: 10,
+                initialDegree: 4, minDegree: 1, maxDegree: 4, increaseIntervalSec: 30,
                 Mock.Of<ILogger<AdaptiveConcurrencyController>>());
 
             var pipeline = new DropboxMigrationPipeline(

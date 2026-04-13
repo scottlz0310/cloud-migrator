@@ -14,8 +14,8 @@ public sealed class AdaptiveConcurrencyControllerTests
         int initial = 4,
         int min = 1,
         int max = 4,
-        int threshold = 10) =>
-        new(initial, min, max, threshold,
+        int increaseIntervalSec = 0) =>
+        new(initial, min, max, increaseIntervalSec,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>());
 
     // ─── 初期状態 ────────────────────────────────────────────────────────────
@@ -56,13 +56,21 @@ public sealed class AdaptiveConcurrencyControllerTests
     }
 
     [Fact]
-    public void Constructor_Throws_WhenSuccessThresholdIsZero()
+    public void Constructor_Throws_WhenIncreaseIntervalSecIsNegative()
     {
-        // 検証対象: コンストラクタバリデーション  目的: successThreshold < 1 は ArgumentOutOfRangeException になること
+        // 検証対象: コンストラクタバリデーション  目的: increaseIntervalSec < 0 は ArgumentOutOfRangeException になること
         Action act = () => new AdaptiveConcurrencyController(
-            4, 1, 4, 0,
+            4, 1, 4, -1,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>());
         act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Constructor_ExposesIncreaseIntervalSec()
+    {
+        // 検証対象: IncreaseIntervalSec  目的: コンストラクタで設定した値が参照できること
+        var controller = CreateController(increaseIntervalSec: 30);
+        controller.IncreaseIntervalSec.Should().Be(30);
     }
 
     // ─── NotifyRateLimit ──────────────────────────────────────────────────────
@@ -79,23 +87,16 @@ public sealed class AdaptiveConcurrencyControllerTests
     }
 
     [Fact]
-    public void NotifyRateLimit_ResetsConsecutiveSuccessCounter()
+    public void NotifyRateLimit_PreventsIncreaseBeforeIntervalElapsed()
     {
-        // 検証対象: NotifyRateLimit  目的: 連続成功カウンターがリセットされること（threshold-1 まで積み上げた後でリセット）
-        var controller = CreateController(initial: 4, min: 1, max: 4, threshold: 5);
+        // 検証対象: NotifyRateLimit  目的: 減速後はインターバル時間経過前に NotifySuccess を呼んでも増速しないこと
+        var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 30);
 
-        // 4回成功（閾値未達）
-        for (int i = 0; i < 4; i++)
-            controller.NotifySuccess();
+        controller.NotifyRateLimit(null); // 減速により _increaseAvailableAfterTicks = now + 30s
 
-        // レート制限 → カウンターリセット
-        controller.NotifyRateLimit(null);
-
-        // 再度 5 回未満成功しても増加しないこと
-        for (int i = 0; i < 4; i++)
-            controller.NotifySuccess();
-
-        controller.CurrentDegree.Should().Be(3); // 3 のまま（吸収なしなので回復しない）
+        // 時間が経過していないので増速しない
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(3); // 3 のまま
     }
 
     [Fact]
@@ -114,7 +115,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     public async Task NotifyRateLimit_AbsorbsSlot_WhenSemaphoreHasFreeSlots()
     {
         // 検証対象: NotifyRateLimit → AbsorbSlotAsync  目的: セマフォに空きがある状態では吸収が完了すること
-        var controller = CreateController(initial: 2, min: 1, max: 2, threshold: 5);
+        var controller = CreateController(initial: 2, min: 1, max: 2, increaseIntervalSec: 0);
 
         // Rate limit: degree 2 → 1, AbsorbSlotAsync がバックグラウンドで起動
         controller.NotifyRateLimit(null);
@@ -131,7 +132,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     public void NotifySuccess_DoesNotIncreaseAboveMaxDegree_WhenNothingAbsorbed()
     {
         // 検証対象: NotifySuccess  目的: 吸収済みスロットがない場合は MaxDegree を超えないこと
-        var controller = CreateController(initial: 4, min: 1, max: 4, threshold: 2);
+        var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 0);
 
         controller.NotifySuccess();
         controller.NotifySuccess();
@@ -142,48 +143,49 @@ public sealed class AdaptiveConcurrencyControllerTests
     [Fact]
     public void NotifySuccess_IncreasesCurrentDegree_FromInitialHeadroomWithoutAbsorption()
     {
-        // 検証対象: NotifySuccess  目的: initialDegree < maxDegree のソフトスタート時も成功で増加できること
-        var controller = CreateController(initial: 2, min: 1, max: 4, threshold: 2);
+        // 検証対象: NotifySuccess  目的: initialDegree < maxDegree のソフトスタート時も NotifySuccess 1 回で増加できること
+        // increaseIntervalSec: 0 なので即時増速可能
+        var controller = CreateController(initial: 2, min: 1, max: 4, increaseIntervalSec: 0);
 
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(2); // 閾値未達
-
-        controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(3); // 未吸収ヘッドルームを使って増加
+        controller.CurrentDegree.Should().Be(3); // 即時増加
     }
 
     [Fact]
-    public async Task NotifySuccess_IncreasesCurrentDegree_AfterAbsorptionAndThreshold()
+    public async Task NotifySuccess_IncreasesCurrentDegree_AfterAbsorptionAndIntervalElapsed()
     {
-        // 検証対象: NotifySuccess  目的: 吸収済みスロットがある状態で閾値回数成功すると並列度が回復すること
-        var controller = CreateController(initial: 2, min: 1, max: 2, threshold: 3);
+        // 検証対象: NotifySuccess  目的: 吸収済みスロットがある状態でインターバル経過後に並列度が回復すること
+        var controller = CreateController(initial: 2, min: 1, max: 2, increaseIntervalSec: 30);
 
-        // rate limit → degree 2→1、吸収を待機
+        // rate limit: degree 2→1、吸収を待機
         controller.NotifyRateLimit(null);
         await WaitUntilAsync(() => controller.AbsorbedSlotCount > 0, timeoutMs: 1000);
 
-        // 閾値未満の成功（2 回）
+        // インターバル経過前は増速しない
         controller.NotifySuccess();
-        controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(1); // まだ回復しない
+        controller.CurrentDegree.Should().Be(1);
 
-        // 閾値達成（3 回目）
+        // SetIncreaseAvailableNow で待機解除→増速
+        controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
-        controller.CurrentDegree.Should().Be(2); // 回復
+        controller.CurrentDegree.Should().Be(2);
     }
 
     [Fact]
     public async Task NotifySuccess_DoesNotThrowOrIncrease_WhenDecreaseAbsorptionIsStillPending()
     {
         // 検証対象: NotifySuccess  目的: 減速直後で吸収未完了の間は回復せず、SemaphoreFullException も起こさないこと
-        var controller = CreateController(initial: 4, min: 1, max: 4, threshold: 1);
+        var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 0);
 
         await controller.AcquireAsync(CancellationToken.None);
         await controller.AcquireAsync(CancellationToken.None);
         await controller.AcquireAsync(CancellationToken.None);
         await controller.AcquireAsync(CancellationToken.None);
 
-        controller.NotifyRateLimit(null); // 4 -> 3, ただし吸収は in-flight のため未完了
+        controller.NotifyRateLimit(null); // 4 -> 3、ただし吸収は in-flight のため未完了
+
+        // SetIncreaseAvailableNow で待機解除して増速を試みても、吸収未完なので増速しない
+        controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
 
         controller.CurrentDegree.Should().Be(3);
@@ -198,23 +200,27 @@ public sealed class AdaptiveConcurrencyControllerTests
     }
 
     [Fact]
-    public async Task NotifySuccess_ResetsConsecutiveCounter_AfterIncrease()
+    public async Task NotifySuccess_RespectsIntervalAfterIncrease()
     {
-        // 検証対象: NotifySuccess  目的: 回復後に連続成功カウンターがリセットされること
-        var controller = CreateController(initial: 4, min: 1, max: 4, threshold: 2);
+        // 検証対象: NotifySuccess  目的: 増速後に再度インターバル待機が起き、SetIncreaseAvailableNow 後に次の増速が可能なこと
+        var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 30);
 
         // rate limit ×2 → degree 2、吸収を待機
         controller.NotifyRateLimit(null);
         controller.NotifyRateLimit(null);
         await WaitUntilAsync(() => controller.AbsorbedSlotCount >= 2, timeoutMs: 1000);
 
-        // 1回目の回復（2 回成功で +1）
-        controller.NotifySuccess();
+        // 1 回目の増速
+        controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
         controller.CurrentDegree.Should().Be(3);
 
-        // 2回目の回復（もう 2 回成功で +1）
+        // 増速後は即座に増速できない（インターバル待機）
         controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(3);
+
+        // SetIncreaseAvailableNow 後は再増速可能
+        controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
         controller.CurrentDegree.Should().Be(4);
     }
@@ -225,7 +231,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     public async Task AcquireAsync_LimitsConcurrency_ToCurrentDegree()
     {
         // 検証対象: AcquireAsync  目的: CurrentDegree 個のスロットしか同時取得できないこと
-        var controller = CreateController(initial: 2, min: 1, max: 2, threshold: 5);
+        var controller = CreateController(initial: 2, min: 1, max: 2, increaseIntervalSec: 0);
 
         // 2 スロット取得（これが上限）
         await controller.AcquireAsync(CancellationToken.None);
@@ -244,7 +250,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     public async Task Release_AllowsNextAcquire()
     {
         // 検証対象: Release  目的: Release 後に次の AcquireAsync が成功すること
-        var controller = CreateController(initial: 1, min: 1, max: 1, threshold: 5);
+        var controller = CreateController(initial: 1, min: 1, max: 1, increaseIntervalSec: 0);
 
         await controller.AcquireAsync(CancellationToken.None);
         controller.Release();
@@ -293,7 +299,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     {
         // 検証対象: decreaseTriggerCount  目的: 2 回目の NotifyRateLimit で初めて並列度が下がること
         var controller = new AdaptiveConcurrencyController(
-            4, 1, 4, 10,
+            4, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
             decreaseTriggerCount: 2);
 
@@ -309,7 +315,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     {
         // 検証対象: decreaseTriggerCount  目的: 減速発火後にカウンターがリセットされ、さらに 2 回必要になること
         var controller = new AdaptiveConcurrencyController(
-            4, 1, 4, 10,
+            4, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
             decreaseTriggerCount: 2);
 
@@ -331,7 +337,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     {
         // 検証対象: decreaseStep  目的: 1 回のイベントで並列度が 2 下がること
         var controller = new AdaptiveConcurrencyController(
-            4, 1, 4, 10,
+            4, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
             decreaseStep: 2);
 
@@ -344,7 +350,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     {
         // 検証対象: decreaseStep  目的: step が大きくても MinDegree を下回らないこと
         var controller = new AdaptiveConcurrencyController(
-            2, 1, 4, 10,
+            2, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
             decreaseStep: 5);
 
@@ -357,9 +363,9 @@ public sealed class AdaptiveConcurrencyControllerTests
     [Fact]
     public async Task NotifySuccess_WithIncreaseStep2_IncreasesByTwo()
     {
-        // 検証対象: increaseStep  目的: 閾値達成時に並列度が 2 上がること
+        // 検証対象: increaseStep  目的: SetIncreaseAvailableNow 後に並列度が 2 上がること
         var controller = new AdaptiveConcurrencyController(
-            4, 1, 4, 2,
+            4, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
             increaseStep: 2);
 
@@ -368,8 +374,8 @@ public sealed class AdaptiveConcurrencyControllerTests
         controller.NotifyRateLimit(null);
         await WaitUntilAsync(() => controller.AbsorbedSlotCount >= 2, timeoutMs: 1000);
 
-        // 閾値 2 回成功で +2 回復
-        controller.NotifySuccess();
+        // SetIncreaseAvailableNow 後に 1 回成功で +2 回復
+        controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
         controller.CurrentDegree.Should().Be(4);
     }
@@ -379,14 +385,14 @@ public sealed class AdaptiveConcurrencyControllerTests
     {
         // 検証対象: increaseStep  目的: step が大きくても MaxDegree を超えないこと
         var controller = new AdaptiveConcurrencyController(
-            4, 1, 4, 2,
+            4, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
             increaseStep: 5);
 
         controller.NotifyRateLimit(null); // degree 3
         await WaitUntilAsync(() => controller.AbsorbedSlotCount >= 1, timeoutMs: 1000);
 
-        controller.NotifySuccess();
+        controller.SetIncreaseAvailableNow();
         controller.NotifySuccess();
         controller.CurrentDegree.Should().Be(4); // 3+5 → clamp → 4
     }
@@ -400,6 +406,64 @@ public sealed class AdaptiveConcurrencyControllerTests
         var controller = CreateController();
         Action act = () => controller.Dispose();
         act.Should().NotThrow();
+    }
+
+    // ─── InitialDegree ソフトスタート ──────────────────────────────────────────────
+
+    [Fact]
+    public void NotifySuccess_SoftStart_IncreasesFromInitialDegreeToMax()
+    {
+        // 検証対象: InitialDegree (ソフトスタート)  目的: initialDegree < maxDegree の場合、SetIncreaseAvailableNow 後に 1 回ずつ増加できること
+        var controller = CreateController(initial: 1, min: 1, max: 4, increaseIntervalSec: 0);
+        controller.CurrentDegree.Should().Be(1);
+
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(2);
+
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(3);
+
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(4); // max に到達
+
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(4); // max を超えない
+    }
+
+    [Fact]
+    public void NotifySuccess_SoftStart_RespectsIntervalBetweenIncreases()
+    {
+        // 検証対象: InitialDegree のインターバル  目的: increaseIntervalSec > 0 の場合、ソフトスタート中もインターバル内の連続呼び出しでは増加しないこと
+        var controller = CreateController(initial: 1, min: 1, max: 4, increaseIntervalSec: 30);
+
+        // 最初は即時増速可能（long.MinValue）
+        controller.NotifySuccess(); // 1→2
+        controller.CurrentDegree.Should().Be(2);
+
+        // 増速後はインターバル待機中
+        controller.NotifySuccess(); // 増加しない
+        controller.CurrentDegree.Should().Be(2);
+
+        // SetIncreaseAvailableNow 後に増速再開
+        controller.SetIncreaseAvailableNow();
+        controller.NotifySuccess(); // 2→3
+        controller.CurrentDegree.Should().Be(3);
+    }
+
+    // ─── Retry-After 加算 ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void NotifyRateLimit_WithRetryAfter_PreventsIncreaseBeforeRetryAfterElapses()
+    {
+        // 検証対象: Retry-After 加算  目的: Retry-After 付きのレート制限後、即座に NotifySuccess しても増速しないこと
+        var controller = CreateController(initial: 4, min: 1, max: 4, increaseIntervalSec: 30);
+
+        // Retry-After = 60秒 + IncreaseIntervalSec 30秒 = 合記90秒待機
+        controller.NotifyRateLimit(retryAfter: TimeSpan.FromSeconds(60));
+
+        // SetIncreaseAvailableNow なしでは増速しない
+        controller.NotifySuccess();
+        controller.CurrentDegree.Should().Be(3);
     }
 
     // ─── ヘルパー ─────────────────────────────────────────────────────────────

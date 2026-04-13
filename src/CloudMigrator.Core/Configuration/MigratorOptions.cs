@@ -171,11 +171,17 @@ public sealed class AdaptiveConcurrencyOptions
     /// <summary>動的並列度制御を有効にするかどうか。デフォルト false（既存の固定並列度方式を維持）</summary>
     public bool Enabled { get; set; } = false;
 
+    /// <summary>
+    /// 開始時の初期並列度。0 の場合は MaxParallelTransfers と同値（スロースタートなし）。
+    /// 1 を設定すると 1 並列から徐々に増加するスロースタートになる。デフォルト 0
+    /// </summary>
+    public int InitialDegree { get; set; } = 0;
+
     /// <summary>並列度の下限。レート制限が続いてもこの値より下がらない。デフォルト 1</summary>
     public int MinDegree { get; set; } = 1;
 
-    /// <summary>並列度を回復させるために必要な連続成功回数（増速の条件）。デフォルト 10</summary>
-    public int SuccessThresholdToIncrease { get; set; } = 10;
+    /// <summary>並列度を回復させるまでの待機時間（秒）。0 = 即時増速可能。429 後に N 秒経過してから増速を許可する。デフォルト 30</summary>
+    public int IncreaseIntervalSec { get; set; } = 30;
 
     /// <summary>1 回の回復で増加する並列度の幅（増速のスピード）。デフォルト 1</summary>
     public int IncreaseStep { get; set; } = 1;

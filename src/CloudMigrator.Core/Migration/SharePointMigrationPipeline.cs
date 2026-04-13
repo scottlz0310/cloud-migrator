@@ -229,6 +229,20 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         // folder_total チェックポイント保存（ダッシュボードの進捗バー用）
         await _stateDb.SaveCheckpointAsync(FolderTotalKey, allFolders.Count.ToString(), ct).ConfigureAwait(false);
 
+        var controller = _concurrencyController;
+        var maxDegree = controller?.MaxDegree ?? _options.MaxParallelFolderCreations;
+
+        // Phase C の初期並列度をメトリクスに記録（ダッシュボードの「現在並列数」表示用）
+        try
+        {
+            await _stateDb.RecordMetricAsync(
+                "current_parallelism", (double)(controller?.CurrentDegree ?? _options.MaxParallelFolderCreations), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Phase C current_parallelism メトリクス記録に失敗しました。");
+        }
+
         if (allFolders.Count == 0)
         {
             _logger.LogInformation("Phase C: フォルダ作成対象なし");
@@ -251,27 +265,58 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                 depthGroup,
                 new ParallelOptions
                 {
-                    MaxDegreeOfParallelism = _options.MaxParallelFolderCreations,
+                    MaxDegreeOfParallelism = maxDegree,
                     CancellationToken = ct,
                 },
                 async (folderRelPath, folderCt) =>
                 {
-                    var normalizedRoot = _options.DestinationRoot?.Replace('\\', '/').Trim('/');
-                    var destFolderPath = string.IsNullOrEmpty(normalizedRoot)
-                        ? folderRelPath
-                        : $"{normalizedRoot}/{folderRelPath}";
+                    // 動的並列度制御のゲート（AdaptiveConcurrencyController が有効な場合）
+                    if (controller is not null)
+                        await controller.AcquireAsync(folderCt).ConfigureAwait(false);
 
-                    // EnsureFolderAsync は 409 Conflict を無視する冪等実装のため並列・再実行で安全
-                    await _destinationProvider.EnsureFolderAsync(destFolderPath, folderCt).ConfigureAwait(false);
-
-                    var count = Interlocked.Increment(ref _folderDoneCount);
                     try
                     {
-                        await _stateDb.RecordMetricAsync("sp_folder_done", (double)count, folderCt).ConfigureAwait(false);
+                        var normalizedRoot = _options.DestinationRoot?.Replace('\\', '/').Trim('/');
+                        var destFolderPath = string.IsNullOrEmpty(normalizedRoot)
+                            ? folderRelPath
+                            : $"{normalizedRoot}/{folderRelPath}";
+
+                        // EnsureFolderAsync は 409 Conflict を無視する冪等実装のため並列・再実行で安全
+                        await _destinationProvider.EnsureFolderAsync(destFolderPath, folderCt).ConfigureAwait(false);
+
+                        controller?.NotifySuccess();
+
+                        var count = Interlocked.Increment(ref _folderDoneCount);
+                        try
+                        {
+                            await _stateDb.RecordMetricAsync("sp_folder_done", (double)count, folderCt).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "sp_folder_done メトリクス記録に失敗しました。");
+                        }
+
+                        // 並列度が変化した場合は即時記録
+                        if (controller is not null)
+                        {
+                            var currentDegree = controller.CurrentDegree;
+                            if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
+                            {
+                                try
+                                {
+                                    await _stateDb.RecordMetricAsync(
+                                        "current_parallelism", (double)currentDegree, folderCt).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Phase C current_parallelism 即時記録に失敗しました。");
+                                }
+                            }
+                        }
                     }
-                    catch (Exception ex)
+                    finally
                     {
-                        _logger.LogWarning(ex, "sp_folder_done メトリクス記録に失敗しました。");
+                        controller?.Release();
                     }
                 }).ConfigureAwait(false);
         }

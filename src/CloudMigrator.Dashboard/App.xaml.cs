@@ -90,38 +90,68 @@ public partial class App : Application
                     ?? AppConfiguration.GetGraphClientSecret();
 
                 var auth = new GraphAuthenticator(opts.Graph.ClientId, opts.Graph.TenantId, clientSecret);
-                var graphClient = GraphClientFactory.Create(
-                    auth,
-                    timeoutSec: opts.TimeoutSec,
-                    maxRetry: opts.RetryCount,
-                    onRateLimit: _ => { },  // ダッシュボードでは並列度制御なし。ロガー経由でログのみ記録
-                    rateLimitLogger: loggerFactory2.CreateLogger<GraphStorageProvider>());
 
-                var storageOptions = new GraphStorageOptions
+                // AdaptiveConcurrencyController の初期化（config.json の AdaptiveConcurrency.sharepoint.Enabled = true で有効）
+                var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
+                AdaptiveConcurrencyController? concurrencyController = null;
+                Action<TimeSpan?>? onRateLimit = null;
+                if (adaptiveOpts.Enabled)
                 {
-                    OneDriveUserId = opts.Graph.OneDriveUserId,
-                    SharePointDriveId = opts.Graph.SharePointDriveId,
-                    OneDriveSourceFolder = opts.Graph.OneDriveSourceFolder,
-                };
+                    var initialDegree = adaptiveOpts.InitialDegree > 0
+                        ? Math.Min(adaptiveOpts.InitialDegree, opts.MaxParallelTransfers)
+                        : opts.MaxParallelTransfers;
+                    concurrencyController = new AdaptiveConcurrencyController(
+                        initialDegree: initialDegree,
+                        minDegree: adaptiveOpts.MinDegree,
+                        maxDegree: opts.MaxParallelTransfers,
+                        increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
+                        logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
+                        increaseStep: adaptiveOpts.IncreaseStep,
+                        decreaseStep: adaptiveOpts.DecreaseStep,
+                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
+                    onRateLimit = retryAfter => concurrencyController.NotifyRateLimit(retryAfter);
+                }
 
-                var sessionStore = new UploadSessionStore(Path.Combine(AppDataPaths.LogsDirectory, "upload_sessions.json"));
+                try
+                {
+                    var graphClient = GraphClientFactory.Create(
+                        auth,
+                        timeoutSec: opts.TimeoutSec,
+                        maxRetry: opts.RetryCount,
+                        onRateLimit: onRateLimit ?? (_ => { }),
+                        rateLimitLogger: loggerFactory2.CreateLogger<GraphStorageProvider>());
 
-                var storageProvider = new GraphStorageProvider(
-                    graphClient,
-                    loggerFactory2.CreateLogger<GraphStorageProvider>(),
-                    storageOptions,
-                    largeFileThresholdMb: opts.LargeFileThresholdMb,
-                    chunkSizeMb: opts.ChunkSizeMb,
-                    sessionStore: sessionStore);
+                    var storageOptions = new GraphStorageOptions
+                    {
+                        OneDriveUserId = opts.Graph.OneDriveUserId,
+                        SharePointDriveId = opts.Graph.SharePointDriveId,
+                        OneDriveSourceFolder = opts.Graph.OneDriveSourceFolder,
+                    };
 
-                var pipeline = new SharePointMigrationPipeline(
-                    storageProvider,
-                    storageProvider,
-                    stateDb,
-                    opts,
-                    loggerFactory2.CreateLogger<SharePointMigrationPipeline>());
+                    var sessionStore = new UploadSessionStore(Path.Combine(AppDataPaths.LogsDirectory, "upload_sessions.json"));
 
-                await pipeline.RunAsync(ct).ConfigureAwait(false);
+                    var storageProvider = new GraphStorageProvider(
+                        graphClient,
+                        loggerFactory2.CreateLogger<GraphStorageProvider>(),
+                        storageOptions,
+                        largeFileThresholdMb: opts.LargeFileThresholdMb,
+                        chunkSizeMb: opts.ChunkSizeMb,
+                        sessionStore: sessionStore);
+
+                    var pipeline = new SharePointMigrationPipeline(
+                        storageProvider,
+                        storageProvider,
+                        stateDb,
+                        opts,
+                        loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
+                        concurrencyController);
+
+                    await pipeline.RunAsync(ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    concurrencyController?.Dispose();
+                }
             }
 
             return new TransferJobService(
