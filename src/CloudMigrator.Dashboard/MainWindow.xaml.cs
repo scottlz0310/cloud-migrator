@@ -29,5 +29,11 @@ public partial class MainWindow : Window
             Selector = "#app",
             ComponentType = typeof(Components.DashboardApp),
         });
+
+        // WebView2 初期化後に右クリックコンテキストメニュー（貼り付け等）を有効化する
+        BlazorWebView.BlazorWebViewInitialized += (sender, args) =>
+        {
+            args.WebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+        };
     }
 }

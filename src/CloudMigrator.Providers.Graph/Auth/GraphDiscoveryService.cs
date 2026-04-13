@@ -43,6 +43,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
                 DriveId: drive.Id,
                 DisplayName: drive.Name ?? userId);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new OneDriveDiscoveryResult(false, ErrorMessage: BuildAuthError());
+        }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new OneDriveDiscoveryResult(false,
@@ -57,6 +61,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             return new OneDriveDiscoveryResult(false,
                 ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new OneDriveDiscoveryResult(false, ErrorMessage: BuildAuthError());
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
@@ -111,6 +119,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointSiteSearchResult(Success: true, Sites: sites);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointSiteSearchResult(false, ErrorMessage: BuildAuthError());
+        }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointSiteSearchResult(false,
@@ -120,6 +132,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             return new SharePointSiteSearchResult(false,
                 ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointSiteSearchResult(false, ErrorMessage: BuildAuthError());
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
@@ -180,6 +196,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointSiteSearchResult(Success: true, Sites: sites);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointSiteSearchResult(false, ErrorMessage: BuildAuthError());
+        }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointSiteSearchResult(false,
@@ -189,6 +209,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             return new SharePointSiteSearchResult(false,
                 ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointSiteSearchResult(false, ErrorMessage: BuildAuthError());
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
@@ -250,6 +274,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointSiteSearchResult(Success: true, Sites: [entry]);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointSiteSearchResult(false, ErrorMessage: BuildAuthError());
+        }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointSiteSearchResult(false,
@@ -264,6 +292,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             return new SharePointSiteSearchResult(false,
                 ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointSiteSearchResult(false, ErrorMessage: BuildAuthError());
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
@@ -314,6 +346,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new SharePointDriveListResult(Success: true, Drives: drives);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointDriveListResult(false, ErrorMessage: BuildAuthError());
+        }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new SharePointDriveListResult(false,
@@ -323,6 +359,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             return new SharePointDriveListResult(false,
                 ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new SharePointDriveListResult(false, ErrorMessage: BuildAuthError());
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
@@ -367,6 +407,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
                 ? new DiscoveryVerifyResult(true)
                 : new DiscoveryVerifyResult(false, "Drive が見つかりませんでした。");
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new DiscoveryVerifyResult(false, BuildAuthError());
+        }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new DiscoveryVerifyResult(false, BuildAdminConsentError(ex.Error?.Code));
@@ -379,6 +423,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             return new DiscoveryVerifyResult(false,
                 $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new DiscoveryVerifyResult(false, BuildAuthError());
         }
         catch (ApiException ex) when (ex.ResponseStatusCode == 403)
         {
@@ -436,6 +484,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
 
             return new DriveFolderListResult(Success: true, Folders: folders);
         }
+        catch (ODataError ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new DriveFolderListResult(false, ErrorMessage: BuildAuthError());
+        }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
             return new DriveFolderListResult(false,
@@ -450,6 +502,10 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         {
             return new DriveFolderListResult(false,
                 ErrorMessage: $"Graph API エラー ({ex.ResponseStatusCode}): {ex.Error?.Message}");
+        }
+        catch (ApiException ex) when (ex.ResponseStatusCode == 401)
+        {
+            return new DriveFolderListResult(false, ErrorMessage: BuildAuthError());
         }
         catch (ApiException ex)
         {
@@ -491,6 +547,16 @@ public sealed class GraphDiscoveryService : IGraphDiscoveryService
         var authenticator = new GraphAuthenticator(clientId, tenantId, clientSecret);
         return Http.GraphClientFactory.Create(authenticator);
     }
+
+    /// <summary>
+    /// 401 レスポンスを受けた際の認証エラーメッセージを生成する。
+    /// </summary>
+    internal static string BuildAuthError() =>
+        "Azure 認証に失敗しました（401）。\n" +
+        "以下を確認してください：\n" +
+        "・クライアント ID・テナント ID が正しいか\n" +
+        "・クライアントシークレットが正しく、有効期限が切れていないか\n" +
+        "Step 1 に戻って認証情報を再確認・再入力してください。";
 
     /// <summary>
     /// 403 レスポンスを受けた際の管理者同意エラーメッセージを生成する。
