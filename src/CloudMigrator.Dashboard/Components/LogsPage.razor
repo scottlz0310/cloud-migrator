@@ -1,4 +1,5 @@
 @inject ILogChannel LogChannel
+@inject IJSRuntime JS
 @implements IDisposable
 
 <MudText Typo="Typo.h5" Class="mb-4">ログ</MudText>
@@ -12,27 +13,33 @@
             <MudChip T="string" Size="Size.Small" Color="@(_isConnected ? Color.Success : Color.Error)">
                 @(_isConnected ? "接続中" : "切断")
             </MudChip>
+            <MudIconButton Icon="@Icons.Material.Filled.VerticalAlignBottom"
+                           title="@(_followLatest ? "最新行追従: ON" : "最新行追従: OFF")"
+                           Color="@(_followLatest ? Color.Primary : Color.Default)"
+                           OnClick="ToggleFollowLatestAsync" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                            title="ログクリア"
                            OnClick="ClearLogs" />
         </CardHeaderActions>
     </MudCardHeader>
-    <MudCardContent Style="height: 500px; overflow-y: auto;" @ref="_logContainer">
-        @if (_entries.Count == 0)
-        {
-            <MudText Typo="Typo.body2" Color="Color.Secondary">ログエントリがありません。</MudText>
-        }
-        else
-        {
-            @foreach (var entry in _entries)
+    <MudCardContent Style="padding: 0;">
+        <div style="height: 500px; overflow-y: auto; padding: 16px;" @ref="_scrollContainer">
+            @if (_entries.Count == 0)
             {
-                <div class="log-entry" style="margin-bottom: 2px; font-family: monospace; font-size: 12px;">
-                    <span style="color: #888;">@entry.Timestamp.LocalDateTime.ToString("HH:mm:ss")</span>
-                    <span style="color: @LevelColor(entry.Level); margin: 0 6px;">[@entry.Level]</span>
-                    <span>@entry.Message</span>
-                </div>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">ログエントリがありません。</MudText>
             }
-        }
+            else
+            {
+                @foreach (var entry in _entries)
+                {
+                    <div class="log-entry" style="margin-bottom: 2px; font-family: monospace; font-size: 12px;">
+                        <span style="color: #888;">@entry.Timestamp.LocalDateTime.ToString("HH:mm:ss")</span>
+                        <span style="color: @LevelColor(entry.Level); margin: 0 6px;">[@entry.Level]</span>
+                        <span>@entry.Message</span>
+                    </div>
+                }
+            }
+        </div>
     </MudCardContent>
 </MudCard>
 
@@ -40,7 +47,9 @@
     private readonly List<LogEntry> _entries = new(500);
     private Guid _subscriberId;
     private bool _isConnected;
-    private MudCardContent? _logContainer;
+    private ElementReference _scrollContainer;
+    private bool _followLatest = true;
+    private bool _needsScroll;
     private CancellationTokenSource? _cts;
 
     protected override async Task OnInitializedAsync()
@@ -68,6 +77,8 @@
                         // バッファ上限を超えたら最古を削除
                         while (_entries.Count > 500)
                             _entries.RemoveAt(0);
+                        if (_followLatest)
+                            _needsScroll = true;
                         StateHasChanged();
                     });
                 }
@@ -90,9 +101,45 @@
         await Task.CompletedTask;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // 初回レンダリング時、追従モードが ON かつエントリがある場合は最下部へスクロール
+        if (firstRender && _followLatest && _entries.Count > 0)
+        {
+            await ScrollToBottomAsync();
+            return;
+        }
+
+        if (_needsScroll)
+        {
+            _needsScroll = false;
+            await ScrollToBottomAsync();
+        }
+    }
+
+    private async Task ToggleFollowLatestAsync()
+    {
+        _followLatest = !_followLatest;
+        // 追従モードを ON にした時点で即座に最下部へスクロール
+        if (_followLatest)
+            await ScrollToBottomAsync();
+    }
+
     private void ClearLogs()
     {
         _entries.Clear();
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("scrollToBottom", _scrollContainer);
+        }
+        catch
+        {
+            // DOM がまだ準備できていない場合は無視
+        }
     }
 
     private static string LevelColor(string level) => level switch
