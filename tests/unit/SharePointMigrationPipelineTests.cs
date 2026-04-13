@@ -360,7 +360,7 @@ public class SharePointMigrationPipelineTests
                 initialDegree: _options.MaxParallelTransfers,
                 minDegree: 1,
                 maxDegree: _options.MaxParallelTransfers,
-                successThreshold: 10,
+                increaseIntervalSec: 30,
                 NullLogger<AdaptiveConcurrencyController>.Instance);
 
             SetupDbWithBothPhasesComplete();

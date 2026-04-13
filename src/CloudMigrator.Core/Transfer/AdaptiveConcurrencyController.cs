@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Core.Transfer;
@@ -6,7 +7,7 @@ namespace CloudMigrator.Core.Transfer;
 /// Graph API のレート制限（429/503）に応じて並列転送数を動的に調整するコントローラー。
 /// <list type="bullet">
 ///   <item>429/503 を受けると並列度を 1 削減する（<see cref="MinDegree"/> まで）</item>
-///   <item>連続成功が <see cref="SuccessThreshold"/> に達すると並列度を 1 回復する（<see cref="MaxDegree"/> まで）</item>
+///   <item>最後の減速から <see cref="IncreaseIntervalSec"/> 秒が経過し、<see cref="NotifySuccess"/> が呼ばれると並列度を 1 回復する（<see cref="MaxDegree"/> まで）</item>
 ///   <item>内部で <see cref="SemaphoreSlim"/> を使用し、スロット取得 / 解放で並列数を制御する</item>
 /// </list>
 /// </summary>
@@ -26,7 +27,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     private int _current;
     private int _startupHeadroom;    // ソフトスタートでまだセマフォに放流していない容量
     private int _absorbedActual;      // 実際にセマフォから吸収済みのスロット数
-    private int _consecutiveSuccesses;
+    private long _increaseAvailableAfterTicks;  // この Stopwatch タイムスタンプ以降でないと増速しない
     private int _pendingDecreases;    // 減速トリガーカウンター
 
     // レート制限通知の累計回数（Interlocked でスレッドセーフに更新）
@@ -40,7 +41,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <param name="initialDegree">開始時の並列度（<paramref name="maxDegree"/> と同じ値を推奨）</param>
     /// <param name="minDegree">並列度の下限</param>
     /// <param name="maxDegree">並列度の上限</param>
-    /// <param name="successThreshold">並列度を回復するために必要な連続成功回数</param>
+    /// <param name="increaseIntervalSec">減速後に増速を許可するまでの待機時間（秒）。0 = 即時増速可能</param>
     /// <param name="logger">ロガー</param>
     /// <param name="increaseStep">1 回の回復で増加する並列度の幅。デフォルト 1</param>
     /// <param name="decreaseStep">1 回の減速イベントで減少する並列度の幅。デフォルト 1</param>
@@ -49,7 +50,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         int initialDegree,
         int minDegree,
         int maxDegree,
-        int successThreshold,
+        int increaseIntervalSec,
         ILogger<AdaptiveConcurrencyController> logger,
         int increaseStep = 1,
         int decreaseStep = 1,
@@ -58,7 +59,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(minDegree, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxDegree, minDegree);
-        ArgumentOutOfRangeException.ThrowIfLessThan(successThreshold, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(increaseIntervalSec);
         ArgumentOutOfRangeException.ThrowIfLessThan(increaseStep, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(decreaseStep, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(decreaseTriggerCount, 1);
@@ -67,12 +68,15 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         _max = maxDegree;
         _current = Math.Clamp(initialDegree, minDegree, maxDegree);
         _startupHeadroom = _max - _current;
-        SuccessThreshold = successThreshold;
+        IncreaseIntervalSec = increaseIntervalSec;
         _increaseStep = increaseStep;
         _decreaseStep = decreaseStep;
         _decreaseTriggerCount = decreaseTriggerCount;
         _halveOnRateLimit = halveOnRateLimit;
         _logger = logger;
+
+        // 初期は増速可能（long.MinValue = 既に過去）
+        _increaseAvailableAfterTicks = long.MinValue;
 
         // 初期並列度でセマフォを作成（maxDegree が上限）
         _semaphore = new SemaphoreSlim(_current, maxDegree);
@@ -91,8 +95,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <summary>並列度の下限。</summary>
     public int MinDegree => _min;
 
-    /// <summary>並列度を回復するために必要な連続成功回数。</summary>
-    public int SuccessThreshold { get; }
+    /// <summary>減速後に増速を許可するまでの待機時間（秒）。0 = 即時増速可能。</summary>
+    public int IncreaseIntervalSec { get; }
 
     /// <summary>1 回の回復で増加する並列度の幅。</summary>
     public int IncreaseStep => _increaseStep;
@@ -138,11 +142,21 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         int prevDegree = -1, newDegree = -1, step = 0;
         lock (_syncRoot)
         {
-            _consecutiveSuccesses = 0;
+            // 429/503 を受けた時点で増速可能タイムスタンプを更新する。
+            // MinDegree 到達中でも NotifySuccess による即時増速を防ぐため、
+            // 減速可否に関係なく毎回更新する。
+            var retryAfterTicks = retryAfter.HasValue
+                ? (long)(retryAfter.Value.TotalSeconds * Stopwatch.Frequency) : 0L;
+            var intervalTicks = (long)(IncreaseIntervalSec * Stopwatch.Frequency);
+            var available = Stopwatch.GetTimestamp() + retryAfterTicks + intervalTicks;
+            if (available > _increaseAvailableAfterTicks)
+                _increaseAvailableAfterTicks = available;
 
             // MinDegree 到達時はカウンターを増やさない（回復後の最初の通知で即減速しないようにする）
             if (_current > _min)
+            {
                 _pendingDecreases++;
+            }
 
             if (_pendingDecreases >= _decreaseTriggerCount && _current > _min)
             {
@@ -170,7 +184,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>
     /// 転送成功を通知する。
-    /// 連続成功数が <see cref="SuccessThreshold"/> に達した場合、
+    /// 最後の増減速から <see cref="IncreaseIntervalSec"/> 秒が経過している場合、
     /// ソフトスタート時の未使用ヘッドルームまたは吸収済みスロットを使って
     /// 並列度を <see cref="IncreaseStep"/> 回復する。
     /// </summary>
@@ -179,13 +193,12 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         int prevDegree = -1, newDegree = -1, step = 0, fromStartupHeadroom = 0, fromAbsorbed = 0;
         lock (_syncRoot)
         {
-            _consecutiveSuccesses++;
-            if (_consecutiveSuccesses >= SuccessThreshold && _current < _max)
+            // 増速可能タイムスタンプを過ぎていれば増速を試みる
+            if (Stopwatch.GetTimestamp() >= _increaseAvailableAfterTicks && _current < _max)
             {
                 var releasable = _startupHeadroom + _absorbedActual;
                 if (releasable > 0)
                 {
-                    _consecutiveSuccesses = 0;
                     step = Math.Min(_increaseStep, Math.Min(_max - _current, releasable));
                     fromAbsorbed = Math.Min(step, _absorbedActual);
                     fromStartupHeadroom = step - fromAbsorbed;
@@ -194,6 +207,10 @@ public sealed class AdaptiveConcurrencyController : IDisposable
                     _absorbedActual -= fromAbsorbed;
                     _startupHeadroom -= fromStartupHeadroom;
                     newDegree = _current;
+
+                    // 増速後、次の増速まで IncreaseIntervalSec 秒待つ
+                    _increaseAvailableAfterTicks = Stopwatch.GetTimestamp()
+                        + (long)(IncreaseIntervalSec * Stopwatch.Frequency);
                 }
             }
         }
@@ -204,8 +221,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         for (int i = 0; i < step; i++)
             _semaphore.Release(); // 吸収済みスロットを循環に戻す
         _logger.LogInformation(
-            "連続成功 {Threshold} 回達成。並列度を {Prev} → {Current}/{Max} に回復します",
-            SuccessThreshold, prevDegree, newDegree, _max);
+            "並列度を {Prev} → {Current}/{Max} に回復します (増速インターバル: {IntervalSec} 秒)",
+            prevDegree, newDegree, _max, IncreaseIntervalSec);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -241,6 +258,13 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>実際に吸収済みのスロット数（テスト用）。</summary>
     internal int AbsorbedSlotCount { get { lock (_syncRoot) return _absorbedActual; } }
+
+    /// <summary>増速可能タイムスタンプを即時（過去）に設定する（テスト用）。</summary>
+    internal void SetIncreaseAvailableNow()
+    {
+        lock (_syncRoot)
+            _increaseAvailableAfterTicks = long.MinValue;
+    }
 
     // ─────────────────────────────────────────────────────────────
     // Dispose

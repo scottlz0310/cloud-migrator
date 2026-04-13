@@ -15,7 +15,9 @@ public sealed record ConfigDto(
     int RetryCount,
     int TimeoutSec,
     string DestinationRoot,
-    string DestinationProvider);
+    string DestinationProvider,
+    bool AdaptiveConcurrencyEnabled = false,
+    int AdaptiveConcurrencyInitialDegree = 0);
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -28,7 +30,9 @@ public sealed record ConfigUpdateDto(
     int? RetryCount = null,
     int? TimeoutSec = null,
     string? DestinationRoot = null,
-    string? DestinationProvider = null);
+    string? DestinationProvider = null,
+    bool? AdaptiveConcurrencyEnabled = null,
+    int? AdaptiveConcurrencyInitialDegree = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -121,6 +125,22 @@ public sealed class ConfigurationService : IConfigurationService
         using var doc = JsonDocument.Parse(json);
         var m = doc.RootElement.GetProperty("migrator");
 
+        // adaptiveConcurrency.sharepoint セクションを読み取る（なければ default プロファイルにフォールバック）
+        var adaptiveEnabled = false;
+        var adaptiveInitialDegree = 0;
+        if (m.TryGetProperty("adaptiveConcurrency", out var acProp) && acProp.ValueKind == JsonValueKind.Object)
+        {
+            // sharepoint キーがなければ default プロファイルを試みる
+            JsonElement acProfile;
+            var hasProfile = (acProp.TryGetProperty("sharepoint", out acProfile) && acProfile.ValueKind == JsonValueKind.Object)
+                          || (acProp.TryGetProperty("default", out acProfile) && acProfile.ValueKind == JsonValueKind.Object);
+            if (hasProfile)
+            {
+                adaptiveEnabled = acProfile.TryGetProperty("enabled", out var enProp) && enProp.ValueKind == JsonValueKind.True;
+                adaptiveInitialDegree = GetInt(acProfile, "initialDegree", 0);
+            }
+        }
+
         return new ConfigDto(
             MaxParallelTransfers: GetInt(m, "maxParallelTransfers", 4),
             MaxParallelFolderCreations: GetInt(m, "maxParallelFolderCreations", 4),
@@ -129,7 +149,9 @@ public sealed class ConfigurationService : IConfigurationService
             RetryCount: GetInt(m, "retryCount", 3),
             TimeoutSec: GetInt(m, "timeoutSec", 300),
             DestinationRoot: GetString(m, "destinationRoot", string.Empty),
-            DestinationProvider: NormalizeProvider(GetString(m, "destinationProvider", "sharepoint")));
+            DestinationProvider: NormalizeProvider(GetString(m, "destinationProvider", "sharepoint")),
+            AdaptiveConcurrencyEnabled: adaptiveEnabled,
+            AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree);
     }
 
     /// <inheritdoc />
@@ -152,6 +174,25 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.TimeoutSec.HasValue) m["timeoutSec"] = update.TimeoutSec.Value;
             if (update.DestinationRoot is not null) m["destinationRoot"] = update.DestinationRoot;
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
+
+            // adaptiveConcurrency.sharepoint セクションを更新
+            if (update.AdaptiveConcurrencyEnabled.HasValue || update.AdaptiveConcurrencyInitialDegree.HasValue)
+            {
+                if (m["adaptiveConcurrency"] is not JsonObject acObj)
+                {
+                    acObj = new JsonObject();
+                    m["adaptiveConcurrency"] = acObj;
+                }
+                if (acObj["sharepoint"] is not JsonObject spAcObj)
+                {
+                    spAcObj = new JsonObject();
+                    acObj["sharepoint"] = spAcObj;
+                }
+                if (update.AdaptiveConcurrencyEnabled.HasValue)
+                    spAcObj["enabled"] = update.AdaptiveConcurrencyEnabled.Value;
+                if (update.AdaptiveConcurrencyInitialDegree.HasValue)
+                    spAcObj["initialDegree"] = update.AdaptiveConcurrencyInitialDegree.Value;
+            }
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム
             var tmpPath = _configFilePath + ".tmp";

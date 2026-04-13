@@ -125,11 +125,17 @@ internal sealed class CliServices : IDisposable
         {
             if (!profile.Enabled) continue;
             var useDropboxAdaptiveMode = options.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+            // InitialDegree > 0: 設定値を使用（スロースタート）
+            // InitialDegree == 0 かつ Dropbox: min(2, max)（旧来のスロースタート）
+            // InitialDegree == 0 かつ SharePoint: max（スロースタートなし）
+            var initialDegree = profile.InitialDegree > 0
+                ? Math.Min(profile.InitialDegree, options.MaxParallelTransfers)
+                : useDropboxAdaptiveMode ? Math.Min(2, options.MaxParallelTransfers) : options.MaxParallelTransfers;
             controllers[profileName] = new AdaptiveConcurrencyController(
-                initialDegree: useDropboxAdaptiveMode ? Math.Min(2, options.MaxParallelTransfers) : options.MaxParallelTransfers,
+                initialDegree: initialDegree,
                 minDegree: profile.MinDegree,
                 maxDegree: options.MaxParallelTransfers,
-                successThreshold: profile.SuccessThresholdToIncrease,
+                increaseIntervalSec: profile.IncreaseIntervalSec,
                 logger: loggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
                 increaseStep: profile.IncreaseStep,
                 decreaseStep: profile.DecreaseStep,
