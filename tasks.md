@@ -1,7 +1,7 @@
 # タスク管理
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
-前フェーズ履歴: [task-archive-20260414.md](task-archive-20260414.md)
+前フェーズ履歴: [tasks-archive-20260414.md](docs/archive/tasks-archive-20260414.md)
 
 ## 現在の状態: 次フェーズ計画中 📋
 

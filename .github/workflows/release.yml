@@ -68,6 +68,16 @@ jobs:
           --no-restore
           --output publish/${{ matrix.rid }}
 
+      - name: Dashboard を発行（win-x64 専用）
+        if: matrix.rid == 'win-x64'
+        run: >
+          dotnet publish src/CloudMigrator.Dashboard/CloudMigrator.Dashboard.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          -p:Version=${{ steps.version.outputs.version }}
+          --output publish/${{ matrix.rid }}
+
       - name: アーカイブ作成（Windows）
         if: matrix.archive_ext == 'zip'
         shell: pwsh

@@ -1,7 +1,7 @@
 # タスク管理
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
-前フェーズ履歴: [task-archive-20260409.md](task-archive-20260409.md)
+前フェーズ履歴: [tasks-archive-20260409.md](tasks-archive-20260409.md)
 
 ## 現在の状態: v0.4.0 セットアップUX改善 完了 ✅
 

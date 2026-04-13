@@ -2,7 +2,7 @@
 
 詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)  
 設計計画: [docs/20260321-dropbox-optimization-plan.md](docs/20260321-dropbox-optimization-plan.md)  
-前フェーズ履歴: [task-archive-20260321.md](task-archive-20260321.md)
+前フェーズ履歴: [tasks-archive-20260321.md](tasks-archive-20260321.md)
 
 ## 現在の状態: Graph Delta API ページング実装・バグ修正・PR #59 マージ済み
 
