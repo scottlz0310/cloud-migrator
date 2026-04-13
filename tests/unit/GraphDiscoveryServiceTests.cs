@@ -258,6 +258,28 @@ public sealed class GraphDiscoveryServiceTests
     // ── GetOneDriveDriveIdAsync 例外ハンドリング ──────────────────────
 
     [Fact]
+    public async Task GetOneDriveDriveIdAsync_When401ODataError_ReturnsAuthError()
+    {
+        // 検証対象: GetOneDriveDriveIdAsync  目的: 401 ODataError で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(MakeODataError(401))
+            .GetOneDriveDriveIdAsync("c", "t", "s", "user@contoso.com");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
+    public async Task GetOneDriveDriveIdAsync_WhenApiException401_ReturnsAuthError()
+    {
+        // 検証対象: GetOneDriveDriveIdAsync  目的: 非-OData ApiException 401 で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 401 })
+            .GetOneDriveDriveIdAsync("c", "t", "s", "user@contoso.com");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
     public async Task GetOneDriveDriveIdAsync_When403ODataError_WithAuthorizationRequestDenied_ReturnsAdminConsentGuide()
     {
         // 検証対象: GetOneDriveDriveIdAsync  目的: 403 + Authorization_RequestDenied で管理者同意ガイドが返されること
@@ -337,6 +359,28 @@ public sealed class GraphDiscoveryServiceTests
     // ── SearchSharePointSitesAsync 例外ハンドリング ────────────────────
 
     [Fact]
+    public async Task SearchSharePointSitesAsync_When401ODataError_ReturnsAuthError()
+    {
+        // 検証対象: SearchSharePointSitesAsync  目的: 401 ODataError で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(MakeODataError(401))
+            .SearchSharePointSitesAsync("c", "t", "s", "contoso");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
+    public async Task SearchSharePointSitesAsync_WhenApiException401_ReturnsAuthError()
+    {
+        // 検証対象: SearchSharePointSitesAsync  目的: 非-OData ApiException 401 で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 401 })
+            .SearchSharePointSitesAsync("c", "t", "s", "contoso");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
     public async Task SearchSharePointSitesAsync_When403ODataError_ReturnsAdminConsentMessage()
     {
         // 検証対象: SearchSharePointSitesAsync  目的: 403 で管理者同意メッセージが返されること
@@ -383,6 +427,28 @@ public sealed class GraphDiscoveryServiceTests
     // ── GetSharePointSiteByUrlAsync 例外ハンドリング ───────────────────
 
     [Fact]
+    public async Task GetSharePointSiteByUrlAsync_When401ODataError_ReturnsAuthError()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: 401 ODataError で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(MakeODataError(401))
+            .GetSharePointSiteByUrlAsync("c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
+    public async Task GetSharePointSiteByUrlAsync_WhenApiException401_ReturnsAuthError()
+    {
+        // 検証対象: GetSharePointSiteByUrlAsync  目的: 非-OData ApiException 401 で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 401 })
+            .GetSharePointSiteByUrlAsync("c", "t", "s", "https://contoso.sharepoint.com/sites/MyTeam");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
     public async Task GetSharePointSiteByUrlAsync_When403ODataError_ReturnsAdminConsentMessage()
     {
         // 検証対象: GetSharePointSiteByUrlAsync  目的: 403 で管理者同意メッセージが返されること
@@ -418,6 +484,28 @@ public sealed class GraphDiscoveryServiceTests
     // ── GetSharePointDrivesAsync 例外ハンドリング ──────────────────────
 
     [Fact]
+    public async Task GetSharePointDrivesAsync_When401ODataError_ReturnsAuthError()
+    {
+        // 検証対象: GetSharePointDrivesAsync  目的: 401 ODataError で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(MakeODataError(401))
+            .GetSharePointDrivesAsync("c", "t", "s", "site-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
+    public async Task GetSharePointDrivesAsync_WhenApiException401_ReturnsAuthError()
+    {
+        // 検証対象: GetSharePointDrivesAsync  目的: 非-OData ApiException 401 で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 401 })
+            .GetSharePointDrivesAsync("c", "t", "s", "site-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
     public async Task GetSharePointDrivesAsync_When403ODataError_ReturnsAdminConsentMessage()
     {
         // 検証対象: GetSharePointDrivesAsync  目的: 403 で管理者同意メッセージが返されること
@@ -451,6 +539,28 @@ public sealed class GraphDiscoveryServiceTests
     }
 
     // ── VerifyDriveAsync 例外ハンドリング ──────────────────────────────
+
+    [Fact]
+    public async Task VerifyDriveAsync_When401ODataError_ReturnsAuthError()
+    {
+        // 検証対象: VerifyDriveAsync  目的: 401 ODataError で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(MakeODataError(401))
+            .VerifyDriveAsync("c", "t", "s", "driveId");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
+    public async Task VerifyDriveAsync_WhenApiException401_ReturnsAuthError()
+    {
+        // 検証対象: VerifyDriveAsync  目的: 非-OData ApiException 401 で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 401 })
+            .VerifyDriveAsync("c", "t", "s", "driveId");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
 
     [Fact]
     public async Task VerifyDriveAsync_When403ODataError_ReturnsAdminConsentMessage()
@@ -651,6 +761,28 @@ public sealed class GraphDiscoveryServiceTests
     // ── ListDriveFoldersAsync 例外ハンドリング ─────────────────────────
 
     [Fact]
+    public async Task ListDriveFoldersAsync_When401ODataError_ReturnsAuthError()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: 401 ODataError で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(MakeODataError(401))
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
+    public async Task ListDriveFoldersAsync_WhenApiException401_ReturnsAuthError()
+    {
+        // 検証対象: ListDriveFoldersAsync  目的: 非-OData ApiException 401 で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 401 })
+            .ListDriveFoldersAsync("c", "t", "s", "drive-id");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
     public async Task ListDriveFoldersAsync_When403ODataError_ReturnsAdminConsentMessage()
     {
         // 検証対象: ListDriveFoldersAsync  目的: 403 で管理者同意メッセージが返されること
@@ -716,6 +848,28 @@ public sealed class GraphDiscoveryServiceTests
     }
 
     // ── ListAllSharePointSitesAsync 例外ハンドリング ───────────────────
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_When401ODataError_ReturnsAuthError()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: 401 ODataError で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(MakeODataError(401))
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
+
+    [Fact]
+    public async Task ListAllSharePointSitesAsync_WhenApiException401_ReturnsAuthError()
+    {
+        // 検証対象: ListAllSharePointSitesAsync  目的: 非-OData ApiException 401 で認証エラーガイダンスが返されること
+        var result = await CreateSutThrowing(new ApiException { ResponseStatusCode = 401 })
+            .ListAllSharePointSitesAsync("c", "t", "s");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Azure 認証に失敗しました");
+    }
 
     [Fact]
     public async Task ListAllSharePointSitesAsync_When403ODataError_ReturnsAdminConsentMessage()
