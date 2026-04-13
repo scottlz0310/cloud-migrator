@@ -184,7 +184,13 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.LargeFileThresholdMb.HasValue) m["largeFileThresholdMb"] = update.LargeFileThresholdMb.Value;
             if (update.RetryCount.HasValue) m["retryCount"] = update.RetryCount.Value;
             if (update.TimeoutSec.HasValue) m["timeoutSec"] = update.TimeoutSec.Value;
-            if (update.DestinationRoot is not null) m["destinationRoot"] = update.DestinationRoot;
+            if (update.DestinationRoot is not null)
+            {
+                m["destinationRoot"] = update.DestinationRoot;
+                // sharePointDestFolderPath（Discovery 表示用）と同期する
+                if (m["graph"] is JsonObject gObj)
+                    gObj["sharePointDestFolderPath"] = update.DestinationRoot;
+            }
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 
             // adaptiveConcurrency.sharepoint セクションを更新
@@ -400,7 +406,21 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.SharePointSiteId is not null) g["sharePointSiteId"] = update.SharePointSiteId;
             if (update.SharePointDriveId is not null) g["sharePointDriveId"] = update.SharePointDriveId;
             if (update.SharePointDestFolderId is not null) g["sharePointDestFolderId"] = update.SharePointDestFolderId;
-            if (update.SharePointDestFolderPath is not null) g["sharePointDestFolderPath"] = update.SharePointDestFolderPath;
+
+            // sharePointDestFolderPath（Discovery 表示用）と destinationRoot（転送処理用）を常に同値へ正規化する。
+            // update が null の場合は既存値をフォールバックとして双方に同期し、
+            // 設定タブ等の別経路で destinationRoot だけが更新された場合の乖離を防ぐ。
+            var existingDestFolderPath = g["sharePointDestFolderPath"]?.GetValue<string>();
+            var existingDestinationRoot = m["destinationRoot"]?.GetValue<string>();
+            var effectiveDestFolderPath = update.SharePointDestFolderPath
+                ?? existingDestFolderPath
+                ?? existingDestinationRoot;
+            if (effectiveDestFolderPath is not null)
+            {
+                g["sharePointDestFolderPath"] = effectiveDestFolderPath;
+                m["destinationRoot"] = effectiveDestFolderPath;
+            }
+
             if (update.MigrationRoute is not null) m["migrationRoute"] = update.MigrationRoute;
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 
