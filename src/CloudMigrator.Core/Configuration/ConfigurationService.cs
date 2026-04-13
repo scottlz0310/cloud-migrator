@@ -325,7 +325,12 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.OneDriveUserId is not null) g["oneDriveUserId"] = update.OneDriveUserId;
             if (update.OneDriveDriveId is not null) g["oneDriveDriveId"] = update.OneDriveDriveId;
             if (update.OneDriveSourceFolderId is not null) g["oneDriveSourceFolderId"] = update.OneDriveSourceFolderId;
-            if (update.OneDriveSourceFolderPath is not null) g["oneDriveSourceFolderPath"] = update.OneDriveSourceFolderPath;
+            if (update.OneDriveSourceFolderPath is not null)
+            {
+                g["oneDriveSourceFolderPath"] = update.OneDriveSourceFolderPath;
+                // 転送処理（GraphStorageProvider）が読む oneDriveSourceFolder にも同期する
+                g["oneDriveSourceFolder"] = update.OneDriveSourceFolderPath;
+            }
             if (update.SharePointSiteId is not null) g["sharePointSiteId"] = update.SharePointSiteId;
             if (update.SharePointDriveId is not null) g["sharePointDriveId"] = update.SharePointDriveId;
             if (update.SharePointDestFolderId is not null) g["sharePointDestFolderId"] = update.SharePointDestFolderId;
