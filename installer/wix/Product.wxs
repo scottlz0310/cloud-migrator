@@ -68,7 +68,7 @@
       <Component Id="ApplicationShortcut" Guid="*">
         <Shortcut Id="StartMenuShortcut"
                   Name="Cloud Migrator"
-                  Target="[INSTALLFOLDER]cloud-migrator.exe"
+                  Target="[INSTALLFOLDER]CloudMigrator.Dashboard.exe"
                   WorkingDirectory="INSTALLFOLDER"
                   Description="Cloud storage migration tool" />
         <RemoveFolder Id="RemoveAppMenuFolder"
