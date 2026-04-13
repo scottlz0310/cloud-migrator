@@ -125,7 +125,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>
     /// レート制限（429/503）を通知する。
-    /// <see cref="DecreaseTriggerCount"/> 回累積した時点で並列度を <see cref="DecreaseMultiplier"/> 倍（切り上げ）に削減し、
+    /// <see cref="DecreaseTriggerCount"/> 回累積した時点で並列度を減速率（倍率・切り上げ適用）に従って削減し、
     /// 非同期にセマフォスロットを吸収する。
     /// </summary>
     /// <param name="retryAfter">サーバーから返された Retry-After 値（null の場合は不明）</param>

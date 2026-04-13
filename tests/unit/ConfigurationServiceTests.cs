@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json;
 using CloudMigrator.Core.Configuration;
 using FluentAssertions;
@@ -233,6 +234,133 @@ public sealed class ConfigurationServiceTests : IDisposable
         var result = await svc.GetConfigAsync();
 
         result.DestinationProvider.Should().Be("onedrive");
+    }
+
+    // ── AdaptiveConcurrency（GetConfigAsync 経由）────────────────────────
+
+    [Fact]
+    public async Task GetConfigAsync_WhenAdaptiveConcurrencySectionAbsent_ReturnsDefaults()
+    {
+        // 検証対象: GetConfigAsync（adaptiveConcurrency なし）
+        // 目的: adaptiveConcurrency セクションが存在しないとき、デフォルト値を返すこと
+        // コンストラクタで書き込まれた設定は adaptiveConcurrency を含まない
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.AdaptiveConcurrencyEnabled.Should().BeFalse();
+        result.AdaptiveConcurrencyInitialDegree.Should().Be(0);
+        result.AdaptiveConcurrencyDecreasePercent.Should().Be(50);
+        result.AdaptiveConcurrencyIncreaseIntervalSec.Should().Be(60);
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WhenAdaptiveConcurrencySharepointProfilePresent_ReturnsValues()
+    {
+        // 検証対象: GetConfigAsync（adaptiveConcurrency.sharepoint プロファイル）
+        // 目的: sharepoint プロファイルの全フィールドを正しく読み取ること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                adaptiveConcurrency = new
+                {
+                    sharepoint = new
+                    {
+                        enabled = true,
+                        initialDegree = 8,
+                        decreaseMultiplier = 0.75,
+                        increaseIntervalSec = 90
+                    }
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.AdaptiveConcurrencyEnabled.Should().BeTrue();
+        result.AdaptiveConcurrencyInitialDegree.Should().Be(8);
+        result.AdaptiveConcurrencyDecreasePercent.Should().Be(75); // Floor(0.75 * 100) = 75
+        result.AdaptiveConcurrencyIncreaseIntervalSec.Should().Be(90);
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WhenAdaptiveConcurrencyDefaultProfilePresent_ReturnsValues()
+    {
+        // 検証対象: GetConfigAsync（adaptiveConcurrency.default プロファイル）
+        // 目的: sharepoint キーがなく default キーがある場合もフォールバックで読み取ること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                adaptiveConcurrency = new Dictionary<string, object>
+                {
+                    ["default"] = new { enabled = true, initialDegree = 4, decreaseMultiplier = 0.5, increaseIntervalSec = 60 }
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.AdaptiveConcurrencyEnabled.Should().BeTrue();
+        result.AdaptiveConcurrencyInitialDegree.Should().Be(4);
+        result.AdaptiveConcurrencyDecreasePercent.Should().Be(50);
+        result.AdaptiveConcurrencyIncreaseIntervalSec.Should().Be(60);
+    }
+
+    [Theory]
+    [InlineData(0.99, 99)]   // Clamp(Floor(99.0), 1, 99) = 99
+    [InlineData(0.01, 1)]    // Clamp(Floor(1.0), 1, 99) = 1
+    [InlineData(0.75, 75)]   // Floor(75.0) = 75
+    [InlineData(0.509, 50)]  // Floor(50.9) = 50
+    public async Task GetConfigAsync_DecreaseMultiplierIsConvertedToPercent(double multiplier, int expectedPercent)
+    {
+        // 検証対象: GetConfigAsync（decreaseMultiplier → adaptiveDecreasePercent 変換）
+        // 目的: Math.Clamp(Floor(dm * 100), 1, 99) で % 変換されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                adaptiveConcurrency = new
+                {
+                    sharepoint = new
+                    {
+                        enabled = true,
+                        initialDegree = 4,
+                        decreaseMultiplier = multiplier,
+                        increaseIntervalSec = 60
+                    }
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.AdaptiveConcurrencyDecreasePercent.Should().Be(expectedPercent);
     }
 
     // ── ヘルパー ────────────────────────────────────────────────────────

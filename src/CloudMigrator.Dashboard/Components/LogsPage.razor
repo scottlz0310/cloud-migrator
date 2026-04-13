@@ -113,7 +113,8 @@
         if (_needsScroll)
         {
             _needsScroll = false;
-            await ScrollToBottomAsync();
+            if (_followLatest)
+                await ScrollToBottomAsync();
         }
     }
 
@@ -136,9 +137,13 @@
         {
             await JS.InvokeVoidAsync("scrollToBottom", _scrollContainer);
         }
-        catch
+        catch (JSException)
         {
             // DOM がまだ準備できていない場合は無視
+        }
+        catch (JSDisconnectedException)
+        {
+            // 回線切断時は無視
         }
     }
 

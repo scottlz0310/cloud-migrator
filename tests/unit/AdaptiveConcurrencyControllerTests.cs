@@ -333,7 +333,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     // ─── decreaseMultiplier ──────────────────────────────────────────────────
 
     [Fact]
-    public void NotifyRateLimit_WithDecreaseMultiplier025_HalvesAndCeils()
+    public void NotifyRateLimit_WithDecreaseMultiplier025_QuartersAndCeils()
     {
         // 検証対象: decreaseMultiplier  目的: multiplier=0.25 のとき 4*0.25=1.0→Ceiling→1 になること
         var controller = new AdaptiveConcurrencyController(

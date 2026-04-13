@@ -186,9 +186,6 @@ public sealed class AdaptiveConcurrencyOptions
     /// <summary>1 回の回復で増加する並列度の幅（増速のスピード）。デフォルト 1</summary>
     public int IncreaseStep { get; set; } = 1;
 
-    /// <summary>1 回の減速イベントで減少する並列度の幅（減速のスピード）。デフォルト 1</summary>
-    public int DecreaseStep { get; set; } = 1;
-
     /// <summary>減速を発火するために必要な 429/503 の累積回数（減速の条件）。デフォルト 1</summary>
     public int DecreaseTriggerCount { get; set; } = 1;
 
