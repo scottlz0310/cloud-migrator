@@ -413,7 +413,7 @@ public sealed class AdaptiveConcurrencyControllerTests
     [Fact]
     public void NotifySuccess_SoftStart_IncreasesFromInitialDegreeToMax()
     {
-        // 検証対象: InitialDegree (ソフトスタート)  目的: initialDegree < maxDegree の場合、SetIncreaseAvailableNow 後に 1 回ずつ増加できること
+        // 検証対象: InitialDegree (ソフトスタート)  目的: initialDegree < maxDegree の場合、NotifySuccess ごとに 1 回ずつ増加できること
         var controller = CreateController(initial: 1, min: 1, max: 4, increaseIntervalSec: 0);
         controller.CurrentDegree.Should().Be(1);
 

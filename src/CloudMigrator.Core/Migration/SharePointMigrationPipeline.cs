@@ -240,7 +240,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         try
         {
             await _stateDb.RecordMetricAsync(
-                "current_parallelism", (double)(controller?.CurrentDegree ?? _options.MaxParallelFolderCreations), ct).ConfigureAwait(false);
+                "current_parallelism", (double)Math.Min(maxDegree, controller?.CurrentDegree ?? maxDegree), ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -300,10 +300,10 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                             _logger.LogWarning(ex, "sp_folder_done メトリクス記録に失敗しました。");
                         }
 
-                        // 並列度が変化した場合は即時記録
+                        // 並列度が変化した場合は即時記録（Phase C 上限 maxDegree でキャップ）
                         if (controller is not null)
                         {
-                            var currentDegree = controller.CurrentDegree;
+                            var currentDegree = Math.Min(maxDegree, controller.CurrentDegree);
                             if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
                             {
                                 try

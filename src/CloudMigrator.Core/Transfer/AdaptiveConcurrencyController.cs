@@ -142,19 +142,20 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         int prevDegree = -1, newDegree = -1, step = 0;
         lock (_syncRoot)
         {
+            // 429/503 を受けた時点で増速可能タイムスタンプを更新する。
+            // MinDegree 到達中でも NotifySuccess による即時増速を防ぐため、
+            // 減速可否に関係なく毎回更新する。
+            var retryAfterTicks = retryAfter.HasValue
+                ? (long)(retryAfter.Value.TotalSeconds * Stopwatch.Frequency) : 0L;
+            var intervalTicks = (long)(IncreaseIntervalSec * Stopwatch.Frequency);
+            var available = Stopwatch.GetTimestamp() + retryAfterTicks + intervalTicks;
+            if (available > _increaseAvailableAfterTicks)
+                _increaseAvailableAfterTicks = available;
+
             // MinDegree 到達時はカウンターを増やさない（回復後の最初の通知で即減速しないようにする）
             if (_current > _min)
             {
                 _pendingDecreases++;
-
-                // 429/503 を受けた時点で増速可能タイムスタンプを更新する。
-                // DecreaseTriggerCount > 1 の場合、減速発火前でも NotifySuccess による即時増速を防ぐ。
-                var retryAfterTicks = retryAfter.HasValue
-                    ? (long)(retryAfter.Value.TotalSeconds * Stopwatch.Frequency) : 0L;
-                var intervalTicks = (long)(IncreaseIntervalSec * Stopwatch.Frequency);
-                var available = Stopwatch.GetTimestamp() + retryAfterTicks + intervalTicks;
-                if (available > _increaseAvailableAfterTicks)
-                    _increaseAvailableAfterTicks = available;
             }
 
             if (_pendingDecreases >= _decreaseTriggerCount && _current > _min)
