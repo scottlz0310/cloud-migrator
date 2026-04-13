@@ -35,6 +35,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
     private readonly MigratorOptions _options;
     private readonly AdaptiveConcurrencyController? _concurrencyController;
     private readonly AdaptiveConcurrencyController? _folderCreationController;
+    private readonly Action<AdaptiveConcurrencyController?>? _activateController;
     private readonly ILogger<SharePointMigrationPipeline> _logger;
 
     // Phase D メトリクスカウンタ（Interlocked によるスレッドセーフな並列カウント）
@@ -52,7 +53,8 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         MigratorOptions options,
         ILogger<SharePointMigrationPipeline> logger,
         AdaptiveConcurrencyController? concurrencyController = null,
-        AdaptiveConcurrencyController? folderCreationController = null)
+        AdaptiveConcurrencyController? folderCreationController = null,
+        Action<AdaptiveConcurrencyController?>? activateController = null)
     {
         _sourceProvider = sourceProvider;
         _destinationProvider = destinationProvider;
@@ -61,6 +63,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         _logger = logger;
         _concurrencyController = concurrencyController;
         _folderCreationController = folderCreationController;
+        _activateController = activateController;
     }
 
     /// <inheritdoc/>
@@ -101,6 +104,8 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         }
 
         // ── Phase C: フォルダ先行作成 ───────────────────────────────────────────────
+        // フォルダ作成専用コントローラーがある場合は、429 通知先を切り替える
+        _activateController?.Invoke(_folderCreationController);
         if (await _stateDb.GetCheckpointAsync(FolderCreationCompleteKey, ct).ConfigureAwait(false) == "true")
         {
             _logger.LogInformation("Phase C: フォルダ作成完了チェックポイントあり - スキップ");
@@ -111,6 +116,8 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         }
 
         // ── Phase D: ファイル転送 ───────────────────────────────────────────────────
+        // 転送用コントローラーに戻す
+        _activateController?.Invoke(_concurrencyController);
         var channel = Channel.CreateBounded<TransferJob>(new BoundedChannelOptions(ChannelCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,

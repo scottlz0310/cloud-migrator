@@ -119,6 +119,7 @@ internal static class TransferCommand
         // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
         var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
         AdaptiveConcurrencyController? folderCreationController = null;
+        Action<AdaptiveConcurrencyController?>? activateController = null;
         if (adaptiveOpts.Enabled)
         {
             var maxFolderCreationDegree = Math.Max(1, opts.MaxParallelFolderCreations);
@@ -134,6 +135,8 @@ internal static class TransferCommand
                 increaseStep: adaptiveOpts.IncreaseStep,
                 decreaseStep: adaptiveOpts.DecreaseStep,
                 decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
+            // フェーズ切り替え時に onRateLimit の通知先を切り替えるコールバック
+            activateController = ctrl => svc.SetActiveController(ctrl ?? svc.GetController("sharepoint"));
         }
 
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
@@ -179,7 +182,8 @@ internal static class TransferCommand
                 opts,
                 svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
                 svc.GetController("sharepoint"),
-                folderCreationController);
+                folderCreationController,
+                activateController);
 
             summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
             logger.LogInformation(

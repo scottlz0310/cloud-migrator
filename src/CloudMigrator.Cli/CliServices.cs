@@ -50,6 +50,13 @@ internal sealed class CliServices : IDisposable
         _controllerProxy.Active = GetController(providerName);
 
     /// <summary>
+    /// 任意のコントローラーを直接アクティブにする（フェーズ切り替え用）。
+    /// null を渡すと onRateLimit 通知が破棄される。
+    /// </summary>
+    public void SetActiveController(AdaptiveConcurrencyController? ctrl) =>
+        _controllerProxy.Active = ctrl;
+
+    /// <summary>
     /// Token Bucket レートリミッター。<see cref="RateLimiterOptions.Enabled"/> が false の場合は null。
     /// </summary>
     public TokenBucketRateLimiter? RateLimiter { get; }

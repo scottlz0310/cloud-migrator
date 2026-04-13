@@ -96,6 +96,7 @@ public partial class App : Application
                 AdaptiveConcurrencyController? concurrencyController = null;
                 AdaptiveConcurrencyController? folderCreationController = null;
                 Action<TimeSpan?>? onRateLimit = null;
+                Action<AdaptiveConcurrencyController?>? activateController = null;
                 if (adaptiveOpts.Enabled)
                 {
                     var initialDegree = adaptiveOpts.InitialDegree > 0
@@ -110,7 +111,6 @@ public partial class App : Application
                         increaseStep: adaptiveOpts.IncreaseStep,
                         decreaseStep: adaptiveOpts.DecreaseStep,
                         decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
-                    onRateLimit = retryAfter => concurrencyController.NotifyRateLimit(retryAfter);
 
                     // Phase C（フォルダ先行作成）専用コントローラー（maxDegree = MaxParallelFolderCreations）
                     // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
@@ -127,6 +127,11 @@ public partial class App : Application
                         increaseStep: adaptiveOpts.IncreaseStep,
                         decreaseStep: adaptiveOpts.DecreaseStep,
                         decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
+
+                    // onRateLimit はプロキシ経由にしてフェーズに応じて通知先を切り替える
+                    AdaptiveConcurrencyController? activeCtrl = concurrencyController;
+                    onRateLimit = retryAfter => Volatile.Read(ref activeCtrl)?.NotifyRateLimit(retryAfter);
+                    activateController = ctrl => Volatile.Write(ref activeCtrl, ctrl ?? concurrencyController);
                 }
 
                 try
@@ -162,7 +167,8 @@ public partial class App : Application
                         opts,
                         loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
                         concurrencyController,
-                        folderCreationController);
+                        folderCreationController,
+                        activateController);
 
                     await pipeline.RunAsync(ct).ConfigureAwait(false);
                 }
