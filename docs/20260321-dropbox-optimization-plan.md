@@ -216,4 +216,4 @@ await pipeline.RunAsync(ct);
 ## 関連ドキュメント
 
 - [docs/implementation-plan.md](implementation-plan.md)：全体仕様
-- [task-archive-20260321.md](../task-archive-20260321.md)：Phase 1〜7 完了タスク一覧
+- [tasks-archive-20260321.md](archive/tasks-archive-20260321.md)：Phase 1〜7 完了タスク一覧
