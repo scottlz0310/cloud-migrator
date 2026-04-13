@@ -165,8 +165,31 @@
 
             @if (_driveListResult is { Success: true, Drives.Count: 0 })
             {
-                <MudAlert Severity="Severity.Warning" Dense="true">
-                    このサイトに Document Library が見つかりませんでした。
+                <MudAlert Severity="Severity.Warning">
+                    <MudText Typo="Typo.body2">
+                        このサイトに Document Library が見つかりませんでした。
+                        先に SharePoint でドキュメントライブラリを作成してから、再試行してください。
+                    </MudText>
+                    <MudStack Row="true" Spacing="2" Class="mt-2">
+                        @if (!string.IsNullOrEmpty(_selectedSite?.WebUrl))
+                        {
+                            <MudLink Href="@_selectedSite.WebUrl" Target="_blank" Typo="Typo.body2">
+                                <MudIcon Icon="@Icons.Material.Filled.OpenInBrowser" Size="Size.Small" Class="mr-1" />このサイトを SharePoint で開く
+                            </MudLink>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">|</MudText>
+                        }
+                        <MudLink Href="https://admin.microsoft.com/sharepoint" Target="_blank" Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" Class="mr-1" />SharePoint 管理センター（管理者用）
+                        </MudLink>
+                    </MudStack>
+                    <MudButton Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Refresh"
+                               Class="mt-3"
+                               Disabled="@_isBusy"
+                               OnClick="LoadDrivesAsync">
+                        再試行
+                    </MudButton>
                 </MudAlert>
             }
         }

@@ -14,34 +14,50 @@
         <div>
             <MudText Typo="Typo.h5">OneDrive の接続先を設定する</MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
-                移行元の Personal OneDrive の Drive ID を取得します。
+                移行したい OneDrive を所有しているアカウントのメールアドレスを入力してください。
             </MudText>
         </div>
 
-        @* App-only 認証の制約説明 *@
-        <MudAlert Severity="Severity.Info" Dense="true" Icon="@Icons.Material.Filled.Info">
-            <strong>App-only 認証の制約</strong>: <code>/me/drive</code> は使用できません。
-            OneDrive の所有者の <strong>UPN（メールアドレス形式のユーザー名）</strong> またはユーザー ID を入力してください。
+        @* メールアドレス確認方法の案内 *@
+        <MudAlert Severity="Severity.Info" Dense="true" Icon="@Icons.Material.Filled.HelpOutline">
+            <MudText Typo="Typo.body2">
+                <strong>自分の OneDrive を移行する場合</strong>: Microsoft 365 にサインインしているメールアドレスを入力してください。
+            </MudText>
+            <MudStack Row="true" Spacing="2" Class="mt-2">
+                <MudLink Href="https://outlook.office.com" Target="_blank" Typo="Typo.body2">
+                    <MudIcon Icon="@Icons.Material.Filled.OpenInBrowser" Size="Size.Small" Class="mr-1" />Outlook でメールアドレスを確認
+                </MudLink>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">|</MudText>
+                <MudLink Href="https://admin.microsoft.com/AdminPortal/Home#/users" Target="_blank" Typo="Typo.body2">
+                    <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" Class="mr-1" />Microsoft 365 管理センター（管理者用）
+                </MudLink>
+            </MudStack>
         </MudAlert>
 
-        @* Graph Explorer リンク（補助参照） *@
-        <MudAlert Severity="Severity.Normal" Dense="true" Icon="@Icons.Material.Filled.OpenInBrowser">
-            UPN がわからない場合は
-            <MudLink Href="https://developer.microsoft.com/graph/graph-explorer" Target="_blank">
-                Graph Explorer
-            </MudLink>
-            で <code>GET /users</code> を実行して確認できます（管理者アカウントでサインイン要）。
+        @* 個人Microsoftアカウント非対応の注記 *@
+        <MudAlert Severity="Severity.Warning" Dense="true" Icon="@Icons.Material.Filled.Warning">
+            <strong>@@outlook.com / @@hotmail.com などの個人Microsoftアカウントは対応していません。</strong>
+            会社・学校アカウント（例: user@contoso.com）のみ利用可能です。
         </MudAlert>
 
-        @* UPN / ユーザー ID 入力 *@
+        @* メールアドレス入力 *@
         <MudTextField T="string"
                       Value="_userId"
-                      ValueChanged="@(v => { _userId = v; _discoveryResult = null; })"
-                      Label="UPN またはユーザー ID"
+                      ValueChanged="@(v => _userId = v)"
+                      Label="Microsoft アカウントのメールアドレス（会社・学校）"
                       Variant="Variant.Outlined"
-                      Placeholder="例: user@contoso.onmicrosoft.com"
+                      Placeholder="例: taro@contoso.com または taro@contoso.onmicrosoft.com"
                       Disabled="@_isBusy"
-                      HelperText="OneDrive の所有者のメールアドレス（UPN）を入力してください。" />
+                      HelperText="移行する OneDrive を所有している会社・学校アカウントのメールアドレス" />
+
+        @* UPN 変更後・未再取得の警告 *@
+        @if (_discoveryResult is { Success: true } &&
+             !string.Equals(_userId.Trim(), _fetchedUserId, StringComparison.OrdinalIgnoreCase))
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Icon="@Icons.Material.Filled.Warning">
+                メールアドレスが変更されています。「Drive ID を取得」を押して再取得してください。
+            </MudAlert>
+        }
 
         @* 取得ボタン *@
         <MudButton Variant="Variant.Filled"
@@ -112,7 +128,8 @@
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        EndIcon="@Icons.Material.Filled.ArrowForward"
-                       Disabled="@(_isBusy || _discoveryResult is not { Success: true })"
+                       Disabled="@(_isBusy || _discoveryResult is not { Success: true } ||
+                                  !string.Equals(_userId.Trim(), _fetchedUserId, StringComparison.OrdinalIgnoreCase))"
                        OnClick="SaveAndContinueAsync">
                 次へ
             </MudButton>
@@ -129,6 +146,7 @@
     [Parameter] public EventCallback OnDiscoveryCompleted { get; set; }
 
     private string _userId = string.Empty;
+    private string _fetchedUserId = string.Empty;
     private string _clientId = string.Empty;
     private string _tenantId = string.Empty;
     private string _clientSecret = string.Empty;
@@ -144,6 +162,7 @@
         // 既存の設定からプリロードする
         var config = await ConfigurationService.GetDiscoveryConfigAsync();
         _userId = config.OneDriveUserId;
+        _fetchedUserId = config.OneDriveUserId; // 保存済み = 取得済みとみなす
         _initialSourceFolderId = config.OneDriveSourceFolderId;
         _initialSourceFolderPath = config.OneDriveSourceFolderPath;
 
@@ -180,6 +199,9 @@
 
             _discoveryResult = await DiscoveryService.GetOneDriveDriveIdAsync(
                 clientId, tenantId, clientSecret, _userId.Trim());
+
+            if (_discoveryResult.Success)
+                _fetchedUserId = _userId.Trim();
 
             if (!_discoveryResult.Success)
             {
