@@ -109,7 +109,6 @@ public partial class App : Application
                         increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
                         logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
                         increaseStep: adaptiveOpts.IncreaseStep,
-                        decreaseStep: adaptiveOpts.DecreaseStep,
                         decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
                         decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
 
@@ -121,12 +120,11 @@ public partial class App : Application
                         : maxFolderCreationDegree;
                     folderCreationController = new AdaptiveConcurrencyController(
                         initialDegree: folderInitialDegree,
-                        minDegree: adaptiveOpts.MinDegree,
+                        minDegree: Math.Min(adaptiveOpts.MinDegree, maxFolderCreationDegree),
                         maxDegree: maxFolderCreationDegree,
                         increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
                         logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
                         increaseStep: adaptiveOpts.IncreaseStep,
-                        decreaseStep: adaptiveOpts.DecreaseStep,
                         decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
                         decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
 

@@ -17,7 +17,6 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     private readonly int _min;
     private readonly int _max;
     private readonly int _increaseStep;
-    private readonly int _decreaseStep;
     private readonly int _decreaseTriggerCount;
     private readonly double _decreaseMultiplier;
     private readonly ILogger<AdaptiveConcurrencyController> _logger;
@@ -44,7 +43,6 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <param name="increaseIntervalSec">減速後に増速を許可するまでの待機時間（秒）。0 = 即時増速可能</param>
     /// <param name="logger">ロガー</param>
     /// <param name="increaseStep">1 回の回復で増加する並列度の幅。デフォルト 1</param>
-    /// <param name="decreaseStep">1 回の減速イベントで減少する並列度の幅。デフォルト 1</param>
     /// <param name="decreaseTriggerCount">減速を発火するために必要な 429/503 の累積回数。デフォルト 1</param>
     public AdaptiveConcurrencyController(
         int initialDegree,
@@ -53,7 +51,6 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         int increaseIntervalSec,
         ILogger<AdaptiveConcurrencyController> logger,
         int increaseStep = 1,
-        int decreaseStep = 1,
         int decreaseTriggerCount = 1,
         double decreaseMultiplier = 0.5)
     {
@@ -61,7 +58,6 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(maxDegree, minDegree);
         ArgumentOutOfRangeException.ThrowIfNegative(increaseIntervalSec);
         ArgumentOutOfRangeException.ThrowIfLessThan(increaseStep, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(decreaseStep, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(decreaseTriggerCount, 1);
         if (decreaseMultiplier <= 0.0 || decreaseMultiplier >= 1.0)
             throw new ArgumentOutOfRangeException(nameof(decreaseMultiplier), "0 より大きく 1 未満の値を指定してください。");
@@ -72,7 +68,6 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         _startupHeadroom = _max - _current;
         IncreaseIntervalSec = increaseIntervalSec;
         _increaseStep = increaseStep;
-        _decreaseStep = decreaseStep;
         _decreaseTriggerCount = decreaseTriggerCount;
         _decreaseMultiplier = decreaseMultiplier;
         _logger = logger;
@@ -103,9 +98,6 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     /// <summary>1 回の回復で増加する並列度の幅。</summary>
     public int IncreaseStep => _increaseStep;
 
-    /// <summary>1 回の減速イベントで減少する並列度の幅。</summary>
-    public int DecreaseStep => _decreaseStep;
-
     /// <summary>減速を発火するために必要な 429/503 の累積回数。</summary>
     public int DecreaseTriggerCount => _decreaseTriggerCount;
 
@@ -133,7 +125,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
 
     /// <summary>
     /// レート制限（429/503）を通知する。
-    /// <see cref="DecreaseTriggerCount"/> 回累積した時点で並列度を <see cref="DecreaseStep"/> 削減し、
+    /// <see cref="DecreaseTriggerCount"/> 回累積した時点で並列度を <see cref="DecreaseMultiplier"/> 倍（切り上げ）に削減し、
     /// 非同期にセマフォスロットを吸収する。
     /// </summary>
     /// <param name="retryAfter">サーバーから返された Retry-After 値（null の場合は不明）</param>
@@ -164,7 +156,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             {
                 _pendingDecreases = 0;
                 prevDegree = _current;
-                _current = Math.Max(_min, (int)(_current * _decreaseMultiplier));
+                _current = Math.Max(_min, (int)Math.Ceiling(_current * _decreaseMultiplier));
                 step = prevDegree - _current;
                 newDegree = _current;
             }

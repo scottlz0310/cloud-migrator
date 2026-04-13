@@ -146,7 +146,7 @@ public sealed class ConfigurationService : IConfigurationService
                 adaptiveInitialDegree = GetInt(acProfile, "initialDegree", 0);
                 // decreaseMultiplier (double) を % (int) に変換して返す
                 if (acProfile.TryGetProperty("decreaseMultiplier", out var dmProp) && dmProp.TryGetDouble(out var dm) && dm > 0 && dm < 1)
-                    adaptiveDecreasePercent = (int)Math.Round(dm * 100);
+                    adaptiveDecreasePercent = Math.Clamp((int)Math.Floor(dm * 100), 1, 99);
                 adaptiveIncreaseIntervalSec = GetInt(acProfile, "increaseIntervalSec", 60);
             }
         }

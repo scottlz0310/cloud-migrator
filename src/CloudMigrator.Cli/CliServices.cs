@@ -145,7 +145,6 @@ internal sealed class CliServices : IDisposable
                 increaseIntervalSec: profile.IncreaseIntervalSec,
                 logger: loggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
                 increaseStep: profile.IncreaseStep,
-                decreaseStep: profile.DecreaseStep,
                 decreaseTriggerCount: profile.DecreaseTriggerCount,
                 decreaseMultiplier: profile.DecreaseMultiplier);
         }

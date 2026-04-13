@@ -330,32 +330,32 @@ public sealed class AdaptiveConcurrencyControllerTests
         controller.CurrentDegree.Should().Be(1);
     }
 
-    // ─── decreaseStep ────────────────────────────────────────────────────────
+    // ─── decreaseMultiplier ──────────────────────────────────────────────────
 
     [Fact]
-    public void NotifyRateLimit_WithDecreaseStep2_DecreasesByTwo()
+    public void NotifyRateLimit_WithDecreaseMultiplier025_HalvesAndCeils()
     {
-        // 検証対象: decreaseStep  目的: 1 回のイベントで並列度が 2 下がること
+        // 検証対象: decreaseMultiplier  目的: multiplier=0.25 のとき 4*0.25=1.0→Ceiling→1 になること
         var controller = new AdaptiveConcurrencyController(
             4, 1, 4, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
-            decreaseStep: 2);
+            decreaseMultiplier: 0.25);
 
         controller.NotifyRateLimit(null);
-        controller.CurrentDegree.Should().Be(2);
+        controller.CurrentDegree.Should().Be(1);
     }
 
     [Fact]
-    public void NotifyRateLimit_WithDecreaseStep_ClampsAtMinDegree()
+    public void NotifyRateLimit_WithOddDegreeAndDecreaseMultiplier05_UsesCeiling()
     {
-        // 検証対象: decreaseStep  目的: step が大きくても MinDegree を下回らないこと
+        // 検証対象: decreaseMultiplier（Ceiling 丸め）  目的: 3 * 0.5 = 1.5 → Ceiling → 2 になること（切り捨てではなく切り上げ）
         var controller = new AdaptiveConcurrencyController(
-            2, 1, 4, 30,
+            3, 1, 3, 30,
             Mock.Of<ILogger<AdaptiveConcurrencyController>>(),
-            decreaseStep: 5);
+            decreaseMultiplier: 0.5);
 
         controller.NotifyRateLimit(null);
-        controller.CurrentDegree.Should().Be(1); // 2-5 → clamp → 1
+        controller.CurrentDegree.Should().Be(2); // Ceiling(3*0.5=1.5)=2（切り捨てなら1になる）
     }
 
     // ─── increaseStep ────────────────────────────────────────────────────────

@@ -128,12 +128,11 @@ internal static class TransferCommand
                 : maxFolderCreationDegree;
             folderCreationController = new AdaptiveConcurrencyController(
                 initialDegree: folderInitialDegree,
-                minDegree: adaptiveOpts.MinDegree,
+                minDegree: Math.Min(adaptiveOpts.MinDegree, maxFolderCreationDegree),
                 maxDegree: maxFolderCreationDegree,
                 increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
                 logger: svc.LoggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
                 increaseStep: adaptiveOpts.IncreaseStep,
-                decreaseStep: adaptiveOpts.DecreaseStep,
                 decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
                 decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
             // フェーズ切り替え時に onRateLimit の通知先を切り替えるコールバック
@@ -174,30 +173,35 @@ internal static class TransferCommand
         // stateDb は SQLite 状態を保持するため使い回す
         TransferSummary summary;
         var autoRetryRemaining = autoRetry;
-        while (true)
+        try
         {
-            var pipeline = new SharePointMigrationPipeline(
-                svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
-                svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
-                stateDb,
-                opts,
-                svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
-                svc.GetController("sharepoint"),
-                folderCreationController,
-                activateController);
+            while (true)
+            {
+                var pipeline = new SharePointMigrationPipeline(
+                    svc.StorageProvider,              // OneDrive ソース（GraphStorageProvider）
+                    svc.StorageProvider,              // SharePoint 転送先（同一 GraphStorageProvider）
+                    stateDb,
+                    opts,
+                    svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
+                    svc.GetController("sharepoint"),
+                    folderCreationController,
+                    activateController);
 
-            summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
-            logger.LogInformation(
-                "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
-                summary.Success, summary.Failed, summary.Elapsed);
+                summary = await pipeline.RunAsync(ct).ConfigureAwait(false);
+                logger.LogInformation(
+                    "SharePoint 移行完了: 成功 {Success} / 失敗 {Failed} / 所要時間 {Elapsed:c}",
+                    summary.Success, summary.Failed, summary.Elapsed);
 
-            if (summary.Failed == 0 || !ShouldRetry(summary.Failed, ref autoRetryRemaining, logger))
-                break;
+                if (summary.Failed == 0 || !ShouldRetry(summary.Failed, ref autoRetryRemaining, logger))
+                    break;
 
-            logger.LogInformation("失敗ファイルを再試行します…");
+                logger.LogInformation("失敗ファイルを再試行します…");
+            }
         }
-
-        folderCreationController?.Dispose();
+        finally
+        {
+            folderCreationController?.Dispose();
+        }
 
         if (summary.Failed > 0)
             Environment.ExitCode = 1;
