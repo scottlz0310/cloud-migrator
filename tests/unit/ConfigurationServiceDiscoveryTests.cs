@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using CloudMigrator.Core.Configuration;
 using FluentAssertions;
 
@@ -153,5 +154,79 @@ public sealed class ConfigurationServiceDiscoveryTests : IDisposable
         result.SharePointDriveId.Should().Be("b!sp-drive");
         result.MigrationRoute.Should().Be("OneDriveToSharePoint");
         result.DestinationProvider.Should().Be("sharepoint");
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenOneDriveSourceFolderPathIsSet_AlsoSyncsOneDriveSourceFolder()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync
+        // 目的: OneDriveSourceFolderPath を設定した場合、転送処理が読む oneDriveSourceFolder にも同値が保存されること
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            OneDriveSourceFolderPath: "Documents/Projects"));
+
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(_configFile))!;
+        var g = json["migrator"]!["graph"]!;
+        g["oneDriveSourceFolderPath"]!.GetValue<string>().Should().Be("Documents/Projects");
+        g["oneDriveSourceFolder"]!.GetValue<string>().Should().Be("Documents/Projects");
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenOneDriveSourceFolderPathIsNull_FallsBackFromExistingSourceFolder()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync
+        // 目的: OneDriveSourceFolderPath が null のとき、既存の oneDriveSourceFolder を
+        //        oneDriveSourceFolderPath にも正規化し、乖離を解消すること
+        //        （init/bootstrap 等の別経路で oneDriveSourceFolder だけが書かれた場合のケース）
+        File.WriteAllText(_configFile, """
+            {
+              "migrator": {
+                "destinationProvider": "sharepoint",
+                "graph": {
+                  "clientId": "",
+                  "tenantId": "",
+                  "oneDriveSourceFolder": "Documents/Legacy"
+                }
+              }
+            }
+            """);
+        var sut = new ConfigurationService(_configFile);
+
+        // OneDriveSourceFolderPath を指定せずに他フィールドだけ更新
+        await sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            OneDriveUserId: "user@contoso.com"));
+
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(_configFile))!;
+        var g = json["migrator"]!["graph"]!;
+        g["oneDriveSourceFolderPath"]!.GetValue<string>().Should().Be("Documents/Legacy");
+        g["oneDriveSourceFolder"]!.GetValue<string>().Should().Be("Documents/Legacy");
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenOneDriveSourceFolderPathIsNull_FallsBackFromExistingFolderPath()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync
+        // 目的: OneDriveSourceFolderPath が null のとき、既存の oneDriveSourceFolderPath を
+        //        oneDriveSourceFolder にも正規化し、乖離を解消すること
+        File.WriteAllText(_configFile, """
+            {
+              "migrator": {
+                "destinationProvider": "sharepoint",
+                "graph": {
+                  "clientId": "",
+                  "tenantId": "",
+                  "oneDriveSourceFolderPath": "Documents/Projects"
+                }
+              }
+            }
+            """);
+        var sut = new ConfigurationService(_configFile);
+
+        await sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            OneDriveUserId: "user@contoso.com"));
+
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(_configFile))!;
+        var g = json["migrator"]!["graph"]!;
+        g["oneDriveSourceFolderPath"]!.GetValue<string>().Should().Be("Documents/Projects");
+        g["oneDriveSourceFolder"]!.GetValue<string>().Should().Be("Documents/Projects");
     }
 }
