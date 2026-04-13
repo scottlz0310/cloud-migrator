@@ -325,7 +325,20 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.OneDriveUserId is not null) g["oneDriveUserId"] = update.OneDriveUserId;
             if (update.OneDriveDriveId is not null) g["oneDriveDriveId"] = update.OneDriveDriveId;
             if (update.OneDriveSourceFolderId is not null) g["oneDriveSourceFolderId"] = update.OneDriveSourceFolderId;
-            if (update.OneDriveSourceFolderPath is not null) g["oneDriveSourceFolderPath"] = update.OneDriveSourceFolderPath;
+
+            // oneDriveSourceFolderPath（Discovery 表示用）と oneDriveSourceFolder（転送処理用）を常に同値へ正規化する。
+            // update が null の場合は既存値（どちらか一方）をフォールバックとして双方に同期し、
+            // init/bootstrap 等の別経路で oneDriveSourceFolder だけが更新された場合の乖離を防ぐ。
+            var existingFolderPath = g["oneDriveSourceFolderPath"]?.GetValue<string>();
+            var existingSourceFolder = g["oneDriveSourceFolder"]?.GetValue<string>();
+            var effectiveFolderPath = update.OneDriveSourceFolderPath
+                ?? existingFolderPath
+                ?? existingSourceFolder;
+            if (effectiveFolderPath is not null)
+            {
+                g["oneDriveSourceFolderPath"] = effectiveFolderPath;
+                g["oneDriveSourceFolder"] = effectiveFolderPath;
+            }
             if (update.SharePointSiteId is not null) g["sharePointSiteId"] = update.SharePointSiteId;
             if (update.SharePointDriveId is not null) g["sharePointDriveId"] = update.SharePointDriveId;
             if (update.SharePointDestFolderId is not null) g["sharePointDestFolderId"] = update.SharePointDestFolderId;
