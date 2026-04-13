@@ -110,7 +110,8 @@ public partial class App : Application
                         logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
                         increaseStep: adaptiveOpts.IncreaseStep,
                         decreaseStep: adaptiveOpts.DecreaseStep,
-                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
+                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
+                        decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
 
                     // Phase C（フォルダ先行作成）専用コントローラー（maxDegree = MaxParallelFolderCreations）
                     // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
@@ -126,7 +127,8 @@ public partial class App : Application
                         logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
                         increaseStep: adaptiveOpts.IncreaseStep,
                         decreaseStep: adaptiveOpts.DecreaseStep,
-                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
+                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
+                        decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
 
                     // onRateLimit はプロキシ経由にしてフェーズに応じて通知先を切り替える
                     AdaptiveConcurrencyController? activeCtrl = concurrencyController;

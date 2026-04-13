@@ -19,7 +19,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
     private readonly int _increaseStep;
     private readonly int _decreaseStep;
     private readonly int _decreaseTriggerCount;
-    private readonly bool _halveOnRateLimit;
+    private readonly double _decreaseMultiplier;
     private readonly ILogger<AdaptiveConcurrencyController> _logger;
 
     // lock(_syncRoot) で保護するフィールド
@@ -55,7 +55,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         int increaseStep = 1,
         int decreaseStep = 1,
         int decreaseTriggerCount = 1,
-        bool halveOnRateLimit = false)
+        double decreaseMultiplier = 0.5)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(minDegree, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxDegree, minDegree);
@@ -63,6 +63,8 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(increaseStep, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(decreaseStep, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(decreaseTriggerCount, 1);
+        if (decreaseMultiplier <= 0.0 || decreaseMultiplier >= 1.0)
+            throw new ArgumentOutOfRangeException(nameof(decreaseMultiplier), "0 より大きく 1 未満の値を指定してください。");
 
         _min = minDegree;
         _max = maxDegree;
@@ -72,7 +74,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
         _increaseStep = increaseStep;
         _decreaseStep = decreaseStep;
         _decreaseTriggerCount = decreaseTriggerCount;
-        _halveOnRateLimit = halveOnRateLimit;
+        _decreaseMultiplier = decreaseMultiplier;
         _logger = logger;
 
         // 初期は増速可能（long.MinValue = 既に過去）
@@ -162,9 +164,7 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             {
                 _pendingDecreases = 0;
                 prevDegree = _current;
-                _current = _halveOnRateLimit
-                    ? Math.Max(_min, _current / 2)
-                    : _current - Math.Min(_decreaseStep, _current - _min);
+                _current = Math.Max(_min, (int)(_current * _decreaseMultiplier));
                 step = prevDegree - _current;
                 newDegree = _current;
             }
@@ -174,8 +174,9 @@ public sealed class AdaptiveConcurrencyController : IDisposable
             return;
 
         _logger.LogWarning(
-            "レート制限を検出。並列度を {Prev} → {Current}/{Max} に削減します (Retry-After: {RetryAfterSec} 秒)",
+            "レート制限を検出。並列度を {Prev} → {Current}/{Max} に削減します (減速率: {Multiplier:P0}, Retry-After: {RetryAfterSec} 秒)",
             prevDegree, newDegree, _max,
+            _decreaseMultiplier,
             retryAfter.HasValue ? retryAfter.Value.TotalSeconds.ToString("F0") : "なし");
 
         // 削減した分だけスロットを非同期に吸収する（1 つのバックグラウンドループで順次処理）

@@ -147,7 +147,7 @@ internal sealed class CliServices : IDisposable
                 increaseStep: profile.IncreaseStep,
                 decreaseStep: profile.DecreaseStep,
                 decreaseTriggerCount: profile.DecreaseTriggerCount,
-                halveOnRateLimit: useDropboxAdaptiveMode);
+                decreaseMultiplier: profile.DecreaseMultiplier);
         }
 
         if (controllers.Count > 0)

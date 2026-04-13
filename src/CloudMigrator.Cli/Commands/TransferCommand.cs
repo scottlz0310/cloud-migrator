@@ -134,7 +134,8 @@ internal static class TransferCommand
                 logger: svc.LoggerFactory.CreateLogger<AdaptiveConcurrencyController>(),
                 increaseStep: adaptiveOpts.IncreaseStep,
                 decreaseStep: adaptiveOpts.DecreaseStep,
-                decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount);
+                decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
+                decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
             // フェーズ切り替え時に onRateLimit の通知先を切り替えるコールバック
             activateController = ctrl => svc.SetActiveController(ctrl ?? svc.GetController("sharepoint"));
         }
