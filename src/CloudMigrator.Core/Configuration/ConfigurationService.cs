@@ -17,7 +17,9 @@ public sealed record ConfigDto(
     string DestinationRoot,
     string DestinationProvider,
     bool AdaptiveConcurrencyEnabled = false,
-    int AdaptiveConcurrencyInitialDegree = 0);
+    int AdaptiveConcurrencyInitialDegree = 0,
+    int AdaptiveConcurrencyDecreasePercent = 50,
+    int AdaptiveConcurrencyIncreaseIntervalSec = 60);
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -32,7 +34,9 @@ public sealed record ConfigUpdateDto(
     string? DestinationRoot = null,
     string? DestinationProvider = null,
     bool? AdaptiveConcurrencyEnabled = null,
-    int? AdaptiveConcurrencyInitialDegree = null);
+    int? AdaptiveConcurrencyInitialDegree = null,
+    int? AdaptiveConcurrencyDecreasePercent = null,
+    int? AdaptiveConcurrencyIncreaseIntervalSec = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -128,6 +132,8 @@ public sealed class ConfigurationService : IConfigurationService
         // adaptiveConcurrency.sharepoint セクションを読み取る（なければ default プロファイルにフォールバック）
         var adaptiveEnabled = false;
         var adaptiveInitialDegree = 0;
+        var adaptiveDecreasePercent = 50;
+        var adaptiveIncreaseIntervalSec = 60;
         if (m.TryGetProperty("adaptiveConcurrency", out var acProp) && acProp.ValueKind == JsonValueKind.Object)
         {
             // sharepoint キーがなければ default プロファイルを試みる
@@ -138,6 +144,10 @@ public sealed class ConfigurationService : IConfigurationService
             {
                 adaptiveEnabled = acProfile.TryGetProperty("enabled", out var enProp) && enProp.ValueKind == JsonValueKind.True;
                 adaptiveInitialDegree = GetInt(acProfile, "initialDegree", 0);
+                // decreaseMultiplier (double) を % (int) に変換して返す
+                if (acProfile.TryGetProperty("decreaseMultiplier", out var dmProp) && dmProp.TryGetDouble(out var dm) && dm > 0 && dm < 1)
+                    adaptiveDecreasePercent = (int)Math.Round(dm * 100);
+                adaptiveIncreaseIntervalSec = GetInt(acProfile, "increaseIntervalSec", 60);
             }
         }
 
@@ -151,7 +161,9 @@ public sealed class ConfigurationService : IConfigurationService
             DestinationRoot: GetString(m, "destinationRoot", string.Empty),
             DestinationProvider: NormalizeProvider(GetString(m, "destinationProvider", "sharepoint")),
             AdaptiveConcurrencyEnabled: adaptiveEnabled,
-            AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree);
+            AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree,
+            AdaptiveConcurrencyDecreasePercent: adaptiveDecreasePercent,
+            AdaptiveConcurrencyIncreaseIntervalSec: adaptiveIncreaseIntervalSec);
     }
 
     /// <inheritdoc />
@@ -176,7 +188,8 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 
             // adaptiveConcurrency.sharepoint セクションを更新
-            if (update.AdaptiveConcurrencyEnabled.HasValue || update.AdaptiveConcurrencyInitialDegree.HasValue)
+            if (update.AdaptiveConcurrencyEnabled.HasValue || update.AdaptiveConcurrencyInitialDegree.HasValue
+                || update.AdaptiveConcurrencyDecreasePercent.HasValue || update.AdaptiveConcurrencyIncreaseIntervalSec.HasValue)
             {
                 if (m["adaptiveConcurrency"] is not JsonObject acObj)
                 {
@@ -192,6 +205,10 @@ public sealed class ConfigurationService : IConfigurationService
                     spAcObj["enabled"] = update.AdaptiveConcurrencyEnabled.Value;
                 if (update.AdaptiveConcurrencyInitialDegree.HasValue)
                     spAcObj["initialDegree"] = update.AdaptiveConcurrencyInitialDegree.Value;
+                if (update.AdaptiveConcurrencyDecreasePercent.HasValue)
+                    spAcObj["decreaseMultiplier"] = update.AdaptiveConcurrencyDecreasePercent.Value / 100.0;
+                if (update.AdaptiveConcurrencyIncreaseIntervalSec.HasValue)
+                    spAcObj["increaseIntervalSec"] = update.AdaptiveConcurrencyIncreaseIntervalSec.Value;
             }
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム
