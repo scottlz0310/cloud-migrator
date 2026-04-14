@@ -123,6 +123,7 @@ jobs:
     name: win-x64 パブリッシュ（MSI ビルド用）
     runs-on: windows-latest
     needs: build-test
+    if: github.event_name == 'pull_request'
     env:
       HUSKY: 0
 
@@ -132,7 +133,7 @@ jobs:
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0"
 
       - name: CLI / Dashboard を win-x64 向けにパブリッシュ（MSI ビルド検証用）
         shell: pwsh
@@ -164,7 +165,7 @@ jobs:
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0"
 
       - name: WiX Toolset v5 インストール
         run: dotnet tool install wix --version 5.0.2 --global
