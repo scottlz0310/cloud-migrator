@@ -176,10 +176,19 @@ jobs:
       - name: MSI ビルド
         shell: pwsh
         run: |
+          # WiX 5.0.2 は Files/Exclude 未サポートのため、BinDir から *.exe / *.pdb を
+          # 除いた DepsDir を作成して DashboardComponents に渡す
+          $binDir  = "${{ github.workspace }}/published/win-x64"
+          $depsDir = "${{ github.workspace }}/published/win-x64-deps"
+          Copy-Item -Path $binDir -Destination $depsDir -Recurse -Force
+          Get-ChildItem $depsDir -Recurse -Filter "*.exe" | Remove-Item -Force
+          Get-ChildItem $depsDir -Recurse -Filter "*.pdb" | Remove-Item -Force
+
           wix build installer/wix/Product.wxs `
             -arch x64 `
             -d Version=${{ steps.version.outputs.version }} `
-            -d "BinDir=${{ github.workspace }}/published/win-x64" `
+            -d "BinDir=$binDir" `
+            -d "DepsDir=$depsDir" `
             -o cloud-migrator-setup.msi
 
       - name: MSI をリリースにアップロード
