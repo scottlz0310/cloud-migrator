@@ -76,26 +76,6 @@ jobs:
             "**/TestResults/**/*.trx"
             "**/TestResults/**/coverage.cobertura.xml"
 
-      - name: CLI / Dashboard を win-x64 向けにパブリッシュ（MSI ビルド検証用）
-        # windows-latest のみ実行（matrix.os が追加されても MSI は win-x64 専用）
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          dotnet publish src/CloudMigrator.Cli/CloudMigrator.Cli.csproj `
-            --configuration Release --runtime win-x64 --self-contained true `
-            -p:PublishSingleFile=true -p:Version=0.0.0-ci --output publish/win-x64
-          dotnet publish src/CloudMigrator.Dashboard/CloudMigrator.Dashboard.csproj `
-            --configuration Release --runtime win-x64 --self-contained false `
-            -p:Version=0.0.0-ci --output "publish/win-x64"
-
-      - name: バイナリをアーティファクトに保存（MSI ビルド検証用）
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-publish-win-x64
-          path: publish/win-x64/
-          retention-days: 1
-
   quality-gate:
     name: Quality Gate
     runs-on: windows-latest
@@ -139,8 +119,8 @@ jobs:
       - name: セキュリティスキャン
         run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- security-scan
 
-  msi-check:
-    name: MSI ビルド検証（WiX 回帰防止）
+  publish-win:
+    name: win-x64 パブリッシュ（MSI ビルド用）
     runs-on: windows-latest
     needs: build-test
     env:
@@ -148,6 +128,43 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: .NET SDK セットアップ
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: CLI / Dashboard を win-x64 向けにパブリッシュ（MSI ビルド検証用）
+        shell: pwsh
+        run: |
+          dotnet publish src/CloudMigrator.Cli/CloudMigrator.Cli.csproj `
+            --configuration Release --runtime win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:Version=0.0.0-ci --output publish/win-x64
+          dotnet publish src/CloudMigrator.Dashboard/CloudMigrator.Dashboard.csproj `
+            --configuration Release --runtime win-x64 --self-contained false `
+            -p:Version=0.0.0-ci --output "publish/win-x64"
+
+      - name: バイナリをアーティファクトに保存（MSI ビルド検証用）
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-publish-win-x64
+          path: publish/win-x64/
+          retention-days: 1
+
+  msi-check:
+    name: MSI ビルド検証（WiX 回帰防止）
+    runs-on: windows-latest
+    needs: publish-win
+    env:
+      HUSKY: 0
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: .NET SDK セットアップ
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
 
       - name: WiX Toolset v5 インストール
         run: dotnet tool install wix --version 5.0.2 --global
