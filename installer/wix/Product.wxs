@@ -65,12 +65,13 @@
 
     <!--
       Dashboard 依存ファイル群（DLL / config / wwwroot / runtimes など）
-      BinDir 配下を再帰的に収集。主要 exe と PDB は除外済み。
+      DepsDir は BinDir から *.exe / *.pdb を取り除いた専用ディレクトリ。
+      WiX 5.0.2 の Files 要素は Exclude 属性を未サポートのため、
+      CI / ローカル検証スクリプトで事前フィルタリングしたディレクトリを参照する。
       サブディレクトリ（wwwroot/ / runtimes/ など）の構造はそのまま INSTALLFOLDER 下に展開される
     -->
     <ComponentGroup Id="DashboardComponents" Directory="INSTALLFOLDER">
-      <Files Include="$(var.BinDir)\**\*"
-             Exclude="$(var.BinDir)\cloud-migrator.exe;$(var.BinDir)\CloudMigrator.Dashboard.exe;$(var.BinDir)\**\*.pdb" />
+      <Files Include="$(var.DepsDir)\**\*" />
     </ComponentGroup>
 
     <!-- スタートメニューショートカット -->
