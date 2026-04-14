@@ -156,6 +156,7 @@ jobs:
     name: MSI ビルド検証（WiX 回帰防止）
     runs-on: windows-latest
     needs: publish-win
+    if: github.event_name == 'pull_request'
     env:
       HUSKY: 0
 
