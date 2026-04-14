@@ -84,7 +84,15 @@
                                     <MudIcon Icon="@Icons.Material.Filled.Folder"
                                              Size="Size.Small"
                                              Color="Color.Warning" />
-                                    <MudText Typo="Typo.body2">@folder.DisplayName</MudText>
+                                    <MudText Typo="Typo.body2" Style="flex: 1;">@folder.DisplayName</MudText>
+                                    <MudTooltip Text="この名前を新規フォルダ名に使用" Arrow="true">
+                                        <span @onclick:stopPropagation="true"
+                                              @onclick="@(() => _newFolderName = folder.DisplayName)">
+                                            <MudIconButton Icon="@Icons.Material.Outlined.DriveFileRenameOutline"
+                                                           Size="Size.Small"
+                                                           Color="Color.Secondary" />
+                                        </span>
+                                    </MudTooltip>
                                     <MudIcon Icon="@Icons.Material.Filled.ChevronRight"
                                              Size="Size.Small"
                                              Color="Color.Secondary" />
@@ -93,6 +101,29 @@
                         }
                     </MudList>
                 }
+
+                @* ── 新しいフォルダ名を入力して設定（作成は転送時に自動） ── *@
+                <MudDivider Class="my-2" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
+                    ここにないフォルダ名を入力すると、転送開始時に自動作成されます。
+                </MudText>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudTextField T="string"
+                                  @bind-Value="_newFolderName"
+                                  Label="新しいフォルダ名"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Disabled="@_isBusy"
+                                  Placeholder="例: Migration2024" />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Secondary"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.CreateNewFolder"
+                               Disabled="@(_isBusy || string.IsNullOrWhiteSpace(_newFolderName))"
+                               OnClick="SetNewFolderName">
+                        このパスに設定
+                    </MudButton>
+                </MudStack>
 
                 @* アクションボタン *@
                 <MudStack Row="true" Spacing="2">
@@ -148,6 +179,7 @@
     private bool _isOpen;
     private bool _isBusy;
     private string? _error;
+    private string _newFolderName = string.Empty;
 
     // ナビゲーションスタック用
     private readonly List<(string FolderId, string DisplayName)> _navStack = [];
@@ -255,6 +287,26 @@
         _isOpen = false;
 
         await OnFolderSelected.InvokeAsync((folderId, folderPath));
+    }
+
+    private async Task SetNewFolderName()
+    {
+        var name = _newFolderName.Trim();
+        if (string.IsNullOrEmpty(name)) return;
+
+        // 現在のナビゲーション位置 + 入力された名前でパスを構成する。
+        // FolderId は空（存在しない）のままにしておき、転送時に自動作成させる。
+        var basePath = _navStack.Count <= 1
+            ? string.Empty
+            : string.Join("/", _navStack.Skip(1).Select(n => n.DisplayName));
+        var newPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
+
+        SelectedFolderId = string.Empty; // まだ存在しないためIDなし
+        SelectedFolderPath = newPath;
+        _newFolderName = string.Empty;
+        _isOpen = false;
+
+        await OnFolderSelected.InvokeAsync((string.Empty, newPath));
     }
 
     private void RebuildBreadcrumbs()

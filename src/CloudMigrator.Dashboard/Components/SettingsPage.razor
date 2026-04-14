@@ -52,103 +52,94 @@ else
     <MudCard Elevation="2" Style="max-width: 600px;">
         <MudCardContent>
             <MudGrid>
-                <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_editMaxParallelTransfers"
-                                     Label="最大並行転送数"
-                                     Min="1" Max="256"
-                                     Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_editMaxParallelFolderCreations"
-                                     Label="最大並行フォルダ作成数"
-                                     Min="1" Max="32"
-                                     Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_editChunkSizeMb"
-                                     Label="チャンクサイズ (MB)"
-                                     Min="1" Max="100"
-                                     Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_editLargeFileThresholdMb"
-                                     Label="大ファイル閾値 (MB)"
-                                     Min="1" Max="100"
-                                     Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_editRetryCount"
-                                     Label="リトライ回数"
-                                     Min="0" Max="10"
-                                     Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_editTimeoutSec"
-                                     Label="タイムアウト (秒)"
-                                     Min="30" Max="3600"
-                                     Variant="Variant.Outlined" />
-                </MudItem>
-                <MudItem xs="12">
-                    <MudTextField @bind-Value="_editDestinationRoot"
-                                  Label="転送先ルートパス"
-                                  Variant="Variant.Outlined"
-                                  FullWidth="true" />
-                </MudItem>
-                <MudItem xs="12">
-                    <MudSelect T="string"
-                               @bind-Value="_editDestinationProvider"
-                               Label="転送先プロバイダー"
-                               Variant="Variant.Outlined"
-                               FullWidth="true">
-                        <MudSelectItem Value="@("sharepoint")">sharepoint</MudSelectItem>
-                        <MudSelectItem Value="@("dropbox")">dropbox</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
-
-                @* ── 動的並列制御 ──────────────────────────────────────── *@
-                <MudItem xs="12">
-                    <MudDivider Class="my-2" />
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">動的並列制御（レート制限対応）</MudText>
-                </MudItem>
-                <MudItem xs="12">
-                    <MudSwitch @bind-Value="_editAdaptiveConcurrencyEnabled"
-                               Label="動的並列制御を有効にする"
-                               Color="Color.Primary" />
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        Graph API から 429 を受信したとき、自動的に並列数を減らして再加速します。
-                        無効時は「最大並行転送数」の固定値で動作します。
-                    </MudText>
-                </MudItem>
-                @if (_editAdaptiveConcurrencyEnabled)
-                {
-                    <MudItem xs="12" sm="6">
-                        <MudNumericField @bind-Value="_editAdaptiveConcurrencyInitialDegree"
-                                         Label="初期並列数（0 = 最大と同じ）"
-                                         Min="0" Max="256"
-                                         Variant="Variant.Outlined"
-                                         HelperText="0: 最大並行転送数から開始（スロースタートなし）。1〜n: その数から徐々に増加（スロースタート）。" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudNumericField @bind-Value="_editAdaptiveConcurrencyDecreasePercent"
-                                         Label="429 減速率 (%)"
-                                         Min="1" Max="99"
-                                         Variant="Variant.Outlined"
-                                         HelperText="429 発生時に並列度をこの割合に削減します。例: 50 = 半減（MinDegree 下限）。デフォルト: 50" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudSelect T="int"
-                                   @bind-Value="_editAdaptiveConcurrencyIncreaseIntervalSec"
-                                   Label="増速インターバル (秒)"
-                                   Variant="Variant.Outlined"
-                                   HelperText="429 後に並列度の回復を開始するまでの待機時間。デフォルト: 60 秒">
-                            <MudSelectItem Value="30">30 秒</MudSelectItem>
-                            <MudSelectItem Value="60">60 秒</MudSelectItem>
-                            <MudSelectItem Value="90">90 秒</MudSelectItem>
-                            <MudSelectItem Value="120">120 秒</MudSelectItem>
-                        </MudSelect>
-                    </MudItem>
-                }
+                @* ── 上級者向け設定（折りたたみ） ──────────────────────── *@
             </MudGrid>
+            <MudExpansionPanels Elevation="0" Class="mt-2">
+                <MudExpansionPanel Text="⚙️ 上級者向け設定（並列数・チャンク・タイムアウト）" Dense="true">
+                    <MudGrid Spacing="2" Class="pt-2">
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editMaxParallelTransfers"
+                                             Label="最大並行転送数"
+                                             Min="1" Max="256"
+                                             Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editMaxParallelFolderCreations"
+                                             Label="最大並行フォルダ作成数"
+                                             Min="1" Max="32"
+                                             Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editChunkSizeMb"
+                                             Label="チャンクサイズ (MB)"
+                                             Min="1" Max="100"
+                                             Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editLargeFileThresholdMb"
+                                             Label="大ファイル閾値 (MB)"
+                                             Min="1" Max="100"
+                                             Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editRetryCount"
+                                             Label="リトライ回数"
+                                             Min="0" Max="10"
+                                             Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editTimeoutSec"
+                                             Label="タイムアウト (秒)"
+                                             Min="30" Max="3600"
+                                             Variant="Variant.Outlined" />
+                        </MudItem>
+
+                        @* ── 動的並列制御 ────────────────────────────────── *@
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">動的並列制御（レート制限対応）</MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudSwitch @bind-Value="_editAdaptiveConcurrencyEnabled"
+                                       Label="動的並列制御を有効にする"
+                                       Color="Color.Primary" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Graph API から 429 を受信したとき、自動的に並列数を減らして再加速します。
+                                無効時は「最大並行転送数」の固定値で動作します。
+                            </MudText>
+                        </MudItem>
+                        @if (_editAdaptiveConcurrencyEnabled)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editAdaptiveConcurrencyInitialDegree"
+                                                 Label="初期並列数（0 = 最大と同じ）"
+                                                 Min="0" Max="256"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="0: 最大並行転送数から開始（スロースタートなし）。1〜n: その数から徐々に増加（スロースタート）。" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editAdaptiveConcurrencyDecreasePercent"
+                                                 Label="429 減速率 (%)"
+                                                 Min="1" Max="99"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="429 発生時に並列度をこの割合に削減します。例: 50 = 半減（MinDegree 下限）。デフォルト: 50" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="int"
+                                           @bind-Value="_editAdaptiveConcurrencyIncreaseIntervalSec"
+                                           Label="増速インターバル (秒)"
+                                           Variant="Variant.Outlined"
+                                           HelperText="429 後に並列度の回復を開始するまでの待機時間。デフォルト: 60 秒">
+                                    <MudSelectItem Value="30">30 秒</MudSelectItem>
+                                    <MudSelectItem Value="60">60 秒</MudSelectItem>
+                                    <MudSelectItem Value="90">90 秒</MudSelectItem>
+                                    <MudSelectItem Value="120">120 秒</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
         </MudCardContent>
         <MudCardActions>
             <MudButton Variant="Variant.Filled"
@@ -219,8 +210,6 @@ else
     private int _editLargeFileThresholdMb;
     private int _editRetryCount;
     private int _editTimeoutSec;
-    private string _editDestinationRoot = string.Empty;
-    private string _editDestinationProvider = string.Empty;
     private bool _editAdaptiveConcurrencyEnabled;
     private int _editAdaptiveConcurrencyInitialDegree;
     private int _editAdaptiveConcurrencyDecreasePercent;
@@ -276,8 +265,6 @@ else
         _editLargeFileThresholdMb = cfg.LargeFileThresholdMb;
         _editRetryCount = cfg.RetryCount;
         _editTimeoutSec = cfg.TimeoutSec;
-        _editDestinationRoot = cfg.DestinationRoot;
-        _editDestinationProvider = cfg.DestinationProvider;
         _editAdaptiveConcurrencyEnabled = cfg.AdaptiveConcurrencyEnabled;
         _editAdaptiveConcurrencyInitialDegree = cfg.AdaptiveConcurrencyInitialDegree;
         _editAdaptiveConcurrencyDecreasePercent = cfg.AdaptiveConcurrencyDecreasePercent;
@@ -317,11 +304,6 @@ else
             Snackbar.Add("タイムアウトは 30〜3600 秒の範囲で入力してください。", Severity.Warning);
             return;
         }
-        if (_editDestinationProvider is not ("sharepoint" or "dropbox"))
-        {
-            Snackbar.Add("転送先プロバイダーは sharepoint または dropbox を選択してください。", Severity.Warning);
-            return;
-        }
         if (_editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyDecreasePercent is < 1 or > 99)
         {
             Snackbar.Add("減速率は 1〜99 の範囲で入力してください。", Severity.Warning);
@@ -347,8 +329,6 @@ else
                 LargeFileThresholdMb: _editLargeFileThresholdMb,
                 RetryCount: _editRetryCount,
                 TimeoutSec: _editTimeoutSec,
-                DestinationRoot: _editDestinationRoot,
-                DestinationProvider: _editDestinationProvider,
                 AdaptiveConcurrencyEnabled: _editAdaptiveConcurrencyEnabled,
                 AdaptiveConcurrencyInitialDegree: _editAdaptiveConcurrencyInitialDegree,
                 AdaptiveConcurrencyDecreasePercent: _editAdaptiveConcurrencyDecreasePercent,
