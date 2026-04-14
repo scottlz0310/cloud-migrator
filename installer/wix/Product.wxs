@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Product.wxs - Cloud Migrator MSI インストーラー定義 (WiX Toolset v4)
+  Product.wxs - Cloud Migrator MSI インストーラー定義 (WiX Toolset v5)
 
   インストール先 : %LOCALAPPDATA%\Programs\CloudMigrator\
   スコープ       : perUser（UAC 昇格不要）
@@ -13,7 +13,7 @@
       -d BinDir=path\to\publish\win-x64 \
       -o cloud-migrator-setup.msi
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v5/wxs">
 
   <Package Name="Cloud Migrator"
            Manufacturer="scottlz0310"

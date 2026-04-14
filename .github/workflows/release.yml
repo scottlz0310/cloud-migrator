@@ -151,8 +151,8 @@ jobs:
         with:
           dotnet-version: '10.0.201'
 
-      - name: WiX Toolset v4 インストール
-        run: dotnet tool install wix --version 4.0.5 --global
+      - name: WiX Toolset v5 インストール
+        run: dotnet tool install wix --version 5.0.2 --global
 
       - name: win-x64 バイナリをダウンロード
         uses: actions/download-artifact@v8
