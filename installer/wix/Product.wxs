@@ -12,8 +12,10 @@
       -d Version=1.2.3 \
       -d BinDir=path\to\publish\win-x64 \
       -o cloud-migrator-setup.msi
+
+  注意: WiX ツールセットはバージョン 4/5 ともに v4 名前空間を使用する。
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v5/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
   <Package Name="Cloud Migrator"
            Manufacturer="scottlz0310"
