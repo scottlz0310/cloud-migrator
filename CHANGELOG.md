@@ -9,6 +9,17 @@
 
 ### Added
 
+- **Dashboard: 設定ページに転送ルート情報カードを追加**
+  - `SettingsPage.razor` にウィザード設定済みの転送元フォルダ・転送先フォルダ・移行ルートを読み取り専用で表示。
+  - ウィザード未完了の場合は「ウィザードが未完了です」メッセージを表示。
+
+### Fixed
+
+- **Dashboard: 設定変更時にフルリビルドが発動しない問題を修正**
+  - `App.xaml.cs` の `MigrationWork` が `ConfigHashChecker` を呼ばずに直接パイプラインを起動しており、
+    Dashboard から設定を変更しても次回転送でフルリビルドにならない問題があった。
+  - CLI の `TransferCommand` と同等のハッシュ確認ロジック（`ComputeHash` → `HasChangedAsync` → `ClearAll` → `ResetAllAsync`）を追加。
+
 - **CI: MSI ビルド回帰防止ジョブを追加** (#141)
   - `publish-win` ジョブ（PR 時のみ）: win-x64 バイナリをパブリッシュしアーティファクト保存。
   - `msi-check` ジョブ（PR 時のみ）: WiX 5.0.2 で `Product.wxs` をビルド検証し `msi-ci` アーティファクトを保存（7 日保持）。
