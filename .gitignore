@@ -75,6 +75,3 @@ configs/config.json
 *.trx
 TestResults/
 LocalQualityResults/
-
-# MSI ビルド時に動的生成されるファイル
-installer/wix/DashboardComponents.wxs

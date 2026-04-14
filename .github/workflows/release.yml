@@ -151,8 +151,8 @@ jobs:
         with:
           dotnet-version: '10.0.201'
 
-      - name: WiX Toolset v4 インストール
-        run: dotnet tool install wix --version 4.0.5 --global
+      - name: WiX Toolset v5 インストール
+        run: dotnet tool install wix --version 5.0.2 --global
 
       - name: win-x64 バイナリをダウンロード
         uses: actions/download-artifact@v8
@@ -173,53 +173,10 @@ jobs:
           $version = $Matches['version']
           "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Dashboard コンポーネントリストを生成
-        shell: pwsh
-        run: |
-          # WiX 4.0.5 は ComponentGroup 内の Files 要素を未サポートのため PowerShell で動的生成する
-          # ProductComponents で明示定義済みの exe と PDB は除外する
-          $binDir  = (Resolve-Path "published\win-x64").Path
-          $excluded = @('cloud-migrator.exe', 'CloudMigrator.Dashboard.exe')
-
-          $allFiles = Get-ChildItem -Path $binDir -Recurse -File |
-              Where-Object { $_.Name -notin $excluded -and $_.Name -notlike '*.pdb' } |
-              Sort-Object FullName
-
-          $sb = [System.Text.StringBuilder]::new()
-          [void]$sb.AppendLine('<?xml version="1.0" encoding="utf-8"?>')
-          [void]$sb.AppendLine('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">')
-          [void]$sb.AppendLine('  <Fragment>')
-          [void]$sb.AppendLine('    <ComponentGroup Id="DashboardComponents" Directory="INSTALLFOLDER">')
-
-          foreach ($file in $allFiles) {
-              $relPath = $file.FullName.Substring($binDir.Length + 1)
-              $subDir  = [System.IO.Path]::GetDirectoryName($relPath)
-              # WiX ID: 先頭に固定プレフィックスを付け、使用不可文字をアンダースコアに置換
-              $safe = 'Dash_' + ($relPath -replace '[\\./\-\s\[\]@+]', '_')
-
-              if ([string]::IsNullOrEmpty($subDir)) {
-                  [void]$sb.AppendLine("      <Component Id=""Comp_$safe"" Guid=""*"">")
-              } else {
-                  [void]$sb.AppendLine("      <Component Id=""Comp_$safe"" Guid=""*"" Subdirectory=""$subDir"">")
-              }
-              # `$(var.BinDir) は WiX プリプロセッサ変数（PowerShell 展開させないようバッククォートでエスケープ）
-              [void]$sb.AppendLine("        <File Id=""File_$safe"" Source=""`$(var.BinDir)\$relPath"" KeyPath=""yes"" />")
-              [void]$sb.AppendLine("      </Component>")
-          }
-
-          [void]$sb.AppendLine('    </ComponentGroup>')
-          [void]$sb.AppendLine('  </Fragment>')
-          [void]$sb.AppendLine('</Wix>')
-
-          $outPath = Join-Path (Get-Location) 'installer' 'wix' 'DashboardComponents.wxs'
-          [System.IO.File]::WriteAllText($outPath, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
-          Write-Host "完了: $($allFiles.Count) ファイル → DashboardComponents.wxs"
-
       - name: MSI ビルド
         shell: pwsh
         run: |
           wix build installer/wix/Product.wxs `
-            installer/wix/DashboardComponents.wxs `
             -arch x64 `
             -d Version=${{ steps.version.outputs.version }} `
             -d "BinDir=${{ github.workspace }}/published/win-x64" `
