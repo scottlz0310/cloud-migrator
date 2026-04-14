@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **CI: MSI ビルド回帰防止ジョブを追加** (#141)
+  - `publish-win` ジョブ（PR 時のみ）: win-x64 バイナリをパブリッシュしアーティファクト保存。
+  - `msi-check` ジョブ（PR 時のみ）: WiX 5.0.2 で `Product.wxs` をビルド検証し `msi-ci` アーティファクトを保存（7 日保持）。
+  - 両ジョブに `if: github.event_name == 'pull_request'` を付与し push 時の不要実行を防止。
+  - `dotnet-version` を `build-test` に合わせ `"10.0"` に統一。
+
 ### Fixed
 
 - **MSI ビルド: WiX 名前空間を `v4/wxs` に修正** (#139)
