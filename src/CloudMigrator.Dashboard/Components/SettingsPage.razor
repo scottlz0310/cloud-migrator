@@ -29,14 +29,19 @@ else
                 <MudGrid Spacing="1">
                     <MudItem xs="12" sm="4">
                         <MudText Typo="Typo.overline" Color="Color.Secondary">移行ルート</MudText>
-                        <MudText Typo="Typo.body2">@_discovery.MigrationRoute</MudText>
+                        <MudText Typo="Typo.body2">@(_discovery.MigrationRoute switch
+                        {
+                            "OneDriveToSharePoint" => "OneDrive → SharePoint",
+                            null or "" => "未設定",
+                            _ => "未設定"
+                        })</MudText>
                     </MudItem>
                     <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送元フォルダー</MudText>
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送元フォルダ</MudText>
                         <MudText Typo="Typo.body2" Style="word-break: break-all;">@(_discovery.OneDriveSourceFolderPath is { Length: > 0 } p ? p : "未設定")</MudText>
                     </MudItem>
                     <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送先フォルダー</MudText>
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送先フォルダ</MudText>
                         <MudText Typo="Typo.body2" Style="word-break: break-all;">@(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "未設定")</MudText>
                     </MudItem>
                 </MudGrid>
@@ -239,8 +244,13 @@ else
                 ? null
                 : d;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗したため、未設定として扱います。");
             _discovery = null;
         }
     }

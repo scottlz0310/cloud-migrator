@@ -144,6 +144,8 @@ public partial class App : Application
                     hashLogger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
                     ConfigHashChecker.ClearAll(opts.Paths, hashLogger);
                     await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, configHash, ct).ConfigureAwait(false);
+                    // stateDb は DI シングルトンであり、以下のパイプラインにも同一インスタンスを渡す。
+                    // つまり「パイプラインが使う DB と同じ DB をリセットする」ため、誤ったDBへの操作は発生しない。
                     await stateDb.ResetAllAsync(ct).ConfigureAwait(false);
                 }
 
