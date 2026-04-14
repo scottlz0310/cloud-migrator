@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- **MSI ビルド: WiX 名前空間を `v4/wxs` に修正** (PR #TBD)
+- **MSI ビルド: WiX 名前空間を `v4/wxs` に修正** (#139)
   - `installer/wix/Product.wxs` の `xmlns` が `http://wixtoolset.org/schemas/v5/wxs` となっており、WiX 5.0.2 ビルド時に `WIX0199` エラーが発生していた。
   - WiX ツールセットはバージョン 4/5 ともに `http://wixtoolset.org/schemas/v4/wxs` 名前空間を使用するため、`v4/wxs` に修正。
 
