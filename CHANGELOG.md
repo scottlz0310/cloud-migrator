@@ -13,7 +13,7 @@
   - `installer/wix/Product.wxs` の `xmlns` が `http://wixtoolset.org/schemas/v5/wxs` となっており、WiX 5.0.2 ビルド時に `WIX0199` エラーが発生していた。
   - WiX ツールセットはバージョン 4/5 ともに `http://wixtoolset.org/schemas/v4/wxs` 名前空間を使用するため、`v4/wxs` に修正。
 
-- **MSI ビルド: `Files/Exclude` を DepsDir アプローチに置換** (#TBD)
+- **MSI ビルド: `Files/Exclude` を DepsDir アプローチに置換** (#140)
   - WiX 5.0.2 は `Files` 要素の `Exclude` 属性を未サポート（`WIX0004`）。
   - CI ステップで `BinDir` から `*.exe` / `*.pdb` を除いた `DepsDir` を作成し `DashboardComponents` に参照させる方式に変更。
   - ローカル検証スクリプト `tools/Test-WixBuild.ps1` を追加（CI を再現してタグプッシュ前に検証可能）。

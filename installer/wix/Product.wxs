@@ -11,7 +11,10 @@
     wix build Product.wxs -arch x64 \
       -d Version=1.2.3 \
       -d BinDir=path\to\publish\win-x64 \
+      -d DepsDir=path\to\publish\win-x64-deps \
       -o cloud-migrator-setup.msi
+
+  DepsDir は BinDir から *.exe / *.pdb を除いたディレクトリ（tools/Test-WixBuild.ps1 が自動生成）。
 
   注意: WiX ツールセットはバージョン 4/5 ともに v4 名前空間を使用する。
 -->

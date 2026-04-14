@@ -51,7 +51,7 @@ if (-not $SkipPublish) {
         --self-contained true `
         -p:PublishSingleFile=true `
         -p:Version=$Version `
-        --output $binDir
+        --output "$binDir"
 
     Write-Host "▶ Dashboard をパブリッシュ中..." -ForegroundColor Cyan
     dotnet publish "$root\src\CloudMigrator.Dashboard\CloudMigrator.Dashboard.csproj" `
@@ -59,7 +59,7 @@ if (-not $SkipPublish) {
         --runtime win-x64 `
         --self-contained false `
         -p:Version=$Version `
-        --output $binDir
+        --output "$binDir"
 } else {
     Write-Host "▶ パブリッシュをスキップ（SkipPublish 指定）" -ForegroundColor Yellow
     if (-not (Test-Path $binDir)) {
@@ -71,7 +71,7 @@ if (-not $SkipPublish) {
 Write-Host "▶ DepsDir を作成中..." -ForegroundColor Cyan
 if (Test-Path $depsDir) { Remove-Item $depsDir -Recurse -Force }
 Copy-Item -Path $binDir -Destination $depsDir -Recurse -Force
-Get-ChildItem $depsDir -Filter "*.exe"            | Remove-Item -Force
+Get-ChildItem $depsDir -Recurse -Filter "*.exe"   | Remove-Item -Force
 Get-ChildItem $depsDir -Recurse -Filter "*.pdb"   | Remove-Item -Force
 
 # ─── 3. wix build ────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ wix build "$root\installer\wix\Product.wxs" `
     -d Version=$Version `
     -d "BinDir=$binDir" `
     -d "DepsDir=$depsDir" `
-    -o $outMsi
+    -o "$outMsi"
 
 Write-Host ""
 Write-Host "✓ 完了: $outMsi" -ForegroundColor Green
