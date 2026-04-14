@@ -76,6 +76,26 @@ jobs:
             "**/TestResults/**/*.trx"
             "**/TestResults/**/coverage.cobertura.xml"
 
+      - name: CLI / Dashboard を win-x64 向けにパブリッシュ（MSI ビルド検証用）
+        # windows-latest のみ実行（matrix.os が追加されても MSI は win-x64 専用）
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          dotnet publish src/CloudMigrator.Cli/CloudMigrator.Cli.csproj `
+            --configuration Release --runtime win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:Version=0.0.0-ci --output publish/win-x64
+          dotnet publish src/CloudMigrator.Dashboard/CloudMigrator.Dashboard.csproj `
+            --configuration Release --runtime win-x64 --self-contained false `
+            -p:Version=0.0.0-ci --output "publish/win-x64"
+
+      - name: バイナリをアーティファクトに保存（MSI ビルド検証用）
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-publish-win-x64
+          path: publish/win-x64/
+          retention-days: 1
+
   quality-gate:
     name: Quality Gate
     runs-on: windows-latest
@@ -119,3 +139,45 @@ jobs:
       - name: セキュリティスキャン
         run: dotnet run --project src/CloudMigrator.Cli/CloudMigrator.Cli.csproj --configuration Release -- security-scan
 
+  msi-check:
+    name: MSI ビルド検証（WiX 回帰防止）
+    runs-on: windows-latest
+    needs: build-test
+    env:
+      HUSKY: 0
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: WiX Toolset v5 インストール
+        run: dotnet tool install wix --version 5.0.2 --global
+
+      - name: バイナリをダウンロード
+        uses: actions/download-artifact@v8
+        with:
+          name: ci-publish-win-x64
+          path: published/win-x64
+
+      - name: MSI ビルド（WiX スキーマ・変数定義の検証）
+        shell: pwsh
+        run: |
+          # WiX 5.0.2 は Files/Exclude 未サポートのため DepsDir を使用
+          $binDir  = "${{ github.workspace }}/published/win-x64"
+          $depsDir = "${{ github.workspace }}/published/win-x64-deps"
+          Copy-Item -Path $binDir -Destination $depsDir -Recurse -Force
+          Get-ChildItem $depsDir -Recurse -Filter "*.exe" | Remove-Item -Force
+          Get-ChildItem $depsDir -Recurse -Filter "*.pdb" | Remove-Item -Force
+
+          wix build installer/wix/Product.wxs `
+            -arch x64 `
+            -d Version=0.0.0 `
+            -d "BinDir=$binDir" `
+            -d "DepsDir=$depsDir" `
+            -o cloud-migrator-ci.msi
+
+      - name: MSI をアーティファクトに保存
+        uses: actions/upload-artifact@v7
+        with:
+          name: msi-ci
+          path: cloud-migrator-ci.msi
+          retention-days: 7
