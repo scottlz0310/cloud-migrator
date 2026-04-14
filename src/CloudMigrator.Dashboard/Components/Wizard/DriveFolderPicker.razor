@@ -90,7 +90,9 @@
                                               @onclick="@(() => _newFolderName = folder.DisplayName)">
                                             <MudIconButton Icon="@Icons.Material.Outlined.DriveFileRenameOutline"
                                                            Size="Size.Small"
-                                                           Color="Color.Secondary" />
+                                                           Color="Color.Secondary"
+                                                           aria-label="この名前を新規フォルダ名に使用"
+                                                           title="この名前を新規フォルダ名に使用" />
                                         </span>
                                     </MudTooltip>
                                     <MudIcon Icon="@Icons.Material.Filled.ChevronRight"
@@ -114,7 +116,11 @@
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense"
                                   Disabled="@_isBusy"
-                                  Placeholder="例: Migration2024" />
+                                  Immediate="true"
+                                  Placeholder="例: Migration2024"
+                                  Error="@(_newFolderNameError is not null)"
+                                  HelperText="@(_newFolderNameError ?? "/ \\ : * ? &quot; &lt; &gt; | は使用できません")"
+                                  HelperTextOnFocus="true" />
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Secondary"
                                Size="Size.Small"
@@ -180,6 +186,10 @@
     private bool _isBusy;
     private string? _error;
     private string _newFolderName = string.Empty;
+    private string? _newFolderNameError;
+
+    // OneDrive / SharePoint のフォルダ名として禁止されている文字
+    private static readonly char[] InvalidFolderNameChars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
 
     // ナビゲーションスタック用
     private readonly List<(string FolderId, string DisplayName)> _navStack = [];
@@ -209,6 +219,8 @@
                 _breadcrumbs.Clear();
                 SelectedFolderId = string.Empty;
                 SelectedFolderPath = string.Empty;
+                _newFolderName = string.Empty;
+                _newFolderNameError = null;
             }
 
             _initialized = true;
@@ -222,6 +234,8 @@
     private async Task OpenPicker()
     {
         _isOpen = true;
+        _newFolderName = string.Empty;
+        _newFolderNameError = null;
         _navStack.Clear();
         _navStack.Add((string.Empty, "ルート"));
         RebuildBreadcrumbs();
@@ -232,6 +246,8 @@
     {
         _isOpen = false;
         _error = null;
+        _newFolderName = string.Empty;
+        _newFolderNameError = null;
     }
 
     private async Task NavigateIntoAsync(DriveFolderEntry folder)
@@ -293,6 +309,13 @@
     {
         var name = _newFolderName.Trim();
         if (string.IsNullOrEmpty(name)) return;
+
+        if (name.IndexOfAny(InvalidFolderNameChars) >= 0)
+        {
+            _newFolderNameError = "フォルダ名に使用できない文字が含まれています（/ \\ : * ? \" < > |）";
+            return;
+        }
+        _newFolderNameError = null;
 
         // 現在のナビゲーション位置 + 入力された名前でパスを構成する。
         // FolderId は空（存在しない）のままにしておき、転送時に自動作成させる。
