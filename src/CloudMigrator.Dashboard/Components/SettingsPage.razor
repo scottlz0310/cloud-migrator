@@ -12,6 +12,43 @@
 }
 else
 {
+    @* ── 転送ルート情報（読み取り専用） *@
+    <MudCard Elevation="2" Style="max-width: 600px;" Class="mb-4">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.subtitle1">転送ルート情報</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (_discovery is null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">ウィザードが未完了です。セットアップウィザードで転送元・転送先を設定してください。</MudText>
+            }
+            else
+            {
+                <MudGrid Spacing="1">
+                    <MudItem xs="12" sm="4">
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">移行ルート</MudText>
+                        <MudText Typo="Typo.body2">@(_discovery.MigrationRoute switch
+                        {
+                            "OneDriveToSharePoint" => "OneDrive → SharePoint",
+                            null or "" => "未設定",
+                            _ => "未設定"
+                        })</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送元フォルダ</MudText>
+                        <MudText Typo="Typo.body2" Style="word-break: break-all;">@(_discovery.OneDriveSourceFolderPath is { Length: > 0 } p ? p : "未設定")</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送先フォルダ</MudText>
+                        <MudText Typo="Typo.body2" Style="word-break: break-all;">@(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "未設定")</MudText>
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudCardContent>
+    </MudCard>
+
     <MudCard Elevation="2" Style="max-width: 600px;">
         <MudCardContent>
             <MudGrid>
@@ -171,6 +208,7 @@ else
 </MudMessageBox>
 @code {
     private ConfigDto? _config;
+    private DiscoveryConfigDto? _discovery;
     private bool _isRebuilding;
     private MudMessageBox? _confirmBox;
 
@@ -191,6 +229,30 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadConfigAsync();
+        await LoadDiscoveryAsync();
+    }
+
+    private async Task LoadDiscoveryAsync()
+    {
+        try
+        {
+            var d = await ConfigService.GetDiscoveryConfigAsync();
+            // ウィザード未完了の場合はすべてのパスフィールドが空
+            _discovery = (string.IsNullOrEmpty(d.OneDriveSourceFolderPath) &&
+                          string.IsNullOrEmpty(d.SharePointDestFolderPath) &&
+                          string.IsNullOrEmpty(d.MigrationRoute))
+                ? null
+                : d;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗したため、未設定として扱います。");
+            _discovery = null;
+        }
     }
 
     private async Task LoadConfigAsync()

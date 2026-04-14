@@ -134,6 +134,21 @@ public partial class App : Application
                     activateController = ctrl => Volatile.Write(ref activeCtrl, ctrl ?? concurrencyController);
                 }
 
+                // 設定変更検知（FR-10）: CLI の TransferCommand と同等のハッシュ確認を行う
+                var configHash = ConfigHashChecker.ComputeHash(opts);
+                bool hashChanged = await ConfigHashChecker.HasChangedAsync(opts.Paths.ConfigHash, configHash, ct)
+                    .ConfigureAwait(false);
+                if (hashChanged)
+                {
+                    var hashLogger = loggerFactory2.CreateLogger("MigrationWork");
+                    hashLogger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
+                    ConfigHashChecker.ClearAll(opts.Paths, hashLogger);
+                    await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, configHash, ct).ConfigureAwait(false);
+                    // stateDb は DI シングルトンであり、以下のパイプラインにも同一インスタンスを渡す。
+                    // つまり「パイプラインが使う DB と同じ DB をリセットする」ため、誤ったDBへの操作は発生しない。
+                    await stateDb.ResetAllAsync(ct).ConfigureAwait(false);
+                }
+
                 try
                 {
                     var graphClient = GraphClientFactory.Create(
