@@ -44,13 +44,31 @@
       <Directory Id="AppMenuFolder" Name="Cloud Migrator" />
     </StandardDirectory>
 
-    <!-- メイン実行ファイル（Guid 固定: アップグレード/修復時のコンポーネント追跡を安定させる） -->
+    <!--
+      主要実行ファイル（Guid 固定: アップグレード/修復時のコンポーネント追跡を安定させる）
+      両 exe を明示参照することで BinDir に不足がある場合のビルド時エラーを保証する
+    -->
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="EA5F2D8B-1C3A-4E7F-9B0D-6A2C4E8F1B3D">
         <File Id="cloud_migrator_exe"
               Source="$(var.BinDir)\cloud-migrator.exe"
               KeyPath="yes" />
       </Component>
+      <Component Id="DashboardExecutable" Guid="5A7C9E1B-3D5F-4A8C-0E2A-6B8D0C4E6F1A">
+        <File Id="CloudMigrator_Dashboard_exe"
+              Source="$(var.BinDir)\CloudMigrator.Dashboard.exe"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      Dashboard 依存ファイル群（DLL / config / wwwroot / runtimes など）
+      BinDir 配下を再帰的に収集。主要 exe と PDB は除外済み。
+      サブディレクトリ（wwwroot/ / runtimes/ など）の構造はそのまま INSTALLFOLDER 下に展開される
+    -->
+    <ComponentGroup Id="DashboardComponents" Directory="INSTALLFOLDER">
+      <Files Include="$(var.BinDir)\**\*"
+             Exclude="$(var.BinDir)\cloud-migrator.exe;$(var.BinDir)\CloudMigrator.Dashboard.exe;$(var.BinDir)\**\*.pdb" />
     </ComponentGroup>
 
     <!-- スタートメニューショートカット -->
@@ -58,7 +76,7 @@
       <Component Id="ApplicationShortcut" Guid="*">
         <Shortcut Id="StartMenuShortcut"
                   Name="Cloud Migrator"
-                  Target="[INSTALLFOLDER]cloud-migrator.exe"
+                  Target="[INSTALLFOLDER]CloudMigrator.Dashboard.exe"
                   WorkingDirectory="INSTALLFOLDER"
                   Description="Cloud storage migration tool" />
         <RemoveFolder Id="RemoveAppMenuFolder"
@@ -95,6 +113,7 @@
 
     <Feature Id="ProductFeature" Title="Cloud Migrator" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="DashboardComponents" />
       <ComponentGroupRef Id="ShortcutComponents" />
       <ComponentGroupRef Id="PathComponents" />
     </Feature>

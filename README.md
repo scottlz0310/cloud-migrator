@@ -139,7 +139,7 @@ dotnet test tests/integration/CloudMigrator.Tests.Integration.csproj
 - [docs/dataflow.md](docs/dataflow.md): 設定、状態 DB、転送、可観測性のデータフロー
 - [docs/manual-test-runbook.md](docs/manual-test-runbook.md): 手動テスト手順
 - [docs/implementation-plan.md](docs/implementation-plan.md): 実装計画
-- [task.md](task.md): 現在の進捗
+- [tasks.md](tasks.md): 現在の進捗
 - [CHANGELOG.md](CHANGELOG.md): 変更履歴
 
 ## ライセンス

@@ -75,7 +75,7 @@ PR サイズ目安: ~300 行。
 `MIGRATOR__GRAPH__CLIENTSECRET` は `configs/config.json` に含めず `AppConfiguration.GetGraphClientSecret()` 経由のみで取得。
 
 ### タスク管理
-現在の進捗は `task.md`（ルート）を参照。フェーズ完了時に更新すること。
+現在の進捗は `tasks.md`（ルート）を参照。フェーズ完了時に更新すること。
 
 ---
 
@@ -90,9 +90,9 @@ git checkout -b feature/phase{N}-{名前}  # ブランチ作成
 dotnet build CloudMigrator.slnx          # ローカルビルド確認
 dotnet test tests/unit/...               # テスト確認
 ```
-### 2. CHANGELOG・task.md 更新
+### 2. CHANGELOG・tasks.md 更新
 - `CHANGELOG.md` に当フェーズの変更内容を追記（Keep a Changelog 形式、日付入り）
-- `task.md` の完了チェックボックスを更新
+- `tasks.md` の完了チェックボックスを更新
 
 ### 3. コミット & PR
 ```bash
