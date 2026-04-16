@@ -416,17 +416,17 @@ else
             Snackbar.Add("タイムアウトは 30〜3600 秒の範囲で入力してください。", Severity.Warning);
             return;
         }
-        if (_editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyDecreasePercent is < 1 or > 99)
+        if (!_editUseRateControl && _editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyDecreasePercent is < 1 or > 99)
         {
             Snackbar.Add("減速率は 1〜99 の範囲で入力してください。", Severity.Warning);
             return;
         }
-        if (_editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyIncreaseIntervalSec is not (30 or 60 or 90 or 120))
+        if (!_editUseRateControl && _editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyIncreaseIntervalSec is not (30 or 60 or 90 or 120))
         {
             Snackbar.Add("増速インターバルは 30 / 60 / 90 / 120 秒から選択してください。", Severity.Warning);
             return;
         }
-        if (_editAdaptiveConcurrencyInitialDegree is < 0 or > 256)
+        if (!_editUseRateControl && _editAdaptiveConcurrencyInitialDegree is < 0 or > 256)
         {
             Snackbar.Add("初期並列数は 0〜256 の範囲で入力してください。", Severity.Warning);
             return;
