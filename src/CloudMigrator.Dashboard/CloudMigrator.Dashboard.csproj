@@ -8,6 +8,8 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>CloudMigrator.Dashboard</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- AdaptiveConcurrencyController/Adapter は [Obsolete] 化済みだが後方互換のため継続使用。v0.6.0 で削除予定。 -->
+    <NoWarn>CS0618</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -463,6 +463,43 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     }
 
     /// <inheritdoc/>
+    public async Task RecordMetricsBatchAsync(
+        IEnumerable<(string Name, double Value, DateTimeOffset Timestamp)> snapshots,
+        CancellationToken ct)
+    {
+        var items = snapshots as ICollection<(string, double, DateTimeOffset)> ?? snapshots.ToList();
+        if (items.Count == 0) return;
+
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await using var tx = await _conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using var cmd = _conn.CreateCommand();
+            cmd.Transaction = (Microsoft.Data.Sqlite.SqliteTransaction)tx;
+            cmd.CommandText = """
+                INSERT INTO metrics (timestamp, name, value)
+                VALUES (@ts, @name, @value);
+                """;
+            var tsParam = cmd.Parameters.Add("@ts", Microsoft.Data.Sqlite.SqliteType.Text);
+            var nameParam = cmd.Parameters.Add("@name", Microsoft.Data.Sqlite.SqliteType.Text);
+            var valueParam = cmd.Parameters.Add("@value", Microsoft.Data.Sqlite.SqliteType.Real);
+
+            foreach (var (name, value, timestamp) in items)
+            {
+                tsParam.Value = timestamp.ToString("O");
+                nameParam.Value = name;
+                valueParam.Value = value;
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(
         string name, int recentMinutes, CancellationToken ct)
     {

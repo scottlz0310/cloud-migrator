@@ -60,6 +60,9 @@ public sealed class MigratorOptions
     // --- Token Bucket レートリミッター設定 ---
     public RateLimiterOptions RateLimiter { get; set; } = new();
 
+    // --- レートベース転送制御設定（v0.5.0）---
+    public RateControlSettings RateControl { get; set; } = new();
+
     // --- プロバイダー設定 ---
     public GraphProviderOptions Graph { get; set; } = new();
     public DropboxProviderOptions Dropbox { get; set; } = new();
@@ -218,6 +221,63 @@ public sealed class ServerSideCopyOptions
     /// この時間内に完了しなければ例外を投げてクライアント経由にフォールバックする。デフォルト 1800（30分）
     /// </summary>
     public int TimeoutSec { get; set; } = 1800;
+}
+
+/// <summary>
+/// Graph API レートベース転送制御エンジンの設定（v0.5.0: <c>RateControlledTransferController</c> 用）。
+/// </summary>
+public sealed class RateControlSettings
+{
+    /// <summary>レートベース転送制御を有効にするかどうか。false の場合は旧 AdaptiveConcurrencyController を使用する。デフォルト false</summary>
+    public bool UseRateControl { get; set; } = false;
+
+    /// <summary>短期時間窓（秒）。スパイク検知・緊急制御に使用する。デフォルト 5</summary>
+    public int ShortWindowSec { get; set; } = 5;
+
+    /// <summary>中期時間窓（秒）。安定判断・レート調整のベースに使用する。デフォルト 30</summary>
+    public int LongWindowSec { get; set; } = 30;
+
+    /// <summary>緊急減速の 429 率閾値（0–1）。短期窓の 429 率がこの値を超えると緊急減速する。デフォルト 0.10（10%）</summary>
+    public double EmergencyThreshold { get; set; } = 0.10;
+
+    /// <summary>緩減速の 429 率閾値（0–1）。中期窓の 429 率がこの値を超えると緩やかに減速する。デフォルト 0.03（3%）</summary>
+    public double SlowdownThreshold { get; set; } = 0.03;
+
+    /// <summary>可変減衰の最小係数。デフォルト 0.3</summary>
+    public double MinDecayFactor { get; set; } = 0.3;
+
+    /// <summary>可変減衰の最大係数。デフォルト 0.9</summary>
+    public double MaxDecayFactor { get; set; } = 0.9;
+
+    /// <summary>
+    /// 可変減衰の感度係数。<c>factor = clamp(1 - decayK * rate429, minDecay, maxDecay)</c> 計算に使用する。
+    /// デフォルト 5.0（PoC 中に調整）
+    /// </summary>
+    public double DecayK { get; set; } = 5.0;
+
+    /// <summary>加速時レート増加率（+accelerateRatio / サイクル）。デフォルト 0.05（+5%）</summary>
+    public double AccelerateRatio { get; set; } = 0.05;
+
+    /// <summary>並列上限（補助制御）。デフォルト 16</summary>
+    public int MaxConcurrency { get; set; } = 16;
+
+    /// <summary>dispatch 停止インフライト閾値。インフライト数がこの値を超えると dispatch を停止する。デフォルト 32（PoC 中に調整）</summary>
+    public int InFlightThreshold { get; set; } = 32;
+
+    /// <summary>スコア関数の 429 ペナルティ重み。デフォルト 1.0（PoC 中に調整）</summary>
+    public double PenaltyWeight { get; set; } = 1.0;
+
+    /// <summary>スコア関数のレイテンシペナルティ重み。デフォルト 0.1（PoC 中に調整）</summary>
+    public double LatencyWeight { get; set; } = 0.1;
+
+    /// <summary>初期レート（req/sec）。デフォルト 7.0</summary>
+    public double InitialRatePerSec { get; set; } = 7.0;
+
+    /// <summary>レートの下限（req/sec）。デフォルト 1.0</summary>
+    public double MinRatePerSec { get; set; } = 1.0;
+
+    /// <summary>メトリクスバッファのフラッシュ間隔（秒）。デフォルト 3</summary>
+    public int MetricsFlushIntervalSec { get; set; } = 3;
 }
 
 /// <summary>

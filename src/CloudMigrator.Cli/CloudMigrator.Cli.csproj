@@ -20,6 +20,9 @@
     <Nullable>enable</Nullable>
     <UserSecretsId>60e5cdd2-925e-488b-848f-6d5f4d95c93b</UserSecretsId>
     <AssemblyName>cloud-migrator</AssemblyName>
+    <!-- AdaptiveConcurrencyController は [Obsolete] 化済みだが、CliServices/TransferCommand で
+         後方互換維持のため継続使用する。v0.6.0 で削除予定。 -->
+    <NoWarn>CS0618</NoWarn>
   </PropertyGroup>
 
 </Project>

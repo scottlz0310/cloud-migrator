@@ -1,3 +1,6 @@
+// CliServices は AdaptiveConcurrencyController の後方互換ラッパーとして継続使用するため
+// Obsolete 警告を抑制する。v0.6.0 で AdaptiveConcurrencyController 削除時に対応する。
+#pragma warning disable CS0618
 using System.Text.Json;
 using System.Net;
 using CloudMigrator.Core.Configuration;
@@ -28,33 +31,58 @@ internal sealed class CliServices : IDisposable
     public SkipListManager SkipListManager { get; }
     private readonly string? _rateStatePath;
 
-    // プロファイル名 → コントローラーの辞書
+    // プロファイル名 → コントローラーの辞書（旧 AdaptiveConcurrencyController）
     private readonly Dictionary<string, AdaptiveConcurrencyController> _controllers;
     // onRateLimit ラムダが参照するプロキシ（アクティブなコントローラーへの間接参照）
     private readonly ControllerProxy _controllerProxy;
 
+    // v0.5.0: RateControlledTransferController（UseRateControl=true 時に使用）
+    private readonly RateControlledTransferController? _rateController;
+    private readonly MetricsBuffer? _rateControllerMetricsBuffer;
+
     /// <summary>
-    /// 指定プロバイダーのコントローラーを取得する。
-    /// <paramref name="providerName"/> に一致するプロファイルが存在しない場合は "default" プロファイルへフォールバックし、
-    /// それも存在しない場合のみ null を返す。
+    /// 指定プロバイダーのレート制御コントローラーを取得する。
+    /// <para>
+    /// <see cref="RateControlSettings.UseRateControl"/> が true の場合は <see cref="_rateController"/> を返す。
+    /// false の場合は旧 <see cref="AdaptiveConcurrencyController"/> を <see cref="AdaptiveConcurrencyControllerAdapter"/> でラップして返す。
+    /// </para>
     /// </summary>
-    public AdaptiveConcurrencyController? GetController(string providerName) =>
-        _controllers.TryGetValue(providerName, out var c) ? c :
-        _controllers.TryGetValue("default", out var def) ? def : null;
+    public ITransferRateController? GetController(string providerName)
+    {
+        if (_rateController is not null)
+            return _rateController;
+
+        var acc = _controllers.TryGetValue(providerName, out var c) ? c :
+            _controllers.TryGetValue("default", out var def) ? def : null;
+#pragma warning disable CS0618 // AdaptiveConcurrencyControllerAdapter の Obsolete 警告を抑制
+        return acc is not null ? new AdaptiveConcurrencyControllerAdapter(acc) : null;
+#pragma warning restore CS0618
+    }
 
     /// <summary>
     /// 指定プロバイダーのコントローラーをアクティブにする。
     /// onRateLimit ラムダがこのコントローラーに通知を転送するようになる。
     /// </summary>
-    public void ActivateController(string providerName) =>
-        _controllerProxy.Active = GetController(providerName);
+    public void ActivateController(string providerName)
+    {
+        var acc = _controllers.TryGetValue(providerName, out var c) ? c :
+            _controllers.TryGetValue("default", out var def) ? def : null;
+        _controllerProxy.Active = acc;
+    }
 
     /// <summary>
-    /// 任意のコントローラーを直接アクティブにする（フェーズ切り替え用）。
+    /// 旧コントローラーを直接アクティブにする（フェーズ切り替え用）。
     /// null を渡すと onRateLimit 通知が破棄される。
     /// </summary>
     public void SetActiveController(AdaptiveConcurrencyController? ctrl) =>
         _controllerProxy.Active = ctrl;
+
+    /// <summary>
+    /// 内部の旧 <see cref="AdaptiveConcurrencyController"/> を直接返す（フェーズ切り替え内部用）。
+    /// </summary>
+    internal AdaptiveConcurrencyController? GetAdaptiveController(string providerName) =>
+        _controllers.TryGetValue(providerName, out var c) ? c :
+        _controllers.TryGetValue("default", out var def) ? def : null;
 
     /// <summary>
     /// Token Bucket レートリミッター。<see cref="RateLimiterOptions.Enabled"/> が false の場合は null。
@@ -90,7 +118,9 @@ internal sealed class CliServices : IDisposable
         Dictionary<string, AdaptiveConcurrencyController> controllers,
         ControllerProxy controllerProxy,
         TokenBucketRateLimiter? rateLimiter,
-        string? rateStatePath)
+        string? rateStatePath,
+        RateControlledTransferController? rateController = null,
+        MetricsBuffer? rateControllerMetricsBuffer = null)
     {
         Options = options;
         LoggerFactory = loggerFactory;
@@ -102,6 +132,8 @@ internal sealed class CliServices : IDisposable
         _controllerProxy = controllerProxy;
         RateLimiter = rateLimiter;
         _rateStatePath = rateStatePath;
+        _rateController = rateController;
+        _rateControllerMetricsBuffer = rateControllerMetricsBuffer;
     }
 
     public static CliServices Build(string? configPath = null)
@@ -286,6 +318,18 @@ internal sealed class CliServices : IDisposable
             options.Paths.SkipList,
             loggerFactory.CreateLogger<SkipListManager>());
 
+        // v0.5.0: RateControlledTransferController（UseRateControl=true 時）
+        RateControlledTransferController? rateController = null;
+        MetricsBuffer? rateControllerMetricsBuffer = null;
+        if (options.RateControl.UseRateControl)
+        {
+            loggerFactory.CreateLogger<CliServices>().LogInformation(
+                "RateControlledTransferController を有効化します（初期レート: {Rate:F1} req/sec）",
+                options.RateControl.InitialRatePerSec);
+            // MetricsBuffer は後でパイプラインから stateDb を渡して初期化するため、
+            // ここでは null のままにする（TransferCommand で組み立てる）
+        }
+
         return new CliServices(
             options,
             loggerFactory,
@@ -296,7 +340,9 @@ internal sealed class CliServices : IDisposable
             controllers,
             controllerProxy,
             rateLimiter,
-            rateStatePath);
+            rateStatePath,
+            rateController,
+            rateControllerMetricsBuffer);
     }
 
     /// <summary>
@@ -335,6 +381,10 @@ internal sealed class CliServices : IDisposable
         }
         RateLimiter?.Dispose();
         foreach (var c in _controllers.Values) c.Dispose();
+        // RateControlledTransferController は IAsyncDisposable なので同期 Dispose では完全にクリーンアップできないが、
+        // ここでは CancellationToken をキャンセルする効果がある（ControlLoop が停止する）
+        _rateController?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        _rateControllerMetricsBuffer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         DropboxProvider.Dispose();
         LoggerFactory.Dispose();
     }

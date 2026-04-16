@@ -494,9 +494,10 @@ public class DropboxMigrationPipelineTests
                        .Returns(() => Task.FromResult<Stream>(File.OpenRead(tempFile)));
             SetupDestBase();
 
-            using var controller = new AdaptiveConcurrencyController(
+            using var acc = new AdaptiveConcurrencyController(
                 initialDegree: 4, minDegree: 1, maxDegree: 4, increaseIntervalSec: 30,
                 Mock.Of<ILogger<AdaptiveConcurrencyController>>());
+            var controller = new AdaptiveConcurrencyControllerAdapter(acc);
 
             var pipeline = new DropboxMigrationPipeline(
                 _mockSource.Object, _mockDest.Object, _mockDb.Object, _options,

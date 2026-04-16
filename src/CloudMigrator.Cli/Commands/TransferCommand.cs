@@ -1,3 +1,6 @@
+// TransferCommand は AdaptiveConcurrencyController の後方互換ラッパーを使用するため
+// Obsolete 警告を抑制する。v0.6.0 で AdaptiveConcurrencyController 削除時に対応する。
+#pragma warning disable CS0618
 using System.CommandLine;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Migration;
@@ -118,15 +121,16 @@ internal static class TransferCommand
         // Phase C（フォルダ先行作成）専用コントローラー（maxDegree = MaxParallelFolderCreations）
         // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
         var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
-        AdaptiveConcurrencyController? folderCreationController = null;
-        Action<AdaptiveConcurrencyController?>? activateController = null;
-        if (adaptiveOpts.Enabled)
+        ITransferRateController? folderCreationController = null;
+        Action<ITransferRateController?>? activateController = null;
+        AdaptiveConcurrencyController? accFolderController = null; // Dispose 用に保持
+        if (adaptiveOpts.Enabled && !opts.RateControl.UseRateControl)
         {
             var maxFolderCreationDegree = Math.Max(1, opts.MaxParallelFolderCreations);
             var folderInitialDegree = adaptiveOpts.InitialDegree > 0
                 ? Math.Min(adaptiveOpts.InitialDegree, maxFolderCreationDegree)
                 : maxFolderCreationDegree;
-            folderCreationController = new AdaptiveConcurrencyController(
+            accFolderController = new AdaptiveConcurrencyController(
                 initialDegree: folderInitialDegree,
                 minDegree: Math.Min(adaptiveOpts.MinDegree, maxFolderCreationDegree),
                 maxDegree: maxFolderCreationDegree,
@@ -135,8 +139,9 @@ internal static class TransferCommand
                 increaseStep: adaptiveOpts.IncreaseStep,
                 decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
                 decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
+            folderCreationController = new AdaptiveConcurrencyControllerAdapter(accFolderController);
             // フェーズ切り替え時に onRateLimit の通知先を切り替えるコールバック
-            activateController = ctrl => svc.SetActiveController(ctrl ?? svc.GetController("sharepoint"));
+            activateController = ctrl => svc.SetActiveController(ctrl is null ? svc.GetAdaptiveController("sharepoint") : accFolderController);
         }
 
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
@@ -200,7 +205,8 @@ internal static class TransferCommand
         }
         finally
         {
-            folderCreationController?.Dispose();
+            // AdaptiveConcurrencyController を Dispose（Adapter は内部コントローラーを所有しないため直接 Dispose）
+            accFolderController?.Dispose();
         }
 
         if (summary.Failed > 0)
