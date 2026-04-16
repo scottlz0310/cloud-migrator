@@ -434,7 +434,9 @@ else
 
         try
         {
-            // 表示/非表示に関わらず常に _edit* 値を送信（トグル切替後も編集値を保持するため）
+            // 非表示セクションは null（UpdateConfigAsync が null フィールドをスキップするため現在値を維持）
+            // UseRateControl=ON: ACC フィールドを null → バリデーションと保存対象を一致させる
+            // UseRateControl=OFF: RC フィールドを null  → 同上
             var update = new ConfigUpdateDto(
                 MaxParallelTransfers: _editMaxParallelTransfers,
                 MaxParallelFolderCreations: _editMaxParallelFolderCreations,
@@ -442,20 +444,20 @@ else
                 LargeFileThresholdMb: _editLargeFileThresholdMb,
                 RetryCount: _editRetryCount,
                 TimeoutSec: _editTimeoutSec,
-                AdaptiveConcurrencyEnabled: _editAdaptiveConcurrencyEnabled,
-                AdaptiveConcurrencyInitialDegree: _editAdaptiveConcurrencyInitialDegree,
-                AdaptiveConcurrencyDecreasePercent: _editAdaptiveConcurrencyDecreasePercent,
-                AdaptiveConcurrencyIncreaseIntervalSec: _editAdaptiveConcurrencyIncreaseIntervalSec,
+                AdaptiveConcurrencyEnabled: _editUseRateControl ? null : _editAdaptiveConcurrencyEnabled,
+                AdaptiveConcurrencyInitialDegree: _editUseRateControl ? null : _editAdaptiveConcurrencyInitialDegree,
+                AdaptiveConcurrencyDecreasePercent: _editUseRateControl ? null : _editAdaptiveConcurrencyDecreasePercent,
+                AdaptiveConcurrencyIncreaseIntervalSec: _editUseRateControl ? null : _editAdaptiveConcurrencyIncreaseIntervalSec,
                 UseRateControl: _editUseRateControl,
-                RcShortWindowSec: _editRcShortWindowSec,
-                RcLongWindowSec: _editRcLongWindowSec,
-                RcEmergencyThresholdPct: _editRcEmergencyThresholdPct,
-                RcSlowdownThresholdPct: _editRcSlowdownThresholdPct,
-                RcDecayK: _editRcDecayK,
-                RcMinDecayFactor: _editRcMinDecayFactor,
-                RcMaxDecayFactor: _editRcMaxDecayFactor,
-                RcInFlightThreshold: _editRcInFlightThreshold,
-                RcMaxConcurrency: _editRcMaxConcurrency);
+                RcShortWindowSec: _editUseRateControl ? _editRcShortWindowSec : null,
+                RcLongWindowSec: _editUseRateControl ? _editRcLongWindowSec : null,
+                RcEmergencyThresholdPct: _editUseRateControl ? _editRcEmergencyThresholdPct : null,
+                RcSlowdownThresholdPct: _editUseRateControl ? _editRcSlowdownThresholdPct : null,
+                RcDecayK: _editUseRateControl ? _editRcDecayK : null,
+                RcMinDecayFactor: _editUseRateControl ? _editRcMinDecayFactor : null,
+                RcMaxDecayFactor: _editUseRateControl ? _editRcMaxDecayFactor : null,
+                RcInFlightThreshold: _editUseRateControl ? _editRcInFlightThreshold : null,
+                RcMaxConcurrency: _editUseRateControl ? _editRcMaxConcurrency : null);
             await ConfigService.UpdateConfigAsync(update);
             _config = await ConfigService.GetConfigAsync();
             CopyToEditFields(_config);
