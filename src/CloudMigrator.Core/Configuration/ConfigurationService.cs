@@ -19,7 +19,18 @@ public sealed record ConfigDto(
     bool AdaptiveConcurrencyEnabled = false,
     int AdaptiveConcurrencyInitialDegree = 0,
     int AdaptiveConcurrencyDecreasePercent = 50,
-    int AdaptiveConcurrencyIncreaseIntervalSec = 60);
+    int AdaptiveConcurrencyIncreaseIntervalSec = 60,
+    // ── RateControl 設定（v0.5.0: RateControlledTransferController 用）──
+    bool UseRateControl = false,
+    int RcShortWindowSec = 5,
+    int RcLongWindowSec = 30,
+    int RcEmergencyThresholdPct = 10,
+    int RcSlowdownThresholdPct = 3,
+    double RcDecayK = 5.0,
+    double RcMinDecayFactor = 0.3,
+    double RcMaxDecayFactor = 0.9,
+    int RcInFlightThreshold = 32,
+    int RcMaxConcurrency = 16);
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -36,7 +47,18 @@ public sealed record ConfigUpdateDto(
     bool? AdaptiveConcurrencyEnabled = null,
     int? AdaptiveConcurrencyInitialDegree = null,
     int? AdaptiveConcurrencyDecreasePercent = null,
-    int? AdaptiveConcurrencyIncreaseIntervalSec = null);
+    int? AdaptiveConcurrencyIncreaseIntervalSec = null,
+    // ── RateControl 設定（v0.5.0: RateControlledTransferController 用）──
+    bool? UseRateControl = null,
+    int? RcShortWindowSec = null,
+    int? RcLongWindowSec = null,
+    int? RcEmergencyThresholdPct = null,
+    int? RcSlowdownThresholdPct = null,
+    double? RcDecayK = null,
+    double? RcMinDecayFactor = null,
+    double? RcMaxDecayFactor = null,
+    int? RcInFlightThreshold = null,
+    int? RcMaxConcurrency = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -151,6 +173,37 @@ public sealed class ConfigurationService : IConfigurationService
             }
         }
 
+        // rateControl セクションを読み取る
+        var useRateControl = false;
+        var rcShortWindowSec = 5;
+        var rcLongWindowSec = 30;
+        var rcEmergencyThresholdPct = 10;
+        var rcSlowdownThresholdPct = 3;
+        var rcDecayK = 5.0;
+        var rcMinDecayFactor = 0.3;
+        var rcMaxDecayFactor = 0.9;
+        var rcInFlightThreshold = 32;
+        var rcMaxConcurrency = 16;
+        if (m.TryGetProperty("rateControl", out var rcProp) && rcProp.ValueKind == JsonValueKind.Object)
+        {
+            useRateControl = rcProp.TryGetProperty("useRateControl", out var urProp) && urProp.ValueKind == JsonValueKind.True;
+            rcShortWindowSec = GetInt(rcProp, "shortWindowSec", 5);
+            rcLongWindowSec = GetInt(rcProp, "longWindowSec", 30);
+            // emergencyThreshold / slowdownThreshold は JSON に 0–1 で保存、UI では 0–100 (%) で表示
+            if (rcProp.TryGetProperty("emergencyThreshold", out var etProp) && etProp.TryGetDouble(out var et))
+                rcEmergencyThresholdPct = Math.Clamp((int)Math.Round(et * 100), 0, 100);
+            if (rcProp.TryGetProperty("slowdownThreshold", out var stProp) && stProp.TryGetDouble(out var st))
+                rcSlowdownThresholdPct = Math.Clamp((int)Math.Round(st * 100), 0, 100);
+            if (rcProp.TryGetProperty("decayK", out var dkProp) && dkProp.TryGetDouble(out var dk))
+                rcDecayK = dk;
+            if (rcProp.TryGetProperty("minDecayFactor", out var minDfProp) && minDfProp.TryGetDouble(out var minDf))
+                rcMinDecayFactor = minDf;
+            if (rcProp.TryGetProperty("maxDecayFactor", out var maxDfProp) && maxDfProp.TryGetDouble(out var maxDf))
+                rcMaxDecayFactor = maxDf;
+            rcInFlightThreshold = GetInt(rcProp, "inFlightThreshold", 32);
+            rcMaxConcurrency = GetInt(rcProp, "maxConcurrency", 16);
+        }
+
         return new ConfigDto(
             MaxParallelTransfers: GetInt(m, "maxParallelTransfers", 4),
             MaxParallelFolderCreations: GetInt(m, "maxParallelFolderCreations", 4),
@@ -163,7 +216,17 @@ public sealed class ConfigurationService : IConfigurationService
             AdaptiveConcurrencyEnabled: adaptiveEnabled,
             AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree,
             AdaptiveConcurrencyDecreasePercent: adaptiveDecreasePercent,
-            AdaptiveConcurrencyIncreaseIntervalSec: adaptiveIncreaseIntervalSec);
+            AdaptiveConcurrencyIncreaseIntervalSec: adaptiveIncreaseIntervalSec,
+            UseRateControl: useRateControl,
+            RcShortWindowSec: rcShortWindowSec,
+            RcLongWindowSec: rcLongWindowSec,
+            RcEmergencyThresholdPct: rcEmergencyThresholdPct,
+            RcSlowdownThresholdPct: rcSlowdownThresholdPct,
+            RcDecayK: rcDecayK,
+            RcMinDecayFactor: rcMinDecayFactor,
+            RcMaxDecayFactor: rcMaxDecayFactor,
+            RcInFlightThreshold: rcInFlightThreshold,
+            RcMaxConcurrency: rcMaxConcurrency);
     }
 
     /// <inheritdoc />
@@ -215,6 +278,33 @@ public sealed class ConfigurationService : IConfigurationService
                     spAcObj["decreaseMultiplier"] = update.AdaptiveConcurrencyDecreasePercent.Value / 100.0;
                 if (update.AdaptiveConcurrencyIncreaseIntervalSec.HasValue)
                     spAcObj["increaseIntervalSec"] = update.AdaptiveConcurrencyIncreaseIntervalSec.Value;
+            }
+
+            // rateControl セクションを更新
+            if (update.UseRateControl.HasValue || update.RcShortWindowSec.HasValue
+                || update.RcLongWindowSec.HasValue || update.RcEmergencyThresholdPct.HasValue
+                || update.RcSlowdownThresholdPct.HasValue || update.RcDecayK.HasValue
+                || update.RcMinDecayFactor.HasValue || update.RcMaxDecayFactor.HasValue
+                || update.RcInFlightThreshold.HasValue || update.RcMaxConcurrency.HasValue)
+            {
+                if (m["rateControl"] is not JsonObject rcObj)
+                {
+                    rcObj = new JsonObject();
+                    m["rateControl"] = rcObj;
+                }
+                if (update.UseRateControl.HasValue) rcObj["useRateControl"] = update.UseRateControl.Value;
+                if (update.RcShortWindowSec.HasValue) rcObj["shortWindowSec"] = update.RcShortWindowSec.Value;
+                if (update.RcLongWindowSec.HasValue) rcObj["longWindowSec"] = update.RcLongWindowSec.Value;
+                // UI 側は % (0–100)、JSON 側は 0–1 に変換して保存
+                if (update.RcEmergencyThresholdPct.HasValue)
+                    rcObj["emergencyThreshold"] = update.RcEmergencyThresholdPct.Value / 100.0;
+                if (update.RcSlowdownThresholdPct.HasValue)
+                    rcObj["slowdownThreshold"] = update.RcSlowdownThresholdPct.Value / 100.0;
+                if (update.RcDecayK.HasValue) rcObj["decayK"] = update.RcDecayK.Value;
+                if (update.RcMinDecayFactor.HasValue) rcObj["minDecayFactor"] = update.RcMinDecayFactor.Value;
+                if (update.RcMaxDecayFactor.HasValue) rcObj["maxDecayFactor"] = update.RcMaxDecayFactor.Value;
+                if (update.RcInFlightThreshold.HasValue) rcObj["inFlightThreshold"] = update.RcInFlightThreshold.Value;
+                if (update.RcMaxConcurrency.HasValue) rcObj["maxConcurrency"] = update.RcMaxConcurrency.Value;
             }
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム

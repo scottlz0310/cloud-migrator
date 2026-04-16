@@ -35,7 +35,6 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     private double _currentRate;    // req/sec（lock で保護）
     private int _activeCount;       // 実行中リクエスト数
     private int _retryWaitingCount; // Retry 待ちリクエスト数
-
     private readonly object _rateLock = new();
 
     // ── トークンバケット（レート制御・dispatch ゲート）──
@@ -188,9 +187,10 @@ public sealed class RateControlledTransferController : ITransferRateController, 
 
         double newRate;
         string action;
+        int stateCode;
         lock (_rateLock)
         {
-            (newRate, action) = AdjustRate(_currentRate, shortSnap, longSnap);
+            (newRate, action, stateCode) = AdjustRate(_currentRate, shortSnap, longSnap);
             _currentRate = newRate;
         }
 
@@ -217,6 +217,8 @@ public sealed class RateControlledTransferController : ITransferRateController, 
         _metricsBuffer.Enqueue("avg_latency_ms", longSnap.AvgLatencyMs);
         _metricsBuffer.Enqueue("current_rate_limit", newRate);
         _metricsBuffer.Enqueue("current_in_flight", inFlight);
+        // ヒステリシス状態コード: 0=安定, 1=加速, 2=緩減速, 3=緊急減速（AdjustRate が直接返す）
+        _metricsBuffer.Enqueue("hysteresis_state_code", stateCode);
 
         _logger.LogDebug(
             "制御サイクル: レート={Rate:F2} req/sec, 429率短期={Short:P1}/中期={Long:P1}, インフライト={InFlight}, アクション={Action}",
@@ -226,19 +228,20 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     /// <summary>
     /// ヒステリシス制御 + 可変減衰でレートを調整する。
     /// </summary>
-    private (double newRate, string action) AdjustRate(
+    private (double newRate, string action, int stateCode) AdjustRate(
         double currentRate, MetricsSnapshot shortSnap, MetricsSnapshot longSnap)
     {
         var maxRate = _settings.MaxConcurrency; // req/sec の上限は MaxConcurrency と同値
 
         // ── ヒステリシス制御（3 段階）──────────────────────────────────
+        // stateCode: 0=安定, 1=加速, 2=緩減速, 3=緊急減速
 
         // 緊急減速: 短期 429 率 > emergencyThreshold
         if (shortSnap.Rate429 > _settings.EmergencyThreshold)
         {
             var factor = ComputeDecayFactor(shortSnap.Rate429);
             var newRate = Math.Max(_settings.MinRatePerSec, currentRate * factor);
-            return (newRate, $"緊急減速(factor={factor:F2})");
+            return (newRate, $"緊急減速(factor={factor:F2})", 3);
         }
 
         // 緩減速: 中期 429 率 > slowdownThreshold
@@ -246,18 +249,18 @@ public sealed class RateControlledTransferController : ITransferRateController, 
         {
             var factor = ComputeDecayFactor(longSnap.Rate429);
             var newRate = Math.Max(_settings.MinRatePerSec, currentRate * factor);
-            return (newRate, $"緩減速(factor={factor:F2})");
+            return (newRate, $"緩減速(factor={factor:F2})", 2);
         }
 
         // 加速: 中期 429 率 = 0
         if (longSnap.Rate429 == 0)
         {
             var newRate = Math.Min(maxRate, currentRate * (1.0 + _settings.AccelerateRatio));
-            return (newRate, "加速");
+            return (newRate, "加速", 1);
         }
 
         // 安定域: 変更なし
-        return (currentRate, "維持");
+        return (currentRate, "維持", 0);
     }
 
     /// <summary>

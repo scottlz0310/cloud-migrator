@@ -74,6 +74,14 @@ public partial class App : Application
         services.AddLogging();
 
         // ── Application services ─────────────────────────────────────────────
+        // 実効設定ファクトリを DI 登録（呼ぶたびに AppConfiguration.Build() で最新設定を取得）
+        // singleton ではなくファクトリにすることで、設定変更後も UI が古い値を参照し続けない
+        // ジョブ実行側（MigrationWork）も都度 AppConfiguration.Build() するため動作が一致する
+        services.AddSingleton<Func<MigratorOptions>>(_ =>
+            () => AppConfiguration.Build()
+                .GetSection(MigratorOptions.SectionName)
+                .Get<MigratorOptions>() ?? new MigratorOptions());
+
         services.AddSingleton<IConfigurationService, ConfigurationService>();
         services.AddSingleton<ITransferJobService>(sp =>
         {
@@ -92,7 +100,7 @@ public partial class App : Application
                 var auth = new GraphAuthenticator(opts.Graph.ClientId, opts.Graph.TenantId, clientSecret);
 
                 // AdaptiveConcurrencyController の初期化（config.json の AdaptiveConcurrency.sharepoint.Enabled = true で有効）
-                // Dashboard では UseRateControl=false 時のみ ACC を使用する（RateControlledTransferController の UI は未実装）
+                // UseRateControl=false 時のみ ACC を使用する
                 var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
                 AdaptiveConcurrencyController? accMain = null;        // Dispose + onRateLimit 用に保持
                 AdaptiveConcurrencyController? accFolder = null;      // Dispose + onRateLimit 用に保持
@@ -139,6 +147,30 @@ public partial class App : Application
                     // 参照一致で folderCreationController（Phase C 用）か concurrencyController（Phase D 用）かを判別する
                     activateController = ctrl =>
                         Volatile.Write(ref activeCtrl, ReferenceEquals(ctrl, folderCreationController) ? accFolder : accMain);
+                }
+
+                // UseRateControl=true 時は RateControlledTransferController を構築する
+                // （TransferCommand と同等の組み立てパターン）
+                RateControlledTransferController? rateController = null;
+                MetricsBuffer? rateMetricsBuffer = null;
+                if (opts.RateControl.UseRateControl)
+                {
+                    var aggregator = new TransferMetricsAggregator();
+                    rateMetricsBuffer = new MetricsBuffer(
+                        stateDb,
+                        opts.RateControl.MetricsFlushIntervalSec,
+                        loggerFactory2.CreateLogger<MetricsBuffer>());
+                    rateController = new RateControlledTransferController(
+                        aggregator,
+                        opts.RateControl,
+                        rateMetricsBuffer,
+                        loggerFactory2.CreateLogger<RateControlledTransferController>());
+                    // 429 発生時に RateControlledTransferController へ通知する
+                    onRateLimit = retryAfter => rateController.NotifyRateLimit(retryAfter);
+                    concurrencyController = rateController;
+                    loggerFactory2.CreateLogger("MigrationWork").LogInformation(
+                        "RateControlledTransferController を構築しました（初期レート: {Rate:F1} req/sec）",
+                        opts.RateControl.InitialRatePerSec);
                 }
 
                 // 設定変更検知（FR-10）: CLI の TransferCommand と同等のハッシュ確認を行う
@@ -199,6 +231,11 @@ public partial class App : Application
                     // AdaptiveConcurrencyControllerAdapter は内部 ACC を所有しないため ACC を直接 Dispose する
                     accMain?.Dispose();
                     accFolder?.Dispose();
+                    // RateControlledTransferController と MetricsBuffer を Dispose
+                    if (rateController is not null)
+                        await rateController.DisposeAsync().ConfigureAwait(false);
+                    if (rateMetricsBuffer is not null)
+                        await rateMetricsBuffer.DisposeAsync().ConfigureAwait(false);
                 }
             }
 

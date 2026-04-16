@@ -1,6 +1,8 @@
 @inject ITransferStateDb TransferStateDb
 @inject ITransferJobService JobService
+@inject Func<MigratorOptions> OptionsFactory
 @inject ILogger<DashboardPage> Logger
+@using CloudMigrator.Core.Configuration
 @implements IDisposable
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
@@ -247,6 +249,47 @@ else
             </MudItem>
         }
 
+        <!-- レートベース制御エンジン 観測パネル（UseRateControl=true 時のみ表示） -->
+        @if (_useRateControl)
+        {
+            <MudItem xs="12">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudText Typo="Typo.subtitle1">レートベース制御 リアルタイムモニター</MudText>
+                                <MudChip T="string" Color="@HysteresisColor" Size="Size.Small">@HysteresisLabel</MudChip>
+                            </MudStack>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudGrid Spacing="1">
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline" Color="Color.Secondary">現在レート上限（req/s）</MudText>
+                                <MudText Typo="Typo.body1"><b>@(_rcCurrentRate >= 0 ? _rcCurrentRate.ToString("F1") + " req/s" : "—")</b></MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline" Color="Color.Secondary">インフライト数</MudText>
+                                <MudText Typo="Typo.body1"><b>@(_rcInFlight >= 0 ? _rcInFlight.ToString("N0") : "—")</b></MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline" Color="Color.Secondary">短期 429 率</MudText>
+                                <MudText Typo="Typo.body1" Color="@(_rcRate429Short < 0 ? Color.Default : _rcRate429Short > _rcEmergencyThreshold ? Color.Error : Color.Success)">
+                                    <b>@(_rcRate429Short >= 0 ? (_rcRate429Short * 100).ToString("F1") + "%" : "—")</b>
+                                </MudText>
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudText Typo="Typo.overline" Color="Color.Secondary">中期 429 率</MudText>
+                                <MudText Typo="Typo.body1" Color="@(_rcRate429Long < 0 ? Color.Default : _rcRate429Long > _rcSlowdownThreshold ? Color.Warning : Color.Success)">
+                                    <b>@(_rcRate429Long >= 0 ? (_rcRate429Long * 100).ToString("F1") + "%" : "—")</b>
+                                </MudText>
+                            </MudItem>
+                        </MudGrid>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+
         <!-- メトリクスグラフ（データが蓄積されたら表示） -->
         @if (_filesSeries.Count > 0)
         {
@@ -398,6 +441,35 @@ else
     private double _latestFilesPerMin;
     private string _elapsed = "—";        // 総経過時間（壁時計時間）
     private string _workingElapsed = "—"; // 実稼働時間（DB記録の累積秒数）
+
+    // ── RateControl 観測パネル ─────────────────────────────────────────────────
+    private bool _useRateControl;
+    private double _rcCurrentRate = -1;
+    private double _rcInFlight = -1;
+    private double _rcRate429Short = -1;
+    private double _rcRate429Long = -1;
+    private int _rcHysteresisStateCode = -1; // -1=未取得, 0=安定, 1=加速, 2=緩減速, 3=緊急減速
+    // Config から読み込んだ閾値（429率色分けに使用）
+    private double _rcSlowdownThreshold;    // 0–1 スケール
+    private double _rcEmergencyThreshold;   // 0–1 スケール
+
+    private string HysteresisLabel => _rcHysteresisStateCode switch
+    {
+        3 => "緊急減速",
+        2 => "緩減速",
+        1 => "加速",
+        0 => "安定",
+        _ => "—"
+    };
+
+    private Color HysteresisColor => _rcHysteresisStateCode switch
+    {
+        3 => Color.Error,
+        2 => Color.Warning,
+        1 => Color.Success,
+        0 => Color.Default,
+        _ => Color.Default
+    };
     private string _eta = "—";
     private DateTimeOffset? _completedAt;
 
@@ -440,6 +512,13 @@ else
 
     private async Task RefreshAllAsync(CancellationToken ct)
     {
+        // 実効設定を都度取得（環境変数 > config.json > デフォルト優先）
+        // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
+        var opts = OptionsFactory();
+        _useRateControl = opts.RateControl.UseRateControl;
+        _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
+        _rcEmergencyThreshold = opts.RateControl.EmergencyThreshold;
+
         try { _summary = await TransferStateDb.GetSummaryAsync(ct); }
         catch (Exception ex) { Logger.LogError(ex, "RefreshAllAsync: GetSummaryAsync 失敗"); _summary ??= new TransferDbSummary(); }
         if (_summary is null) return;
@@ -455,6 +534,7 @@ else
         await RefreshMetricsAsync(ct);
         await UpdateElapsedAndEtaAsync(ct);
         await RefreshFolderProgressAsync(ct);
+        if (_useRateControl) await RefreshRateControlMetricsAsync(ct);
     }
 
     private async Task RefreshPhaseAsync(CancellationToken ct)
@@ -488,6 +568,35 @@ else
 
         var folderCreationDone = await TransferStateDb.GetCheckpointAsync("folder_creation_complete", ct);
         _phase = folderCreationDone == "true" ? "transferring" : "folder_creation";
+    }
+
+    private async Task RefreshRateControlMetricsAsync(CancellationToken ct)
+    {
+        // 直近 2 分間のメトリクスから最新値を取得する（Controller が 1 秒ごとにエンキューしている）
+        // 例外発生時はログに残してスキップ（PeriodicTimer ループが停止しないよう保護）
+        try
+        {
+            const int windowMinutes = 2;
+            var rateData    = await TransferStateDb.GetMetricsAsync("current_rate_limit",    windowMinutes, ct);
+            var inflightData= await TransferStateDb.GetMetricsAsync("current_in_flight",     windowMinutes, ct);
+            var short429Data= await TransferStateDb.GetMetricsAsync("rate_429_short",        windowMinutes, ct);
+            var long429Data = await TransferStateDb.GetMetricsAsync("rate_429_long",         windowMinutes, ct);
+            var stateData   = await TransferStateDb.GetMetricsAsync("hysteresis_state_code", windowMinutes, ct);
+
+            if (rateData.Count > 0)     _rcCurrentRate  = rateData[^1].Value;
+            if (inflightData.Count > 0) _rcInFlight     = inflightData[^1].Value;
+            if (short429Data.Count > 0) _rcRate429Short = short429Data[^1].Value;
+            if (long429Data.Count > 0)  _rcRate429Long  = long429Data[^1].Value;
+            if (stateData.Count > 0)    _rcHysteresisStateCode = (int)Math.Round(stateData[^1].Value); // 0–3
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "RateControl メトリクスの取得に失敗しました。次回ポーリングまでスキップします。");
+        }
     }
 
     private async Task RefreshFolderProgressAsync(CancellationToken ct)
