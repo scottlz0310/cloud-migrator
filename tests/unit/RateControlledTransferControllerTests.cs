@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.State;
 using CloudMigrator.Core.Transfer;
@@ -299,11 +298,23 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
         _mockAggregator.Setup(a => a.GetSnapshot(It.IsAny<TimeSpan>()))
             .Returns(new MetricsSnapshot(Rps: 5, Rate429: rate429, AvgLatencyMs: 50, Timestamp: DateTimeOffset.UtcNow));
 
-        var buffer = new MetricsBuffer(capturingDb, flushIntervalSec: 3600, NullLogger<MetricsBuffer>.Instance);
+        // flushIntervalSec: 1 = MetricsBuffer の最小フラッシュ間隔。ポーリングで検出可能にする
+        var buffer = new MetricsBuffer(capturingDb, flushIntervalSec: 1, NullLogger<MetricsBuffer>.Instance);
         var sut = new RateControlledTransferController(
             _mockAggregator.Object, settings, buffer, NullLogger<RateControlledTransferController>.Instance);
 
         return (sut, buffer, capturingDb);
+    }
+
+    // 指定メトリクスが DB に書き込まれるまでポーリングする（CI での固定待ち起因フレークを防止）
+    private static async Task WaitForMetricAsync(CapturingDb db, string name, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (db.Metrics.Any(m => m.Name == name)) return;
+            await Task.Delay(100);
+        }
     }
 
     [Fact]
@@ -313,9 +324,9 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
         // 目的: 短期 429 率 > emergencyThreshold (0.1) のとき stateCode = 3 が書き込まれること
         var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0.5); // > 0.1
 
-        await Task.Delay(1200);
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
         await sut.DisposeAsync();
-        await buffer.DisposeAsync(); // Dispose 時の最終 Flush でキューを書き出す
+        await buffer.DisposeAsync();
 
         var stateCodes = db.Metrics.Where(m => m.Name == "hysteresis_state_code").ToList();
         stateCodes.Should().NotBeEmpty();
@@ -329,7 +340,7 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
         // 目的: 短期 ≤ 0.1 かつ 中期 429 率 > slowdownThreshold (0.03) のとき stateCode = 2 が書き込まれること
         var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0.05); // 0.03 < 0.05 ≤ 0.1
 
-        await Task.Delay(1200);
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
         await sut.DisposeAsync();
         await buffer.DisposeAsync();
 
@@ -345,7 +356,7 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
         // 目的: 中期 429 率 = 0 のとき stateCode = 1 が書き込まれること
         var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0); // = 0
 
-        await Task.Delay(1200);
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
         await sut.DisposeAsync();
         await buffer.DisposeAsync();
 
@@ -361,7 +372,7 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
         // 目的: 短期 ≤ 0.1 かつ 0 < 中期 ≤ 0.03 のとき stateCode = 0（維持）が書き込まれること
         var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0.02); // 0 < 0.02 ≤ 0.03
 
-        await Task.Delay(1200);
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
         await sut.DisposeAsync();
         await buffer.DisposeAsync();
 

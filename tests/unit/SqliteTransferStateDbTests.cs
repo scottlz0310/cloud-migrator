@@ -534,6 +534,77 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         results[0].Value.Should().Be(1.0);
     }
 
+    // ── GetLatestMetricsAsync ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetLatestMetricsAsync_ReturnsLatestValuePerName()
+    {
+        // 検証対象: GetLatestMetricsAsync  目的: 複数 name を渡したとき、各 name の最新値 1 件だけ返ること
+        await _db.InitializeAsync(CancellationToken.None);
+
+        await _db.RecordMetricAsync("metric_a", 1.0, CancellationToken.None);
+        await Task.Delay(10);
+        await _db.RecordMetricAsync("metric_a", 2.0, CancellationToken.None); // latest
+        await _db.RecordMetricAsync("metric_b", 10.0, CancellationToken.None);
+        await Task.Delay(10);
+        await _db.RecordMetricAsync("metric_b", 20.0, CancellationToken.None); // latest
+
+        var result = await _db.GetLatestMetricsAsync(["metric_a", "metric_b"], 60, CancellationToken.None);
+
+        result.Should().HaveCount(2);
+        result["metric_a"].Should().Be(2.0);
+        result["metric_b"].Should().Be(20.0);
+    }
+
+    [Fact]
+    public async Task GetLatestMetricsAsync_OldRecordsOutsideWindow_AreExcluded()
+    {
+        // 検証対象: GetLatestMetricsAsync  目的: cutoff (recentMinutes) より古いレコードは除外されること
+        await _db.InitializeAsync(CancellationToken.None);
+
+        // 2 時間前のレコードを直接 INSERT
+        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_dbPath};");
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO metrics (timestamp, name, value)
+            VALUES (@ts, @name, @value);
+            """;
+        cmd.Parameters.AddWithValue("@ts", DateTimeOffset.UtcNow.AddHours(-2).ToString("O"));
+        cmd.Parameters.AddWithValue("@name", "old_metric");
+        cmd.Parameters.AddWithValue("@value", 999.0);
+        await cmd.ExecuteNonQueryAsync();
+
+        var result = await _db.GetLatestMetricsAsync(["old_metric"], 60, CancellationToken.None);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetLatestMetricsAsync_NonExistentName_NotInResult()
+    {
+        // 検証対象: GetLatestMetricsAsync  目的: 存在しない name のエントリは結果に含まれないこと
+        await _db.InitializeAsync(CancellationToken.None);
+
+        await _db.RecordMetricAsync("exists", 1.0, CancellationToken.None);
+
+        var result = await _db.GetLatestMetricsAsync(["exists", "not_exists"], 60, CancellationToken.None);
+
+        result.Should().ContainKey("exists");
+        result.Should().NotContainKey("not_exists");
+    }
+
+    [Fact]
+    public async Task GetLatestMetricsAsync_EmptyNames_ReturnsEmpty()
+    {
+        // 検証対象: GetLatestMetricsAsync  目的: names が空のとき空の辞書を返すこと
+        await _db.InitializeAsync(CancellationToken.None);
+
+        var result = await _db.GetLatestMetricsAsync([], 60, CancellationToken.None);
+
+        result.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task RecordMetricAsync_Timestamp_IsStoredAsRoundtripFormat()
     {
