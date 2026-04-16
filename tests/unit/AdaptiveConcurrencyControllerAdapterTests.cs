@@ -156,7 +156,7 @@ public class AdaptiveConcurrencyControllerAdapterTests
     }
 
     [Fact]
-    public async Task Acc_RemainsUsableAfterAdapterIsAbanoned()
+    public async Task Acc_RemainsUsableAfterAdapterIsAbandoned()
     {
         using var acc = CreateAcc(degree: 2);
         {

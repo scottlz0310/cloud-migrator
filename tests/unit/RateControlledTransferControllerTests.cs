@@ -246,11 +246,15 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
     [Fact]
     public async Task DisposeAsync_CalledTwice_DoesNotThrow()
     {
+        // 検証対象: DisposeAsync  目的: 2 回目の DisposeAsync 呼び出しでも例外が発生しないことを確認する
         var sut = CreateSut();
 
         await sut.DisposeAsync();
+
         // 2 回目の Dispose で例外が出ないこと（CTS が既にキャンセル済みでも安全）
         // Note: DisposeAsync は idempotent ではないが、制御ループ終了後は安全
+        var act = async () => await sut.DisposeAsync();
+        await act.Should().NotThrowAsync();
     }
 
     // ── スレッドセーフ ─────────────────────────────────────────────────────

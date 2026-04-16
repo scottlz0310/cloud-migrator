@@ -265,9 +265,11 @@ public sealed class RateControlSettings
     public int InFlightThreshold { get; set; } = 32;
 
     /// <summary>スコア関数の 429 ペナルティ重み。デフォルト 1.0（PoC 中に調整）</summary>
+    [System.Obsolete("PenaltyWeight は現時点では RateControlledTransferController で未使用のため、設定しても挙動に反映されません。実装反映まで互換性維持のため残置しています。")]
     public double PenaltyWeight { get; set; } = 1.0;
 
     /// <summary>スコア関数のレイテンシペナルティ重み。デフォルト 0.1（PoC 中に調整）</summary>
+    [System.Obsolete("LatencyWeight は現時点では RateControlledTransferController で未使用のため、設定しても挙動に反映されません。実装反映まで互換性維持のため残置しています。")]
     public double LatencyWeight { get; set; } = 0.1;
 
     /// <summary>初期レート（req/sec）。デフォルト 7.0</summary>

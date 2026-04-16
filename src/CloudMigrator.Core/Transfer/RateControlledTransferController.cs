@@ -45,6 +45,7 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     // ── 制御ループ ──
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _controlLoop;
+    private int _disposed;
 
     /// <summary>
     /// コントローラーを初期化する。
@@ -293,6 +294,8 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+            return; // 2 回目以降の呼び出しは no-op
         _cts.Cancel();
         try { await _controlLoop.ConfigureAwait(false); }
         catch (OperationCanceledException) { }

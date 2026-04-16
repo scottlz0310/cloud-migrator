@@ -42,8 +42,8 @@ public class TransferMetricsAggregatorTests
     [Fact]
     public void GetSnapshot_With429Events_ReturnsCorrectRate429()
     {
-        // 4 件リクエスト、うち 1 件が 429 → 429率 = 1/(4+1) = 0.2
-        // (rate429 = rateLimits / (requests + rateLimits))
+        // 4 件リクエスト、うち 1 件が 429 → 429率 = 1/4 = 0.25
+        // (rate429 = rateLimits / requests, NotifyRequestSent は 429 発生時も呼ばれる契約)
         _sut.NotifyRequestSent();
         _sut.NotifyRequestSent();
         _sut.NotifyRequestSent();
@@ -52,7 +52,7 @@ public class TransferMetricsAggregatorTests
 
         var snap = _sut.GetSnapshot(TimeSpan.FromSeconds(10));
 
-        snap.Rate429.Should().BeApproximately(1.0 / 5, precision: 0.001);
+        snap.Rate429.Should().BeApproximately(1.0 / 4, precision: 0.001);
     }
 
     [Fact]

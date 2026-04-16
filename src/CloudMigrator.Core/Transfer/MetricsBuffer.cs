@@ -48,7 +48,7 @@ public sealed class MetricsBuffer : IAsyncDisposable
         {
             // 上限超過: 古いエントリを捨ててカウンターを戻す
             if (_queue.TryDequeue(out _))
-                Interlocked.Decrement(ref _count); // 捨てた分のカウンターは復彌しない（新しいエントリ分を上書き）
+                Interlocked.Decrement(ref _count); // 捨てた分のカウンターは復帰しない（新しいエントリ分を上書き）
             else
                 Interlocked.Decrement(ref _count); // デキュー失敗時はインクリメントを戻す
         }

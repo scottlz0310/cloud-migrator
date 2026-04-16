@@ -82,9 +82,8 @@ public sealed class TransferMetricsAggregator : IMetricsAggregator
             }
         }
 
-        var totalRequests = requestCount + rateLimitCount;
         var rps = windowSec > 0 ? (double)requestCount / windowSec : 0;
-        var rate429 = totalRequests > 0 ? (double)rateLimitCount / totalRequests : 0;
+        var rate429 = requestCount > 0 ? (double)rateLimitCount / requestCount : 0;
         var avgLatencyMs = successCount > 0 ? totalLatencyMs / successCount : 0;
 
         return new MetricsSnapshot(rps, rate429, avgLatencyMs, DateTimeOffset.UtcNow);

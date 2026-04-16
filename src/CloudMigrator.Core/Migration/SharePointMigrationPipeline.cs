@@ -338,6 +338,12 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                         controller?.NotifyCompleted(TimeSpan.Zero);
                         throw;
                     }
+                    catch (Exception)
+                    {
+                        // 一般例外時もインフライトカウンターを戻す（NotifyRequestSent のペアとして必要）
+                        controller?.NotifyCompleted(TimeSpan.Zero);
+                        throw;
+                    }
                     finally
                     {
                         controller?.Release();

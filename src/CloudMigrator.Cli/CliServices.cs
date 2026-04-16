@@ -36,22 +36,15 @@ internal sealed class CliServices : IDisposable
     // onRateLimit ラムダが参照するプロキシ（アクティブなコントローラーへの間接参照）
     private readonly ControllerProxy _controllerProxy;
 
-    // v0.5.0: RateControlledTransferController（UseRateControl=true 時に使用）
-    private readonly RateControlledTransferController? _rateController;
-    private readonly MetricsBuffer? _rateControllerMetricsBuffer;
-
     /// <summary>
     /// 指定プロバイダーのレート制御コントローラーを取得する。
     /// <para>
-    /// <see cref="RateControlSettings.UseRateControl"/> が true の場合は <see cref="_rateController"/> を返す。
-    /// false の場合は旧 <see cref="AdaptiveConcurrencyController"/> を <see cref="AdaptiveConcurrencyControllerAdapter"/> でラップして返す。
+    /// 旧 <see cref="AdaptiveConcurrencyController"/> を <see cref="AdaptiveConcurrencyControllerAdapter"/> でラップして返す。
+    /// UseRateControl=true の場合は <see cref="CloudMigrator.Cli.Commands.TransferCommand"/> 内で <see cref="RateControlledTransferController"/> を別途構築し、このメソッドの戻り値を上書きする。
     /// </para>
     /// </summary>
     public ITransferRateController? GetController(string providerName)
     {
-        if (_rateController is not null)
-            return _rateController;
-
         var acc = _controllers.TryGetValue(providerName, out var c) ? c :
             _controllers.TryGetValue("default", out var def) ? def : null;
 #pragma warning disable CS0618 // AdaptiveConcurrencyControllerAdapter の Obsolete 警告を抑制
@@ -118,9 +111,7 @@ internal sealed class CliServices : IDisposable
         Dictionary<string, AdaptiveConcurrencyController> controllers,
         ControllerProxy controllerProxy,
         TokenBucketRateLimiter? rateLimiter,
-        string? rateStatePath,
-        RateControlledTransferController? rateController = null,
-        MetricsBuffer? rateControllerMetricsBuffer = null)
+        string? rateStatePath)
     {
         Options = options;
         LoggerFactory = loggerFactory;
@@ -132,8 +123,6 @@ internal sealed class CliServices : IDisposable
         _controllerProxy = controllerProxy;
         RateLimiter = rateLimiter;
         _rateStatePath = rateStatePath;
-        _rateController = rateController;
-        _rateControllerMetricsBuffer = rateControllerMetricsBuffer;
     }
 
     public static CliServices Build(string? configPath = null)
@@ -318,16 +307,13 @@ internal sealed class CliServices : IDisposable
             options.Paths.SkipList,
             loggerFactory.CreateLogger<SkipListManager>());
 
-        // v0.5.0: RateControlledTransferController（UseRateControl=true 時）
-        RateControlledTransferController? rateController = null;
-        MetricsBuffer? rateControllerMetricsBuffer = null;
+        // v0.5.0: RateControlledTransferController は TransferCommand で stateDb 確定後に構築するため、
+        // CliServices では初期化しない。UseRateControl=true 時は起動ログのみ記録する。
         if (options.RateControl.UseRateControl)
         {
             loggerFactory.CreateLogger<CliServices>().LogInformation(
                 "RateControlledTransferController を有効化します（初期レート: {Rate:F1} req/sec）",
                 options.RateControl.InitialRatePerSec);
-            // MetricsBuffer は後でパイプラインから stateDb を渡して初期化するため、
-            // ここでは null のままにする（TransferCommand で組み立てる）
         }
 
         return new CliServices(
@@ -340,9 +326,7 @@ internal sealed class CliServices : IDisposable
             controllers,
             controllerProxy,
             rateLimiter,
-            rateStatePath,
-            rateController,
-            rateControllerMetricsBuffer);
+            rateStatePath);
     }
 
     /// <summary>
@@ -381,10 +365,6 @@ internal sealed class CliServices : IDisposable
         }
         RateLimiter?.Dispose();
         foreach (var c in _controllers.Values) c.Dispose();
-        // RateControlledTransferController は IAsyncDisposable なので同期 Dispose では完全にクリーンアップできないが、
-        // ここでは CancellationToken をキャンセルする効果がある（ControlLoop が停止する）
-        _rateController?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        _rateControllerMetricsBuffer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         DropboxProvider.Dispose();
         LoggerFactory.Dispose();
     }
