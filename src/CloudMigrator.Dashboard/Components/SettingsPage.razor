@@ -444,7 +444,7 @@ else
                 // UseRateControl=ON 時は ACC セクションは非表示なので現在設定値をそのまま保持、OFF 時は RC セクションを保持
                 AdaptiveConcurrencyEnabled: _editUseRateControl ? (_config?.AdaptiveConcurrencyEnabled ?? false) : _editAdaptiveConcurrencyEnabled,
                 AdaptiveConcurrencyInitialDegree: _editUseRateControl ? (_config?.AdaptiveConcurrencyInitialDegree ?? 0) : _editAdaptiveConcurrencyInitialDegree,
-                AdaptiveConcurrencyDecreasePercent: _editUseRateControl ? (_config?.AdaptiveConcurrencyDecreasePercent ?? 25) : _editAdaptiveConcurrencyDecreasePercent,
+                AdaptiveConcurrencyDecreasePercent: _editUseRateControl ? (_config?.AdaptiveConcurrencyDecreasePercent ?? 50) : _editAdaptiveConcurrencyDecreasePercent,
                 AdaptiveConcurrencyIncreaseIntervalSec: _editUseRateControl ? (_config?.AdaptiveConcurrencyIncreaseIntervalSec ?? 60) : _editAdaptiveConcurrencyIncreaseIntervalSec,
                 UseRateControl: _editUseRateControl,
                 RcShortWindowSec: _editUseRateControl ? _editRcShortWindowSec : (_config?.RcShortWindowSec ?? 5),
@@ -453,7 +453,7 @@ else
                 RcSlowdownThresholdPct: _editUseRateControl ? _editRcSlowdownThresholdPct : (_config?.RcSlowdownThresholdPct ?? 3),
                 RcDecayK: _editUseRateControl ? _editRcDecayK : (_config?.RcDecayK ?? 5.0),
                 RcMinDecayFactor: _editUseRateControl ? _editRcMinDecayFactor : (_config?.RcMinDecayFactor ?? 0.3),
-                RcMaxDecayFactor: _editUseRateControl ? _editRcMaxDecayFactor : (_config?.RcMaxDecayFactor ?? 1.0),
+                RcMaxDecayFactor: _editUseRateControl ? _editRcMaxDecayFactor : (_config?.RcMaxDecayFactor ?? 0.9),
                 RcInFlightThreshold: _editUseRateControl ? _editRcInFlightThreshold : (_config?.RcInFlightThreshold ?? 32),
                 RcMaxConcurrency: _editUseRateControl ? _editRcMaxConcurrency : (_config?.RcMaxConcurrency ?? 16));
             await ConfigService.UpdateConfigAsync(update);
