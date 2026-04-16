@@ -1,35 +1,38 @@
 namespace CloudMigrator.Core.Transfer;
 
 /// <summary>
-/// リングバッファで転送イベントを保持し、任意の時間窓で集計する Aggregator 層コンポーネント。
+/// 1 秒バケット固定リングバッファで転送イベントを集計する Aggregator 層コンポーネント。
 /// <para>
 /// 三層分離原則 – Aggregator 層の実装:
 /// <list type="bullet">
 ///   <item>イベントを受け取りインメモリで集計する（DB アクセスなし）</item>
-///   <item><see cref="GetSnapshot"/> で任意の時間窓の統計を返す</item>
+///   <item><see cref="GetSnapshot"/> で任意の時間窓の統計を O(window秒) で返す</item>
+///   <item>固定 300 スロット（5 分）× 1 秒バケットにより無制限成長を防止する</item>
 ///   <item><see langword="lock"/> でスレッドセーフに保護されている</item>
 /// </list>
 /// </para>
 /// </summary>
 public sealed class TransferMetricsAggregator : IMetricsAggregator
 {
-    private enum EventType { Request, Success, RateLimit }
+    // 1 秒ごとのバケット数（5 分 = 300 秒）
+    private const int BucketCount = 300;
 
-    private readonly record struct TimedEvent(DateTimeOffset Timestamp, EventType Type, double Value);
-
-    // イベント保持の最大期間（これより古いイベントは切り捨て）
-    private static readonly TimeSpan MaxRetentionWindow = TimeSpan.FromMinutes(5);
+    // バケットごとの集計データ（配列インデックス = epochSec % BucketCount）
+    private readonly long[] _epochSec = new long[BucketCount];
+    private readonly int[] _requests = new int[BucketCount];
+    private readonly int[] _successes = new int[BucketCount];
+    private readonly double[] _totalLatencyMs = new double[BucketCount];
+    private readonly int[] _rateLimits = new int[BucketCount];
 
     private readonly object _lock = new();
-    private readonly Queue<TimedEvent> _events = new();
 
     /// <inheritdoc/>
     public void NotifyRequestSent()
     {
         lock (_lock)
         {
-            _events.Enqueue(new TimedEvent(DateTimeOffset.UtcNow, EventType.Request, 0));
-            Prune();
+            var slot = GetOrClearSlot(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            _requests[slot]++;
         }
     }
 
@@ -38,8 +41,9 @@ public sealed class TransferMetricsAggregator : IMetricsAggregator
     {
         lock (_lock)
         {
-            _events.Enqueue(new TimedEvent(DateTimeOffset.UtcNow, EventType.Success, latency.TotalMilliseconds));
-            Prune();
+            var slot = GetOrClearSlot(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            _successes[slot]++;
+            _totalLatencyMs[slot] += latency.TotalMilliseconds;
         }
     }
 
@@ -48,51 +52,59 @@ public sealed class TransferMetricsAggregator : IMetricsAggregator
     {
         lock (_lock)
         {
-            _events.Enqueue(new TimedEvent(DateTimeOffset.UtcNow, EventType.RateLimit, 0));
-            Prune();
+            var slot = GetOrClearSlot(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            _rateLimits[slot]++;
         }
     }
 
     /// <inheritdoc/>
     public MetricsSnapshot GetSnapshot(TimeSpan window)
     {
-        var cutoff = DateTimeOffset.UtcNow - window;
-        int requestCount = 0;
-        int successCount = 0;
-        int rateLimitCount = 0;
+        var nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var windowSec = (long)Math.Ceiling(window.TotalSeconds);
+        var cutoffEpoch = nowEpoch - windowSec;
+
+        int requestCount = 0, successCount = 0, rateLimitCount = 0;
         double totalLatencyMs = 0;
 
         lock (_lock)
         {
-            foreach (var ev in _events)
+            for (var sec = cutoffEpoch + 1; sec <= nowEpoch; sec++)
             {
-                if (ev.Timestamp < cutoff) continue;
-                switch (ev.Type)
-                {
-                    case EventType.Request: requestCount++; break;
-                    case EventType.Success:
-                        successCount++;
-                        totalLatencyMs += ev.Value;
-                        break;
-                    case EventType.RateLimit: rateLimitCount++; break;
-                }
+                var slot = (int)(sec % BucketCount);
+                if (_epochSec[slot] != sec) continue; // このスロットは別の秒（空か古い）
+
+                requestCount += _requests[slot];
+                successCount += _successes[slot];
+                rateLimitCount += _rateLimits[slot];
+                totalLatencyMs += _totalLatencyMs[slot];
             }
         }
 
         var totalRequests = requestCount + rateLimitCount;
-        var windowSec = window.TotalSeconds;
-        var rps = windowSec > 0 ? requestCount / windowSec : 0;
+        var rps = windowSec > 0 ? (double)requestCount / windowSec : 0;
         var rate429 = totalRequests > 0 ? (double)rateLimitCount / totalRequests : 0;
         var avgLatencyMs = successCount > 0 ? totalLatencyMs / successCount : 0;
 
         return new MetricsSnapshot(rps, rate429, avgLatencyMs, DateTimeOffset.UtcNow);
     }
 
-    /// <summary>MaxRetentionWindow より古いイベントをキューから削除する（lock 内で呼び出すこと）。</summary>
-    private void Prune()
+    /// <summary>
+    /// 指定の epoch 秒に対応するスロットインデックスを返す。
+    /// スロットが別の秒のデータを保持している場合は初期化してから返す。
+    /// lock 内で呼び出すこと。
+    /// </summary>
+    private int GetOrClearSlot(long epochSec)
     {
-        var cutoff = DateTimeOffset.UtcNow - MaxRetentionWindow;
-        while (_events.Count > 0 && _events.Peek().Timestamp < cutoff)
-            _events.Dequeue();
+        var slot = (int)(epochSec % BucketCount);
+        if (_epochSec[slot] != epochSec)
+        {
+            _epochSec[slot] = epochSec;
+            _requests[slot] = 0;
+            _successes[slot] = 0;
+            _totalLatencyMs[slot] = 0;
+            _rateLimits[slot] = 0;
+        }
+        return slot;
     }
 }

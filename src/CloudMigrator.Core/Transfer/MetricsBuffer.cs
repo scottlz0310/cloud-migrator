@@ -14,6 +14,7 @@ namespace CloudMigrator.Core.Transfer;
 ///   <item>Controller/Aggregator 境界に位置する。Controller は DB を直接触らない。</item>
 ///   <item>バッファ満杯時は古いデータを破棄する（可観測性 > 完全性）。</item>
 ///   <item>Flush 失敗時はリトライせず破棄する（転送処理を優先）。</item>
+///   <item>Dispose 時の最終 Flush は <see cref="CancellationToken.None"/> で実行し、残データを確実に書き込む。</item>
 /// </list>
 /// </summary>
 public sealed class MetricsBuffer : IAsyncDisposable
@@ -52,7 +53,7 @@ public sealed class MetricsBuffer : IAsyncDisposable
             while (!_cts.IsCancellationRequested)
             {
                 await Task.Delay(_flushInterval, _cts.Token).ConfigureAwait(false);
-                await FlushAsync().ConfigureAwait(false);
+                await FlushAsync(_cts.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -60,11 +61,11 @@ public sealed class MetricsBuffer : IAsyncDisposable
             // 正常終了
         }
 
-        // 終了前に残っているエントリをフラッシュ
-        await FlushAsync().ConfigureAwait(false);
+        // 終了前に残っているエントリをフラッシュ（キャンセル済みトークンは使わない）
+        await FlushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
-    private async Task FlushAsync()
+    private async Task FlushAsync(CancellationToken ct)
     {
         if (_queue.IsEmpty) return;
 
@@ -76,7 +77,7 @@ public sealed class MetricsBuffer : IAsyncDisposable
 
         try
         {
-            await _db.RecordMetricsBatchAsync(batch, _cts.Token).ConfigureAwait(false);
+            await _db.RecordMetricsBatchAsync(batch, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

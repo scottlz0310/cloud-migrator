@@ -84,8 +84,12 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     /// <inheritdoc/>
     public Task AcquireAsync(CancellationToken ct) => _semaphore.WaitAsync(ct);
 
-    /// <inheritdoc/>
-    public void Release() => _semaphore.Release();
+    /// <summary>
+    /// レート制御専用 SemaphoreSlim では、ワーカーはトークンを返却しない。
+    /// トークンの補充は制御ループ（<see cref="RefillTokens"/>）が 1 秒ごとに行う。
+    /// Release を no-op にすることで二重補充（RefillTokens + ワーカーの Release）を防ぐ。
+    /// </summary>
+    public void Release() { /* no-op: トークン補充は RefillTokens のみが担う */ }
 
     /// <inheritdoc/>
     public void NotifyRequestSent()

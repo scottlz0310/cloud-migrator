@@ -6,9 +6,12 @@ namespace CloudMigrator.Core.Transfer;
 /// v0.5.0 では新旧コントローラーを並走させるために使用する。
 /// v0.6.0 以降での <see cref="AdaptiveConcurrencyController"/> 削除時に本クラスも削除する。
 /// </para>
+/// <para>
+/// 所有権: 本クラスは inner を<b>所有しない</b>。inner の Dispose は呼び出し元の責務。
+/// </para>
 /// </summary>
 [Obsolete("AdaptiveConcurrencyController の互換 Adapter です。v0.6.0 で削除予定。ITransferRateController を直接使用してください。")]
-public sealed class AdaptiveConcurrencyControllerAdapter : ITransferRateController, IDisposable
+public sealed class AdaptiveConcurrencyControllerAdapter : ITransferRateController
 {
     private readonly AdaptiveConcurrencyController _inner;
     // インフライト = 実行中 + Retry 待ち（インメモリカウンターで管理）
@@ -18,7 +21,7 @@ public sealed class AdaptiveConcurrencyControllerAdapter : ITransferRateControll
     /// <summary>
     /// 旧コントローラーをラップする Adapter を初期化する。
     /// </summary>
-    /// <param name="inner">ラップ対象の <see cref="AdaptiveConcurrencyController"/>。</param>
+    /// <param name="inner">ラップ対象の <see cref="AdaptiveConcurrencyController"/>。所有権は移譲しない。</param>
     public AdaptiveConcurrencyControllerAdapter(AdaptiveConcurrencyController inner)
     {
         _inner = inner;
@@ -69,7 +72,4 @@ public sealed class AdaptiveConcurrencyControllerAdapter : ITransferRateControll
 
     /// <summary>旧コントローラーの現在並列度を返す（互換用）。</summary>
     public double CurrentRateLimit => _inner.CurrentDegree;
-
-    /// <inheritdoc/>
-    public void Dispose() => _inner.Dispose();
 }

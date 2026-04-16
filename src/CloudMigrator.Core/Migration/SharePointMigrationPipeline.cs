@@ -284,9 +284,13 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                 },
                 async (folderRelPath, folderCt) =>
                 {
-                    // 動的並列度制御のゲート（AdaptiveConcurrencyController が有効な場合）
+                    // 動的並列度制御のゲート（ITransferRateController が有効な場合）
                     if (controller is not null)
                         await controller.AcquireAsync(folderCt).ConfigureAwait(false);
+
+                    // AcquireAsync 成功後に NotifyRequestSent（インフライトカウンターのインクリメント）
+                    // これにより NotifySuccess/NotifyRateLimit と対になりカウンターが整合する
+                    controller?.NotifyRequestSent();
 
                     try
                     {
@@ -327,6 +331,12 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                                 }
                             }
                         }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // キャンセル時はカウンターを戻す（NotifyRequestSent のペアとして必要）
+                        controller?.NotifySuccess(TimeSpan.Zero);
+                        throw;
                     }
                     finally
                     {

@@ -141,7 +141,14 @@ internal static class TransferCommand
                 decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
             folderCreationController = new AdaptiveConcurrencyControllerAdapter(accFolderController);
             // フェーズ切り替え時に onRateLimit の通知先を切り替えるコールバック
-            activateController = ctrl => svc.SetActiveController(ctrl is null ? svc.GetAdaptiveController("sharepoint") : accFolderController);
+            // 参照一致で folderCreationController（Phase C 用）か concurrencyController（Phase D 用）かを判別する
+            activateController = ctrl =>
+            {
+                var activeCtrl = ReferenceEquals(ctrl, folderCreationController)
+                    ? accFolderController
+                    : svc.GetAdaptiveController("sharepoint");
+                svc.SetActiveController(activeCtrl);
+            };
         }
 
         await using var stateDb = new SqliteTransferStateDb(opts.Paths.SharePointStateDb);
@@ -174,6 +181,30 @@ internal static class TransferCommand
             logger.LogInformation("skip_list から {Count} 件を SQLite に移行しました", migrated);
         }
 
+        // UseRateControl=true 時は stateDb 取得後に RateControlledTransferController を構築する
+        // （MetricsBuffer が ITransferStateDb を必要とするため stateDb 確定後に組み立てる）
+        RateControlledTransferController? rateController = null;
+        MetricsBuffer? rateMetricsBuffer = null;
+        if (opts.RateControl.UseRateControl)
+        {
+            var aggregator = new TransferMetricsAggregator();
+            rateMetricsBuffer = new MetricsBuffer(
+                stateDb,
+                opts.RateControl.MetricsFlushIntervalSec,
+                svc.LoggerFactory.CreateLogger<MetricsBuffer>());
+            rateController = new RateControlledTransferController(
+                aggregator,
+                opts.RateControl,
+                rateMetricsBuffer,
+                svc.LoggerFactory.CreateLogger<RateControlledTransferController>());
+            logger.LogInformation(
+                "RateControlledTransferController を構築しました（初期レート: {Rate:F1} req/sec）",
+                opts.RateControl.InitialRatePerSec);
+        }
+
+        // 使用するコントローラー: UseRateControl=true → rateController / false → AdaptiveConcurrencyController Adapter
+        ITransferRateController? transferController = rateController ?? svc.GetController("sharepoint");
+
         // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
         // stateDb は SQLite 状態を保持するため使い回す
         TransferSummary summary;
@@ -188,7 +219,7 @@ internal static class TransferCommand
                     stateDb,
                     opts,
                     svc.LoggerFactory.CreateLogger<SharePointMigrationPipeline>(),
-                    svc.GetController("sharepoint"),
+                    transferController,
                     folderCreationController,
                     activateController);
 
@@ -207,6 +238,11 @@ internal static class TransferCommand
         {
             // AdaptiveConcurrencyController を Dispose（Adapter は内部コントローラーを所有しないため直接 Dispose）
             accFolderController?.Dispose();
+            // RateControlledTransferController と MetricsBuffer を Dispose
+            if (rateController is not null)
+                await rateController.DisposeAsync().ConfigureAwait(false);
+            if (rateMetricsBuffer is not null)
+                await rateMetricsBuffer.DisposeAsync().ConfigureAwait(false);
         }
 
         if (summary.Failed > 0)

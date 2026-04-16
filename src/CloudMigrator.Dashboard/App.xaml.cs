@@ -136,7 +136,9 @@ public partial class App : Application
                     // onRateLimit はプロキシ経由にしてフェーズに応じて通知先を切り替える
                     AdaptiveConcurrencyController? activeCtrl = accMain;
                     onRateLimit = retryAfter => Volatile.Read(ref activeCtrl)?.NotifyRateLimit(retryAfter);
-                    activateController = ctrl => Volatile.Write(ref activeCtrl, ctrl is null ? accMain : accFolder);
+                    // 参照一致で folderCreationController（Phase C 用）か concurrencyController（Phase D 用）かを判別する
+                    activateController = ctrl =>
+                        Volatile.Write(ref activeCtrl, ReferenceEquals(ctrl, folderCreationController) ? accFolder : accMain);
                 }
 
                 // 設定変更検知（FR-10）: CLI の TransferCommand と同等のハッシュ確認を行う
