@@ -385,60 +385,22 @@ else
 
     private async Task SaveAsync()
     {
-        // 保存前バリデーション
-        if (_editMaxParallelTransfers is < 1 or > 256)
+        // 保存前バリデーション（SettingsValidation に委譲）
+        var err =
+            SettingsValidation.ValidateMaxParallelTransfers(_editMaxParallelTransfers) ??
+            SettingsValidation.ValidateMaxParallelFolderCreations(_editMaxParallelFolderCreations) ??
+            SettingsValidation.ValidateChunkSizeMb(_editChunkSizeMb) ??
+            SettingsValidation.ValidateLargeFileThresholdMb(_editLargeFileThresholdMb) ??
+            SettingsValidation.ValidateRetryCount(_editRetryCount) ??
+            SettingsValidation.ValidateTimeoutSec(_editTimeoutSec) ??
+            SettingsValidation.ValidateRcWindowSecs(_editUseRateControl, _editRcShortWindowSec, _editRcLongWindowSec) ??
+            SettingsValidation.ValidateRcDecayFactors(_editUseRateControl, _editRcMinDecayFactor, _editRcMaxDecayFactor) ??
+            SettingsValidation.ValidateAdaptiveDecreasePercent(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyDecreasePercent) ??
+            SettingsValidation.ValidateAdaptiveIncreaseIntervalSec(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyIncreaseIntervalSec) ??
+            SettingsValidation.ValidateAdaptiveInitialDegree(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyInitialDegree);
+        if (err is not null)
         {
-            Snackbar.Add("最大並行転送数は 1〜256 の範囲で入力してください。", Severity.Warning);
-            return;
-        }
-        if (_editMaxParallelFolderCreations is < 1 or > 32)
-        {
-            Snackbar.Add("最大並行フォルダ作成数は 1〜32 の範囲で入力してください。", Severity.Warning);
-            return;
-        }
-        if (_editChunkSizeMb is < 1 or > 100)
-        {
-            Snackbar.Add("チャンクサイズは 1〜100 MB の範囲で入力してください。", Severity.Warning);
-            return;
-        }
-        if (_editLargeFileThresholdMb is < 1 or > 100)
-        {
-            Snackbar.Add("大ファイル閾値は 1〜100 MB の範囲で入力してください。", Severity.Warning);
-            return;
-        }
-        if (_editRetryCount is < 0 or > 10)
-        {
-            Snackbar.Add("リトライ回数は 0〜10 の範囲で入力してください。", Severity.Warning);
-            return;
-        }
-        if (_editTimeoutSec is < 30 or > 3600)
-        {
-            Snackbar.Add("タイムアウトは 30〜3600 秒の範囲で入力してください。", Severity.Warning);
-            return;
-        }
-        if (_editUseRateControl && _editRcShortWindowSec >= _editRcLongWindowSec)
-        {
-            Snackbar.Add("短期ウィンドウ (秒) は中期ウィンドウ (秒) より小さい値にしてください。", Severity.Warning);
-            return;
-        }
-        if (_editUseRateControl && _editRcMinDecayFactor >= _editRcMaxDecayFactor)
-        {
-            Snackbar.Add("最小減衰率は最大減衰率より小さい値にしてください。", Severity.Warning);
-            return;
-        }
-        if (!_editUseRateControl && _editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyDecreasePercent is < 1 or > 99)
-        {
-            Snackbar.Add("減速率は 1〜99 の範囲で入力してください。", Severity.Warning);
-            return;
-        }
-        if (!_editUseRateControl && _editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyIncreaseIntervalSec is not (30 or 60 or 90 or 120))
-        {
-            Snackbar.Add("増速インターバルは 30 / 60 / 90 / 120 秒から選択してください。", Severity.Warning);
-            return;
-        }
-        if (!_editUseRateControl && _editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyInitialDegree is < 0 or > 256)
-        {
-            Snackbar.Add("初期並列数は 0〜256 の範囲で入力してください。", Severity.Warning);
+            Snackbar.Add(err, Severity.Warning);
             return;
         }
 
