@@ -273,13 +273,13 @@ else
                             </MudItem>
                             <MudItem xs="6" sm="3">
                                 <MudText Typo="Typo.overline" Color="Color.Secondary">短期 429 率</MudText>
-                                <MudText Typo="Typo.body1" Color="@(_rcRate429Short < 0 ? Color.Default : _rcRate429Short >= _rcEmergencyThreshold ? Color.Error : _rcRate429Short >= _rcSlowdownThreshold ? Color.Warning : Color.Success)">
+                                <MudText Typo="Typo.body1" Color="@(_rcRate429Short < 0 ? Color.Default : _rcRate429Short > _rcEmergencyThreshold ? Color.Error : Color.Success)">
                                     <b>@(_rcRate429Short >= 0 ? (_rcRate429Short * 100).ToString("F1") + "%" : "—")</b>
                                 </MudText>
                             </MudItem>
                             <MudItem xs="6" sm="3">
                                 <MudText Typo="Typo.overline" Color="Color.Secondary">中期 429 率</MudText>
-                                <MudText Typo="Typo.body1" Color="@(_rcRate429Long < 0 ? Color.Default : _rcRate429Long >= _rcEmergencyThreshold ? Color.Error : _rcRate429Long >= _rcSlowdownThreshold ? Color.Warning : Color.Success)">
+                                <MudText Typo="Typo.body1" Color="@(_rcRate429Long < 0 ? Color.Default : _rcRate429Long > _rcSlowdownThreshold ? Color.Warning : Color.Success)">
                                     <b>@(_rcRate429Long >= 0 ? (_rcRate429Long * 100).ToString("F1") + "%" : "—")</b>
                                 </MudText>
                             </MudItem>
