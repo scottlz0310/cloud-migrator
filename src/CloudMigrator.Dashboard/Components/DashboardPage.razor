@@ -1,7 +1,9 @@
 @inject ITransferStateDb TransferStateDb
 @inject ITransferJobService JobService
 @inject IConfigurationService ConfigService
+@inject MigratorOptions AppOptions
 @inject ILogger<DashboardPage> Logger
+@using CloudMigrator.Core.Configuration
 @implements IDisposable
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
@@ -490,19 +492,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        // UseRateControl フラグを初回読み込み（次回ジョブ開始時に反映される設定）
-        try
-        {
-            var cfg = await ConfigService.GetConfigAsync();
-            _useRateControl = cfg.UseRateControl;
-            // 429率色分け用の閾値を Config から取得（0–1 スケールに戻す）
-            _rcSlowdownThreshold  = cfg.RcSlowdownThresholdPct  / 100.0;
-            _rcEmergencyThreshold = cfg.RcEmergencyThresholdPct / 100.0;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "UseRateControl 設定の読み込みに失敗しました。デフォルト false で動作します。");
-        }
+        // 実効設定（環境変数 > config.json > デフォルト優先）から UseRateControl を取得
+        // ConfigService.GetConfigAsync() は config.json 直読みのため環境変数オーバーライドが反映されない
+        // AppOptions は BuildServiceProvider で AppConfiguration.Build() から構築した実効設定
+        _useRateControl = AppOptions.RateControl.UseRateControl;
+        _rcSlowdownThreshold  = AppOptions.RateControl.SlowdownThreshold;
+        _rcEmergencyThreshold = AppOptions.RateControl.EmergencyThreshold;
 
         await RefreshAllAsync(CancellationToken.None);
         _refreshCts = new CancellationTokenSource();
