@@ -135,16 +135,16 @@ else
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_editRcEmergencyThresholdPct"
                                                  Label="緊急減速閾値 (429 率 %)"
-                                                 Min="1" Max="100"
+                                                 Min="0" Max="100"
                                                  Variant="Variant.Outlined"
-                                                 HelperText="短期窓 429 率がこの値を超えると緊急減速。デフォルト: 10" />
+                                                 HelperText="短期窓 429 率がこの値を超えると緊急減速。0 = 常時緊急減速（無効化には 100 を推奨）。デフォルト: 10" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_editRcSlowdownThresholdPct"
                                                  Label="緩減速閾値 (429 率 %)"
-                                                 Min="1" Max="100"
+                                                 Min="0" Max="100"
                                                  Variant="Variant.Outlined"
-                                                 HelperText="中期窓 429 率がこの値を超えると緩やかに減速。デフォルト: 3" />
+                                                 HelperText="中期窓 429 率がこの値を超えると緩やかに減速。0 = 常時緩減速。デフォルト: 3" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_editRcDecayK"
