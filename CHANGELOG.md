@@ -9,6 +9,29 @@
 
 ### Added
 
+- **Graph API レートベース転送制御エンジン** (PR #148)
+  - `ITransferRateController`: 転送レート制御の統一インターフェース（`AcquireAsync` / `NotifyCompleted` / `NotifyRateLimitHit`）
+  - `IMetricsAggregator`: メトリクス集計の抽象（Aggregator 層）
+  - `TransferMetricsAggregator`: 1 秒バケット固定リングバッファ（300 スロット = 5 分）で転送イベントを O(window秒) で集計
+  - `MetricsBuffer`: DB 書き込み用非同期バッファ（フラッシュ間隔設定可能、`IAsyncDisposable`）
+  - `RateControlledTransferController`: ヒステリシス 3 段階制御（緊急減速 / 緩減速 / 加速）+ トークンバケット方式（`IAsyncDisposable`）
+  - `AdaptiveConcurrencyControllerAdapter`: 既存 `AdaptiveConcurrencyController` を `ITransferRateController` として使用するアダプター（後方互換）
+  - `RateControlSettings`: 制御パラメーター（InitialRate / MinRate / MaxConcurrency / ヒステリシス閾値 等）
+  - `MigratorOptions.RateControl`: CLI / JSON 設定統合（`UseRateControl` フラグ + `RateControlSettings`）
+  - `TransferCommand`: `UseRateControl=true` 時に `RateControlledTransferController` を自動構築・DI 注入
+  - `SharePointMigrationPipeline`: Phase C フォルダ先行作成ループの例外時インフライトカウンター回復（`catch(Exception)` → `controller?.NotifyCompleted(TimeSpan.Zero)`）
+
+### Changed
+
+- `AdaptiveConcurrencyController` に `[Obsolete]` を付与（v0.5.0 以降は `RateControlledTransferController` 推奨）
+- `MigratorOptions.PenaltyWeight` / `LatencyWeight` に `[Obsolete]` を付与（`RateControlledTransferController` では未使用）
+- `CliServices.cs`: 常に null だった `_rateController` / `_rateControllerMetricsBuffer` フィールドを削除し実態と整合
+
+### Fixed
+
+- `TransferMetricsAggregator.GetSnapshot()` の `Rate429` 計算式を `rateLimitCount / requestCount` に修正（旧: `rateLimitCount / (requestCount + rateLimitCount)`）
+- `RateControlledTransferController.DisposeAsync()` に `_disposed` ガードを追加しべき等性を保証
+
 - **Dashboard: DriveFolderPicker に新規フォルダ名入力欄を追加**
   - ピッカー内に「新しいフォルダ名」テキストフィールドと「このパスに設定」ボタンを追加。
   - 現在のナビゲーション階層に基づいたパスを生成し、転送パイプラインの自動作成機能を利用して転送時に作成される。
