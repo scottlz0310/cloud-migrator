@@ -265,7 +265,7 @@ else
                         <MudGrid Spacing="1">
                             <MudItem xs="6" sm="3">
                                 <MudText Typo="Typo.overline" Color="Color.Secondary">現在レート</MudText>
-                                <MudText Typo="Typo.body1"><b>@(_rcCurrentRate > 0 ? _rcCurrentRate.ToString("F1") + " req/s" : "—")</b></MudText>
+                                <MudText Typo="Typo.body1"><b>@(_rcCurrentRate >= 0 ? _rcCurrentRate.ToString("F1") + " req/s" : "—")</b></MudText>
                             </MudItem>
                             <MudItem xs="6" sm="3">
                                 <MudText Typo="Typo.overline" Color="Color.Secondary">インフライト数</MudText>
@@ -571,18 +571,30 @@ else
     private async Task RefreshRateControlMetricsAsync(CancellationToken ct)
     {
         // 直近 2 分間のメトリクスから最新値を取得する（Controller が 1 秒ごとにエンキューしている）
-        const int windowMinutes = 2;
-        var rateData    = await TransferStateDb.GetMetricsAsync("current_rate_limit",    windowMinutes, ct);
-        var inflightData= await TransferStateDb.GetMetricsAsync("current_in_flight",     windowMinutes, ct);
-        var short429Data= await TransferStateDb.GetMetricsAsync("rate_429_short",        windowMinutes, ct);
-        var long429Data = await TransferStateDb.GetMetricsAsync("rate_429_long",         windowMinutes, ct);
-        var stateData   = await TransferStateDb.GetMetricsAsync("hysteresis_state_code", windowMinutes, ct);
+        // 例外発生時はログに残してスキップ（PeriodicTimer ループが停止しないよう保護）
+        try
+        {
+            const int windowMinutes = 2;
+            var rateData    = await TransferStateDb.GetMetricsAsync("current_rate_limit",    windowMinutes, ct);
+            var inflightData= await TransferStateDb.GetMetricsAsync("current_in_flight",     windowMinutes, ct);
+            var short429Data= await TransferStateDb.GetMetricsAsync("rate_429_short",        windowMinutes, ct);
+            var long429Data = await TransferStateDb.GetMetricsAsync("rate_429_long",         windowMinutes, ct);
+            var stateData   = await TransferStateDb.GetMetricsAsync("hysteresis_state_code", windowMinutes, ct);
 
-        if (rateData.Count > 0)     _rcCurrentRate  = rateData[^1].Value;
-        if (inflightData.Count > 0) _rcInFlight     = inflightData[^1].Value;
-        if (short429Data.Count > 0) _rcRate429Short = short429Data[^1].Value;
-        if (long429Data.Count > 0)  _rcRate429Long  = long429Data[^1].Value;
-        if (stateData.Count > 0)    _rcHysteresisStateCode = (int)Math.Round(stateData[^1].Value);
+            if (rateData.Count > 0)     _rcCurrentRate  = rateData[^1].Value;
+            if (inflightData.Count > 0) _rcInFlight     = inflightData[^1].Value;
+            if (short429Data.Count > 0) _rcRate429Short = short429Data[^1].Value;
+            if (long429Data.Count > 0)  _rcRate429Long  = long429Data[^1].Value;
+            if (stateData.Count > 0)    _rcHysteresisStateCode = (int)Math.Round(stateData[^1].Value);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "RateControl メトリクスの取得に失敗しました。次回ポーリングまでスキップします。");
+        }
     }
 
     private async Task RefreshFolderProgressAsync(CancellationToken ct)
