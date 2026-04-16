@@ -232,6 +232,32 @@ public sealed class ConfigurationService : IConfigurationService
     /// <inheritdoc />
     public async Task UpdateConfigAsync(ConfigUpdateDto update, CancellationToken ct = default)
     {
+        // rateControl バリデーション（保存前に検証し、無効値が config.json に書き込まれるのを防ぐ）
+        if (update.RcShortWindowSec.HasValue && update.RcShortWindowSec.Value < 1)
+            throw new ArgumentException("RcShortWindowSec は 1 以上である必要があります。", nameof(update));
+        if (update.RcLongWindowSec.HasValue && update.RcLongWindowSec.Value < 5)
+            throw new ArgumentException("RcLongWindowSec は 5 以上である必要があります。", nameof(update));
+        if (update.RcShortWindowSec.HasValue && update.RcLongWindowSec.HasValue
+            && update.RcShortWindowSec.Value >= update.RcLongWindowSec.Value)
+            throw new ArgumentException(
+                "RcShortWindowSec は RcLongWindowSec より小さい値にしてください。", nameof(update));
+        if (update.RcEmergencyThresholdPct.HasValue && update.RcEmergencyThresholdPct.Value is < 0 or > 100)
+            throw new ArgumentException("RcEmergencyThresholdPct は 0〜100 の範囲で入力してください。", nameof(update));
+        if (update.RcSlowdownThresholdPct.HasValue && update.RcSlowdownThresholdPct.Value is < 0 or > 100)
+            throw new ArgumentException("RcSlowdownThresholdPct は 0〜100 の範囲で入力してください。", nameof(update));
+        if (update.RcMinDecayFactor.HasValue && update.RcMinDecayFactor.Value is < 0 or > 1)
+            throw new ArgumentException("RcMinDecayFactor は 0〜1 の範囲で入力してください。", nameof(update));
+        if (update.RcMaxDecayFactor.HasValue && update.RcMaxDecayFactor.Value is < 0 or > 1)
+            throw new ArgumentException("RcMaxDecayFactor は 0〜1 の範囲で入力してください。", nameof(update));
+        if (update.RcMinDecayFactor.HasValue && update.RcMaxDecayFactor.HasValue
+            && update.RcMinDecayFactor.Value >= update.RcMaxDecayFactor.Value)
+            throw new ArgumentException(
+                "RcMinDecayFactor は RcMaxDecayFactor より小さい値にしてください。", nameof(update));
+        if (update.RcInFlightThreshold.HasValue && update.RcInFlightThreshold.Value < 1)
+            throw new ArgumentException("RcInFlightThreshold は 1 以上である必要があります。", nameof(update));
+        if (update.RcMaxConcurrency.HasValue && update.RcMaxConcurrency.Value < 1)
+            throw new ArgumentException("RcMaxConcurrency は 1 以上である必要があります。", nameof(update));
+
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {

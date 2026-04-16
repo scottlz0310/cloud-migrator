@@ -92,6 +92,13 @@ public interface ITransferStateDb : IAsyncDisposable
     Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(string name, int recentMinutes, CancellationToken ct);
 
     /// <summary>
+    /// 複数メトリクスの最新値を一括取得する（1 クエリ）。
+    /// 直近 <paramref name="recentMinutes"/> 分以内のデータが対象。存在しない名前のエントリは結果に含まれない。
+    /// </summary>
+    Task<IReadOnlyDictionary<string, double>> GetLatestMetricsAsync(
+        IEnumerable<string> names, int recentMinutes, CancellationToken ct);
+
+    /// <summary>
     /// 全テーブルのデータを削除してリセットする（--full-rebuild / 設定変更時）。
     /// ファイル削除ではなく SQL で消去するため、ダッシュボードが DB を開いたままでも実行可能。
     /// テーブル定義は保持される。

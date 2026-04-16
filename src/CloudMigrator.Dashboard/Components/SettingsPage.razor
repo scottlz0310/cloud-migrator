@@ -416,6 +416,16 @@ else
             Snackbar.Add("タイムアウトは 30〜3600 秒の範囲で入力してください。", Severity.Warning);
             return;
         }
+        if (_editUseRateControl && _editRcShortWindowSec >= _editRcLongWindowSec)
+        {
+            Snackbar.Add("短期ウィンドウ (秒) は中期ウィンドウ (秒) より小さい値にしてください。", Severity.Warning);
+            return;
+        }
+        if (_editUseRateControl && _editRcMinDecayFactor >= _editRcMaxDecayFactor)
+        {
+            Snackbar.Add("最小減衰率は最大減衰率より小さい値にしてください。", Severity.Warning);
+            return;
+        }
         if (!_editUseRateControl && _editAdaptiveConcurrencyEnabled && _editAdaptiveConcurrencyDecreasePercent is < 1 or > 99)
         {
             Snackbar.Add("減速率は 1〜99 の範囲で入力してください。", Severity.Warning);

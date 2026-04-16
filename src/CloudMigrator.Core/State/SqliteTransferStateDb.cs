@@ -684,6 +684,50 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<string, double>> GetLatestMetricsAsync(
+        IEnumerable<string> names, int recentMinutes, CancellationToken ct)
+    {
+        var nameList = names.ToList();
+        if (nameList.Count == 0)
+            return new Dictionary<string, double>();
+
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await using var cmd = _conn.CreateCommand();
+            var cutoff = DateTimeOffset.UtcNow.AddMinutes(-recentMinutes).ToString("O");
+            var paramNames = nameList.Select((_, i) => $"@n{i}").ToList();
+
+            cmd.CommandText = $"""
+                SELECT m.name, m.value
+                FROM metrics m
+                INNER JOIN (
+                    SELECT name, MAX(timestamp) AS latest_ts
+                    FROM metrics
+                    WHERE name IN ({string.Join(", ", paramNames)})
+                      AND timestamp >= @cutoff
+                    GROUP BY name
+                ) latest ON m.name = latest.name AND m.timestamp = latest.latest_ts
+                """;
+
+            for (var i = 0; i < nameList.Count; i++)
+                cmd.Parameters.AddWithValue($"@n{i}", nameList[i]);
+            cmd.Parameters.AddWithValue("@cutoff", cutoff);
+
+            var results = new Dictionary<string, double>(nameList.Count);
+            await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                results[reader.GetString(0)] = reader.GetDouble(1);
+
+            return results;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
     internal static TransferStatus ParseStatus(string status) => status switch
     {
         "pending" => TransferStatus.Pending,
