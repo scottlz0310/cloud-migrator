@@ -103,7 +103,7 @@ else
                                        Color="Color.Primary" />
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
                                 ON: レート（req/s）主体の新エンジン（RateControlledTransferController）を使用します。
-                                OFF: 旧来の並列数ベースエンジン（AdaptiveConcurrencyController）を使用します。
+                                OFF: 旧来の並列数ベースエンジンを使用します。動的並列制御（ACC）の有効/無効は下の設定で切り替えられます。
                                 設定変更は次回ジョブ開始時に反映されます。
                             </MudText>
                         </MudItem>
@@ -176,10 +176,10 @@ else
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_editRcMaxConcurrency"
-                                                 Label="最大並行数（安全キャップ）"
+                                                 Label="最大並行数 / レート上限（安全キャップ）"
                                                  Min="1" Max="256"
                                                  Variant="Variant.Outlined"
-                                                 HelperText="レートが低くてもこの並列数を超えない。レート制御の補助上限。デフォルト: 16" />
+                                                 HelperText="並列数の上限であると同時に、req/sec のレート上限としても使用されます。デフォルト: 16" />
                             </MudItem>
                         }
                         else

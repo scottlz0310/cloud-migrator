@@ -273,13 +273,13 @@ else
                             </MudItem>
                             <MudItem xs="6" sm="3">
                                 <MudText Typo="Typo.overline" Color="Color.Secondary">短期 429 率</MudText>
-                                <MudText Typo="Typo.body1" Color="@(_rcRate429Short > 0.03 ? Color.Warning : Color.Success)">
+                                <MudText Typo="Typo.body1" Color="@(_rcRate429Short >= _rcEmergencyThreshold && _rcRate429Short >= 0 ? Color.Error : _rcRate429Short >= _rcSlowdownThreshold && _rcRate429Short >= 0 ? Color.Warning : Color.Success)">
                                     <b>@(_rcRate429Short >= 0 ? (_rcRate429Short * 100).ToString("F1") + "%" : "—")</b>
                                 </MudText>
                             </MudItem>
                             <MudItem xs="6" sm="3">
                                 <MudText Typo="Typo.overline" Color="Color.Secondary">中期 429 率</MudText>
-                                <MudText Typo="Typo.body1" Color="@(_rcRate429Long > 0.03 ? Color.Warning : Color.Success)">
+                                <MudText Typo="Typo.body1" Color="@(_rcRate429Long >= _rcEmergencyThreshold && _rcRate429Long >= 0 ? Color.Error : _rcRate429Long >= _rcSlowdownThreshold && _rcRate429Long >= 0 ? Color.Warning : Color.Success)">
                                     <b>@(_rcRate429Long >= 0 ? (_rcRate429Long * 100).ToString("F1") + "%" : "—")</b>
                                 </MudText>
                             </MudItem>
@@ -447,14 +447,18 @@ else
     private double _rcInFlight = -1;
     private double _rcRate429Short = -1;
     private double _rcRate429Long = -1;
-    private int _rcHysteresisStateCode; // 0=安定, 1=加速, 2=緩減速, 3=緊急減速
+    private int _rcHysteresisStateCode = -1; // -1=未取得, 0=安定, 1=加速, 2=緩減速, 3=緊急減速
+    // Config から読み込んだ閾値（429率色分けに使用）
+    private double _rcSlowdownThreshold;    // 0–1 スケール
+    private double _rcEmergencyThreshold;   // 0–1 スケール
 
     private string HysteresisLabel => _rcHysteresisStateCode switch
     {
         3 => "緊急減速",
         2 => "緩減速",
         1 => "加速",
-        _ => "安定"
+        0 => "安定",
+        _ => "—"
     };
 
     private Color HysteresisColor => _rcHysteresisStateCode switch
@@ -462,6 +466,7 @@ else
         3 => Color.Error,
         2 => Color.Warning,
         1 => Color.Success,
+        0 => Color.Default,
         _ => Color.Default
     };
     private string _eta = "—";
@@ -490,6 +495,9 @@ else
         {
             var cfg = await ConfigService.GetConfigAsync();
             _useRateControl = cfg.UseRateControl;
+            // 429率色分け用の閾値を Config から取得（0–1 スケールに戻す）
+            _rcSlowdownThreshold  = cfg.RcSlowdownThresholdPct  / 100.0;
+            _rcEmergencyThreshold = cfg.RcEmergencyThresholdPct / 100.0;
         }
         catch (Exception ex)
         {
@@ -585,7 +593,7 @@ else
             if (inflightData.Count > 0) _rcInFlight     = inflightData[^1].Value;
             if (short429Data.Count > 0) _rcRate429Short = short429Data[^1].Value;
             if (long429Data.Count > 0)  _rcRate429Long  = long429Data[^1].Value;
-            if (stateData.Count > 0)    _rcHysteresisStateCode = (int)Math.Round(stateData[^1].Value);
+            if (stateData.Count > 0)    _rcHysteresisStateCode = (int)Math.Round(stateData[^1].Value); // 0–3
         }
         catch (OperationCanceledException)
         {

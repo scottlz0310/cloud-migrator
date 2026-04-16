@@ -191,9 +191,9 @@ public sealed class ConfigurationService : IConfigurationService
             rcLongWindowSec = GetInt(rcProp, "longWindowSec", 30);
             // emergencyThreshold / slowdownThreshold は JSON に 0–1 で保存、UI では 0–100 (%) で表示
             if (rcProp.TryGetProperty("emergencyThreshold", out var etProp) && etProp.TryGetDouble(out var et))
-                rcEmergencyThresholdPct = Math.Clamp((int)Math.Round(et * 100), 1, 100);
+                rcEmergencyThresholdPct = Math.Clamp((int)Math.Round(et * 100), 0, 100);
             if (rcProp.TryGetProperty("slowdownThreshold", out var stProp) && stProp.TryGetDouble(out var st))
-                rcSlowdownThresholdPct = Math.Clamp((int)Math.Round(st * 100), 1, 100);
+                rcSlowdownThresholdPct = Math.Clamp((int)Math.Round(st * 100), 0, 100);
             if (rcProp.TryGetProperty("decayK", out var dkProp) && dkProp.TryGetDouble(out var dk))
                 rcDecayK = dk;
             if (rcProp.TryGetProperty("minDecayFactor", out var minDfProp) && minDfProp.TryGetDouble(out var minDf))

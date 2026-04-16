@@ -35,9 +35,6 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     private double _currentRate;    // req/sec（lock で保護）
     private int _activeCount;       // 実行中リクエスト数
     private int _retryWaitingCount; // Retry 待ちリクエスト数
-    // ヒステリシス状態コード: 0=安定, 1=加速, 2=緩減速, 3=緊急減速（Controller が決定、UI は表示のみ）
-    private int _hysteresisStateCode;
-
     private readonly object _rateLock = new();
 
     // ── トークンバケット（レート制御・dispatch ゲート）──
@@ -221,7 +218,6 @@ public sealed class RateControlledTransferController : ITransferRateController, 
         _metricsBuffer.Enqueue("current_rate_limit", newRate);
         _metricsBuffer.Enqueue("current_in_flight", inFlight);
         // ヒステリシス状態コード: 0=安定, 1=加速, 2=緩減速, 3=緊急減速（AdjustRate が直接返す）
-        Volatile.Write(ref _hysteresisStateCode, stateCode);
         _metricsBuffer.Enqueue("hysteresis_state_code", stateCode);
 
         _logger.LogDebug(
