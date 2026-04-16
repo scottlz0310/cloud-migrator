@@ -64,6 +64,11 @@ public sealed class RateControlledTransferController : ITransferRateController, 
         _metricsBuffer = metricsBuffer;
         _logger = logger;
 
+        if (_settings.MinRatePerSec < 1.0)
+            throw new ArgumentOutOfRangeException(nameof(settings),
+                $"MinRatePerSec は 1.0 以上にしてください（現在値: {_settings.MinRatePerSec}）。" +
+                "1.0 未満だと RefillTokens が永続的に 0 トークンを補充し AcquireAsync が進行不能になります。");
+
         var initialRate = Math.Max(_settings.MinRatePerSec, _settings.InitialRatePerSec);
         lock (_rateLock) { _currentRate = initialRate; }
 
@@ -101,14 +106,21 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     /// <inheritdoc/>
     public void NotifySuccess(TimeSpan latency)
     {
-        Interlocked.Decrement(ref _activeCount);
+        DecrementIfPositive(ref _activeCount);
         _aggregator.NotifySuccess(latency);
+    }
+
+    /// <inheritdoc/>
+    public void NotifyCompleted(TimeSpan latency)
+    {
+        // インフライトカウンターを戻すが成功メトリクスには計上しない（キャンセル/失敗完了）
+        DecrementIfPositive(ref _activeCount);
     }
 
     /// <inheritdoc/>
     public void NotifyRateLimit(TimeSpan? retryAfter)
     {
-        Interlocked.Decrement(ref _activeCount);
+        DecrementIfPositive(ref _activeCount);
         _aggregator.NotifyRateLimit(retryAfter);
     }
 
@@ -121,7 +133,20 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     /// <inheritdoc/>
     public void NotifyRetryCompleted()
     {
-        Interlocked.Decrement(ref _retryWaitingCount);
+        DecrementIfPositive(ref _retryWaitingCount);
+    }
+
+    /// <summary>
+    /// カウンターを 0 未満にならないようデクリメントする（CAS ループ）。
+    /// </summary>
+    private static void DecrementIfPositive(ref int counter)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref counter);
+            if (current <= 0) return;
+            if (Interlocked.CompareExchange(ref counter, current - 1, current) == current) return;
+        }
     }
 
     /// <inheritdoc/>

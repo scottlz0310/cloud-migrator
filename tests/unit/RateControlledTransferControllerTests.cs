@@ -16,6 +16,8 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
     private readonly Mock<IMetricsAggregator> _mockAggregator = new(MockBehavior.Loose);
     private readonly Mock<ITransferStateDb> _mockDb = new(MockBehavior.Loose);
     private RateControlledTransferController? _sut;
+    // MetricsBuffer のバックグラウンド flush タスクをテスト間でリークさせないためフィールドに保持する
+    private MetricsBuffer? _metricsBuffer;
 
     private RateControlledTransferController CreateSut(
         double initialRate = 10,
@@ -56,6 +58,7 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
             _mockDb.Object,
             flushIntervalSec: 3600,
             NullLogger<MetricsBuffer>.Instance);
+        _metricsBuffer = metricsBuffer;
 
         _sut = new RateControlledTransferController(
             _mockAggregator.Object,
@@ -276,5 +279,7 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
     {
         if (_sut is not null)
             await _sut.DisposeAsync();
+        if (_metricsBuffer is not null)
+            await _metricsBuffer.DisposeAsync();
     }
 }

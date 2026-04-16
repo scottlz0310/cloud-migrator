@@ -335,7 +335,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                     catch (OperationCanceledException)
                     {
                         // キャンセル時はカウンターを戻す（NotifyRequestSent のペアとして必要）
-                        controller?.NotifySuccess(TimeSpan.Zero);
+                        controller?.NotifyCompleted(TimeSpan.Zero);
                         throw;
                     }
                     finally
@@ -415,7 +415,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                 }
                 catch (OperationCanceledException)
                 {
-                    controller?.NotifySuccess(sw.Elapsed); // リリース前にカウンターを戻す
+                    controller?.NotifyCompleted(sw.Elapsed); // リリース前にカウンターを戻す
                     throw;
                 }
                 catch (Exception ex)
@@ -447,7 +447,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                     }
                     else
                     {
-                        controller?.NotifySuccess(sw.Elapsed); // 非レート制限エラーはカウンターを戻す
+                        controller?.NotifyCompleted(sw.Elapsed); // 非レート制限エラーはカウンターを戻す
                     }
                 }
                 finally

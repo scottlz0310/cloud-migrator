@@ -149,12 +149,11 @@ public class TransferMetricsAggregatorTests
     [Fact]
     public void GetSnapshot_ExcludesEventsOutsideWindow()
     {
-        // ウィンドウ 1 秒のスナップショットは現在秒のみを含む
-        // (過去秒のバケットは epochSec が異なるため除外される)
+        // 2 秒ウィンドウを使うことで秒境界を跨いでも直前の通知が集計対象に残りフレークを防ぐ
         _sut.NotifyRequestSent();
 
-        // 1 秒ウィンドウで RPS > 0 であることを確認
-        var snap = _sut.GetSnapshot(TimeSpan.FromSeconds(1));
+        // 2 秒ウィンドウで RPS > 0 であることを確認
+        var snap = _sut.GetSnapshot(TimeSpan.FromSeconds(2));
         snap.Rps.Should().BeGreaterThan(0);
     }
 }

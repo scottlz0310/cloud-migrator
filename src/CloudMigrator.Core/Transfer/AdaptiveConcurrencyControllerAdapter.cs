@@ -42,14 +42,21 @@ public sealed class AdaptiveConcurrencyControllerAdapter : ITransferRateControll
     /// <inheritdoc/>
     public void NotifySuccess(TimeSpan latency)
     {
-        Interlocked.Decrement(ref _activeCount);
+        DecrementIfPositive(ref _activeCount);
         _inner.NotifySuccess();
+    }
+
+    /// <inheritdoc/>
+    public void NotifyCompleted(TimeSpan latency)
+    {
+        // インフライトカウンターを戻すが成功メトリクスには計上しない（キャンセル/失敗完了）
+        DecrementIfPositive(ref _activeCount);
     }
 
     /// <inheritdoc/>
     public void NotifyRateLimit(TimeSpan? retryAfter)
     {
-        Interlocked.Decrement(ref _activeCount);
+        DecrementIfPositive(ref _activeCount);
         _inner.NotifyRateLimit(retryAfter);
     }
 
@@ -62,7 +69,20 @@ public sealed class AdaptiveConcurrencyControllerAdapter : ITransferRateControll
     /// <inheritdoc/>
     public void NotifyRetryCompleted()
     {
-        Interlocked.Decrement(ref _retryWaitingCount);
+        DecrementIfPositive(ref _retryWaitingCount);
+    }
+
+    /// <summary>
+    /// カウンターを 0 未満にならないようデクリメントする（CAS ループ）。
+    /// </summary>
+    private static void DecrementIfPositive(ref int counter)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref counter);
+            if (current <= 0) return;
+            if (Interlocked.CompareExchange(ref counter, current - 1, current) == current) return;
+        }
     }
 
     /// <inheritdoc/>

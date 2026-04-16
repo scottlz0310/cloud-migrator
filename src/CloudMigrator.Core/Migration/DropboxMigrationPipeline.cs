@@ -358,7 +358,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
             }
             catch (OperationCanceledException)
             {
-                controller?.NotifySuccess(TimeSpan.Zero); // カウンターを戻す
+                controller?.NotifyCompleted(TimeSpan.Zero); // カウンターを戻す
                 throw;
             }
             catch (Exception ex)
@@ -379,7 +379,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 }
                 else
                 {
-                    controller?.NotifySuccess(TimeSpan.Zero); // 非レート制限エラーはカウンターを戻す
+                    controller?.NotifyCompleted(TimeSpan.Zero); // 非レート制限エラーはカウンターを戻す
                 }
             }
             finally

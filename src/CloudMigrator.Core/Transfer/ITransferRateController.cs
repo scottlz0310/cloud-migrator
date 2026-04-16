@@ -23,6 +23,13 @@ public interface ITransferRateController
     /// <param name="latency">実際の転送レイテンシ。</param>
     void NotifySuccess(TimeSpan latency);
 
+    /// <summary>
+    /// キャンセル・非レート制限エラーなど、成功以外の完了時に呼び出す。
+    /// インフライトカウンターを戻すが、成功数 / レイテンシ等のメトリクスには計上しない。
+    /// </summary>
+    /// <param name="latency">処理時間（参考値）。</param>
+    void NotifyCompleted(TimeSpan latency);
+
     /// <summary>429/503 を受信した際に呼び出す。</summary>
     /// <param name="retryAfter">サーバーから返された Retry-After 値（null の場合は不明）。</param>
     void NotifyRateLimit(TimeSpan? retryAfter);

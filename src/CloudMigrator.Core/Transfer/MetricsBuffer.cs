@@ -25,6 +25,9 @@ public sealed class MetricsBuffer : IAsyncDisposable
     private readonly TimeSpan _flushInterval;
     private readonly ILogger<MetricsBuffer> _logger;
     private readonly ConcurrentQueue<(string Name, double Value, DateTimeOffset Timestamp)> _queue = new();
+    // ConcurrentQueue.Count は O(N) 走査のためスレッド間競合が発生しやすい。
+    // 専用の Interlocked カウンターで正確なサイズ管理を行う。
+    private int _count;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _flushTask;
 
@@ -39,9 +42,16 @@ public sealed class MetricsBuffer : IAsyncDisposable
     /// <summary>メトリクスをバッファに追加する。バッファが満杯の場合は古いエントリを捨てる。</summary>
     public void Enqueue(string name, double value)
     {
-        // バッファ上限に達している場合は古いものを捨てる
-        while (_queue.Count >= MaxBufferSize)
-            _queue.TryDequeue(out _);
+        // Interlocked カウンターでバッファ容量を管理する。
+        // ConcurrentQueue.Count は O(N) 走査で複数スレッドからの同時エンキュー時に競合しやすい。
+        if (Interlocked.Increment(ref _count) > MaxBufferSize)
+        {
+            // 上限超過: 古いエントリを捨ててカウンターを戻す
+            if (_queue.TryDequeue(out _))
+                Interlocked.Decrement(ref _count); // 捨てた分のカウンターは復彌しない（新しいエントリ分を上書き）
+            else
+                Interlocked.Decrement(ref _count); // デキュー失敗時はインクリメントを戻す
+        }
 
         _queue.Enqueue((name, value, DateTimeOffset.UtcNow));
     }
@@ -71,7 +81,10 @@ public sealed class MetricsBuffer : IAsyncDisposable
 
         var batch = new List<(string Name, double Value, DateTimeOffset Timestamp)>();
         while (_queue.TryDequeue(out var item))
+        {
+            Interlocked.Decrement(ref _count);
             batch.Add(item);
+        }
 
         if (batch.Count == 0) return;
 

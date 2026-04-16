@@ -61,7 +61,8 @@ public sealed class TransferMetricsAggregator : IMetricsAggregator
     public MetricsSnapshot GetSnapshot(TimeSpan window)
     {
         var nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var windowSec = (long)Math.Ceiling(window.TotalSeconds);
+        // BucketCount でクランプし、O(300) 上限を保証する（300 秒超の窓を指定しても O(windowSec) にならない）
+        var windowSec = Math.Min((long)Math.Ceiling(window.TotalSeconds), BucketCount);
         var cutoffEpoch = nowEpoch - windowSec;
 
         int requestCount = 0, successCount = 0, rateLimitCount = 0;
