@@ -1,7 +1,6 @@
 @inject ITransferStateDb TransferStateDb
 @inject ITransferJobService JobService
-@inject IConfigurationService ConfigService
-@inject MigratorOptions AppOptions
+@inject Func<MigratorOptions> OptionsFactory
 @inject ILogger<DashboardPage> Logger
 @using CloudMigrator.Core.Configuration
 @implements IDisposable
@@ -492,13 +491,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        // 実効設定（環境変数 > config.json > デフォルト優先）から UseRateControl を取得
-        // ConfigService.GetConfigAsync() は config.json 直読みのため環境変数オーバーライドが反映されない
-        // AppOptions は BuildServiceProvider で AppConfiguration.Build() から構築した実効設定
-        _useRateControl = AppOptions.RateControl.UseRateControl;
-        _rcSlowdownThreshold  = AppOptions.RateControl.SlowdownThreshold;
-        _rcEmergencyThreshold = AppOptions.RateControl.EmergencyThreshold;
-
         await RefreshAllAsync(CancellationToken.None);
         _refreshCts = new CancellationTokenSource();
         var token = _refreshCts.Token;
@@ -520,6 +512,13 @@ else
 
     private async Task RefreshAllAsync(CancellationToken ct)
     {
+        // 実効設定を都度取得（環境変数 > config.json > デフォルト優先）
+        // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
+        var opts = OptionsFactory();
+        _useRateControl = opts.RateControl.UseRateControl;
+        _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
+        _rcEmergencyThreshold = opts.RateControl.EmergencyThreshold;
+
         try { _summary = await TransferStateDb.GetSummaryAsync(ct); }
         catch (Exception ex) { Logger.LogError(ex, "RefreshAllAsync: GetSummaryAsync 失敗"); _summary ??= new TransferDbSummary(); }
         if (_summary is null) return;

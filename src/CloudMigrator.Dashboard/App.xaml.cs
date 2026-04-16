@@ -74,11 +74,13 @@ public partial class App : Application
         services.AddLogging();
 
         // ── Application services ─────────────────────────────────────────────
-        // 実効設定（環境変数 > config.json > デフォルト優先）を DI に登録
-        // Dashboard コンポーネントが UseRateControl 等の実効値を参照できるようにする
-        var effectiveConfiguration = AppConfiguration.Build();
-        var effectiveOptions = effectiveConfiguration.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>() ?? new MigratorOptions();
-        services.AddSingleton(effectiveOptions);
+        // 実効設定ファクトリを DI 登録（呼ぶたびに AppConfiguration.Build() で最新設定を取得）
+        // singleton ではなくファクトリにすることで、設定変更後も UI が古い値を参照し続けない
+        // ジョブ実行側（MigrationWork）も都度 AppConfiguration.Build() するため動作が一致する
+        services.AddSingleton<Func<MigratorOptions>>(_ =>
+            () => AppConfiguration.Build()
+                .GetSection(MigratorOptions.SectionName)
+                .Get<MigratorOptions>() ?? new MigratorOptions());
 
         services.AddSingleton<IConfigurationService, ConfigurationService>();
         services.AddSingleton<ITransferJobService>(sp =>
