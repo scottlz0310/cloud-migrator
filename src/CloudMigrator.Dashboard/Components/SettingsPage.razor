@@ -434,6 +434,7 @@ else
 
         try
         {
+            // 表示/非表示に関わらず常に _edit* 値を送信（トグル切替後も編集値を保持するため）
             var update = new ConfigUpdateDto(
                 MaxParallelTransfers: _editMaxParallelTransfers,
                 MaxParallelFolderCreations: _editMaxParallelFolderCreations,
@@ -441,23 +442,23 @@ else
                 LargeFileThresholdMb: _editLargeFileThresholdMb,
                 RetryCount: _editRetryCount,
                 TimeoutSec: _editTimeoutSec,
-                // UseRateControl=ON 時は ACC セクションは非表示なので現在設定値をそのまま保持、OFF 時は RC セクションを保持
-                AdaptiveConcurrencyEnabled: _editUseRateControl ? (_config?.AdaptiveConcurrencyEnabled ?? false) : _editAdaptiveConcurrencyEnabled,
-                AdaptiveConcurrencyInitialDegree: _editUseRateControl ? (_config?.AdaptiveConcurrencyInitialDegree ?? 0) : _editAdaptiveConcurrencyInitialDegree,
-                AdaptiveConcurrencyDecreasePercent: _editUseRateControl ? (_config?.AdaptiveConcurrencyDecreasePercent ?? 50) : _editAdaptiveConcurrencyDecreasePercent,
-                AdaptiveConcurrencyIncreaseIntervalSec: _editUseRateControl ? (_config?.AdaptiveConcurrencyIncreaseIntervalSec ?? 60) : _editAdaptiveConcurrencyIncreaseIntervalSec,
+                AdaptiveConcurrencyEnabled: _editAdaptiveConcurrencyEnabled,
+                AdaptiveConcurrencyInitialDegree: _editAdaptiveConcurrencyInitialDegree,
+                AdaptiveConcurrencyDecreasePercent: _editAdaptiveConcurrencyDecreasePercent,
+                AdaptiveConcurrencyIncreaseIntervalSec: _editAdaptiveConcurrencyIncreaseIntervalSec,
                 UseRateControl: _editUseRateControl,
-                RcShortWindowSec: _editUseRateControl ? _editRcShortWindowSec : (_config?.RcShortWindowSec ?? 5),
-                RcLongWindowSec: _editUseRateControl ? _editRcLongWindowSec : (_config?.RcLongWindowSec ?? 30),
-                RcEmergencyThresholdPct: _editUseRateControl ? _editRcEmergencyThresholdPct : (_config?.RcEmergencyThresholdPct ?? 10),
-                RcSlowdownThresholdPct: _editUseRateControl ? _editRcSlowdownThresholdPct : (_config?.RcSlowdownThresholdPct ?? 3),
-                RcDecayK: _editUseRateControl ? _editRcDecayK : (_config?.RcDecayK ?? 5.0),
-                RcMinDecayFactor: _editUseRateControl ? _editRcMinDecayFactor : (_config?.RcMinDecayFactor ?? 0.3),
-                RcMaxDecayFactor: _editUseRateControl ? _editRcMaxDecayFactor : (_config?.RcMaxDecayFactor ?? 0.9),
-                RcInFlightThreshold: _editUseRateControl ? _editRcInFlightThreshold : (_config?.RcInFlightThreshold ?? 32),
-                RcMaxConcurrency: _editUseRateControl ? _editRcMaxConcurrency : (_config?.RcMaxConcurrency ?? 16));
+                RcShortWindowSec: _editRcShortWindowSec,
+                RcLongWindowSec: _editRcLongWindowSec,
+                RcEmergencyThresholdPct: _editRcEmergencyThresholdPct,
+                RcSlowdownThresholdPct: _editRcSlowdownThresholdPct,
+                RcDecayK: _editRcDecayK,
+                RcMinDecayFactor: _editRcMinDecayFactor,
+                RcMaxDecayFactor: _editRcMaxDecayFactor,
+                RcInFlightThreshold: _editRcInFlightThreshold,
+                RcMaxConcurrency: _editRcMaxConcurrency);
             await ConfigService.UpdateConfigAsync(update);
             _config = await ConfigService.GetConfigAsync();
+            CopyToEditFields(_config);
             Snackbar.Add("設定を保存しました。", Severity.Success);
         }
         catch (Exception ex)
