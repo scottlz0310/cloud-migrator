@@ -35,6 +35,8 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     private double _currentRate;    // req/sec（lock で保護）
     private int _activeCount;       // 実行中リクエスト数
     private int _retryWaitingCount; // Retry 待ちリクエスト数
+    // ヒステリシス状態コード: 0=安定, 1=加速, 2=緩減速, 3=緊急減速（Controller が決定、UI は表示のみ）
+    private int _hysteresisStateCode;
 
     private readonly object _rateLock = new();
 
@@ -217,6 +219,13 @@ public sealed class RateControlledTransferController : ITransferRateController, 
         _metricsBuffer.Enqueue("avg_latency_ms", longSnap.AvgLatencyMs);
         _metricsBuffer.Enqueue("current_rate_limit", newRate);
         _metricsBuffer.Enqueue("current_in_flight", inFlight);
+        // ヒステリシス状態コード: 0=安定, 1=加速, 2=緩減速, 3=緊急減速（Controller が決定）
+        int stateCode = action.StartsWith("緊急", StringComparison.Ordinal) ? 3
+            : action.StartsWith("緩", StringComparison.Ordinal) ? 2
+            : action == "加速" ? 1
+            : 0;
+        Volatile.Write(ref _hysteresisStateCode, stateCode);
+        _metricsBuffer.Enqueue("hysteresis_state_code", stateCode);
 
         _logger.LogDebug(
             "制御サイクル: レート={Rate:F2} req/sec, 429率短期={Short:P1}/中期={Long:P1}, インフライト={InFlight}, アクション={Action}",

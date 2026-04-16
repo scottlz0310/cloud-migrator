@@ -95,45 +95,138 @@ else
                         @* ── 動的並列制御 ────────────────────────────────── *@
                         <MudItem xs="12">
                             <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">動的並列制御（レート制限対応）</MudText>
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">転送制御エンジン</MudText>
                         </MudItem>
                         <MudItem xs="12">
-                            <MudSwitch @bind-Value="_editAdaptiveConcurrencyEnabled"
-                                       Label="動的並列制御を有効にする"
+                            <MudSwitch @bind-Value="_editUseRateControl"
+                                       Label="レートベース制御エンジンを使用する（推奨）"
                                        Color="Color.Primary" />
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Graph API から 429 を受信したとき、自動的に並列数を減らして再加速します。
-                                無効時は「最大並行転送数」の固定値で動作します。
+                                ON: レート（req/s）主体の新エンジン（RateControlledTransferController）を使用します。
+                                OFF: 旧来の並列数ベースエンジン（AdaptiveConcurrencyController）を使用します。
+                                設定変更は次回ジョブ開始時に反映されます。
                             </MudText>
                         </MudItem>
-                        @if (_editAdaptiveConcurrencyEnabled)
+
+                        @if (_editUseRateControl)
                         {
+                            @* ── レートベース制御パラメーター ──────────────────── *@
+                            <MudItem xs="12">
+                                <MudDivider Class="my-2" />
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">レートベース制御パラメーター</MudText>
+                                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                                    すべての値は UI から変更可能です。変更は次回ジョブ開始時に反映されます。
+                                </MudAlert>
+                            </MudItem>
                             <MudItem xs="12" sm="6">
-                                <MudNumericField @bind-Value="_editAdaptiveConcurrencyInitialDegree"
-                                                 Label="初期並列数（0 = 最大と同じ）"
-                                                 Min="0" Max="256"
+                                <MudNumericField @bind-Value="_editRcShortWindowSec"
+                                                 Label="短期ウィンドウ (秒)"
+                                                 Min="1" Max="60"
                                                  Variant="Variant.Outlined"
-                                                 HelperText="0: 最大並行転送数から開始（スロースタートなし）。1〜n: その数から徐々に増加（スロースタート）。" />
+                                                 HelperText="スパイク検知・緊急減速のトリガーに使用。デフォルト: 5" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
-                                <MudNumericField @bind-Value="_editAdaptiveConcurrencyDecreasePercent"
-                                                 Label="429 減速率 (%)"
-                                                 Min="1" Max="99"
+                                <MudNumericField @bind-Value="_editRcLongWindowSec"
+                                                 Label="中期ウィンドウ (秒)"
+                                                 Min="5" Max="300"
                                                  Variant="Variant.Outlined"
-                                                 HelperText="429 発生時に並列度をこの割合に削減します。例: 50 = 半減（MinDegree 下限）。デフォルト: 50" />
+                                                 HelperText="安定判断・レート調整のベース。デフォルト: 30" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
-                                <MudSelect T="int"
-                                           @bind-Value="_editAdaptiveConcurrencyIncreaseIntervalSec"
-                                           Label="増速インターバル (秒)"
-                                           Variant="Variant.Outlined"
-                                           HelperText="429 後に並列度の回復を開始するまでの待機時間。デフォルト: 60 秒">
-                                    <MudSelectItem Value="30">30 秒</MudSelectItem>
-                                    <MudSelectItem Value="60">60 秒</MudSelectItem>
-                                    <MudSelectItem Value="90">90 秒</MudSelectItem>
-                                    <MudSelectItem Value="120">120 秒</MudSelectItem>
-                                </MudSelect>
+                                <MudNumericField @bind-Value="_editRcEmergencyThresholdPct"
+                                                 Label="緊急減速閾値 (429 率 %)"
+                                                 Min="1" Max="100"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="短期窓 429 率がこの値を超えると緊急減速。デフォルト: 10" />
                             </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcSlowdownThresholdPct"
+                                                 Label="緩減速閾値 (429 率 %)"
+                                                 Min="1" Max="100"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="中期窓 429 率がこの値を超えると緩やかに減速。デフォルト: 3" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcDecayK"
+                                                 Label="減衰係数 K"
+                                                 Min="0.1" Max="20.0" Step="0.5"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="factor = clamp(1 - K × 429率, min, max)。デフォルト: 5.0" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcMinDecayFactor"
+                                                 Label="最小減衰率"
+                                                 Min="0.05" Max="0.95" Step="0.05"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="減衰係数の下限（最大の減速）。デフォルト: 0.3" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcMaxDecayFactor"
+                                                 Label="最大減衰率"
+                                                 Min="0.05" Max="0.99" Step="0.05"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="減衰係数の上限（最小の減速）。デフォルト: 0.9" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcInFlightThreshold"
+                                                 Label="インフライト閾値"
+                                                 Min="1" Max="256"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="この値を超えると dispatch を一時停止（安全キャップ）。デフォルト: 32" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcMaxConcurrency"
+                                                 Label="最大並行数（安全キャップ）"
+                                                 Min="1" Max="256"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="レートが低くてもこの並列数を超えない。レート制御の補助上限。デフォルト: 16" />
+                            </MudItem>
+                        }
+                        else
+                        {
+                            @* ── 旧来の動的並列制御 ──────────────────────────── *@
+                            <MudItem xs="12">
+                                <MudDivider Class="my-2" />
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">動的並列制御（レート制限対応）</MudText>
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudSwitch @bind-Value="_editAdaptiveConcurrencyEnabled"
+                                           Label="動的並列制御を有効にする"
+                                           Color="Color.Primary" />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Graph API から 429 を受信したとき、自動的に並列数を減らして再加速します。
+                                    無効時は「最大並行転送数」の固定値で動作します。
+                                </MudText>
+                            </MudItem>
+                            @if (_editAdaptiveConcurrencyEnabled)
+                            {
+                                <MudItem xs="12" sm="6">
+                                    <MudNumericField @bind-Value="_editAdaptiveConcurrencyInitialDegree"
+                                                     Label="初期並列数（0 = 最大と同じ）"
+                                                     Min="0" Max="256"
+                                                     Variant="Variant.Outlined"
+                                                     HelperText="0: 最大並行転送数から開始（スロースタートなし）。1〜n: その数から徐々に増加（スロースタート）。" />
+                                </MudItem>
+                                <MudItem xs="12" sm="6">
+                                    <MudNumericField @bind-Value="_editAdaptiveConcurrencyDecreasePercent"
+                                                     Label="429 減速率 (%)"
+                                                     Min="1" Max="99"
+                                                     Variant="Variant.Outlined"
+                                                     HelperText="429 発生時に並列度をこの割合に削減します。例: 50 = 半減（MinDegree 下限）。デフォルト: 50" />
+                                </MudItem>
+                                <MudItem xs="12" sm="6">
+                                    <MudSelect T="int"
+                                               @bind-Value="_editAdaptiveConcurrencyIncreaseIntervalSec"
+                                               Label="増速インターバル (秒)"
+                                               Variant="Variant.Outlined"
+                                               HelperText="429 後に並列度の回復を開始するまでの待機時間。デフォルト: 60 秒">
+                                        <MudSelectItem Value="30">30 秒</MudSelectItem>
+                                        <MudSelectItem Value="60">60 秒</MudSelectItem>
+                                        <MudSelectItem Value="90">90 秒</MudSelectItem>
+                                        <MudSelectItem Value="120">120 秒</MudSelectItem>
+                                    </MudSelect>
+                                </MudItem>
+                            }
                         }
                     </MudGrid>
                 </MudExpansionPanel>
@@ -212,6 +305,17 @@ else
     private int _editAdaptiveConcurrencyInitialDegree;
     private int _editAdaptiveConcurrencyDecreasePercent;
     private int _editAdaptiveConcurrencyIncreaseIntervalSec;
+    // RateControl 編集フィールド
+    private bool _editUseRateControl;
+    private int _editRcShortWindowSec;
+    private int _editRcLongWindowSec;
+    private int _editRcEmergencyThresholdPct;
+    private int _editRcSlowdownThresholdPct;
+    private double _editRcDecayK;
+    private double _editRcMinDecayFactor;
+    private double _editRcMaxDecayFactor;
+    private int _editRcInFlightThreshold;
+    private int _editRcMaxConcurrency;
 
     protected override async Task OnInitializedAsync()
     {
@@ -267,6 +371,16 @@ else
         _editAdaptiveConcurrencyInitialDegree = cfg.AdaptiveConcurrencyInitialDegree;
         _editAdaptiveConcurrencyDecreasePercent = cfg.AdaptiveConcurrencyDecreasePercent;
         _editAdaptiveConcurrencyIncreaseIntervalSec = cfg.AdaptiveConcurrencyIncreaseIntervalSec;
+        _editUseRateControl = cfg.UseRateControl;
+        _editRcShortWindowSec = cfg.RcShortWindowSec;
+        _editRcLongWindowSec = cfg.RcLongWindowSec;
+        _editRcEmergencyThresholdPct = cfg.RcEmergencyThresholdPct;
+        _editRcSlowdownThresholdPct = cfg.RcSlowdownThresholdPct;
+        _editRcDecayK = cfg.RcDecayK;
+        _editRcMinDecayFactor = cfg.RcMinDecayFactor;
+        _editRcMaxDecayFactor = cfg.RcMaxDecayFactor;
+        _editRcInFlightThreshold = cfg.RcInFlightThreshold;
+        _editRcMaxConcurrency = cfg.RcMaxConcurrency;
     }
 
     private async Task SaveAsync()
@@ -330,7 +444,17 @@ else
                 AdaptiveConcurrencyEnabled: _editAdaptiveConcurrencyEnabled,
                 AdaptiveConcurrencyInitialDegree: _editAdaptiveConcurrencyInitialDegree,
                 AdaptiveConcurrencyDecreasePercent: _editAdaptiveConcurrencyDecreasePercent,
-                AdaptiveConcurrencyIncreaseIntervalSec: _editAdaptiveConcurrencyIncreaseIntervalSec);
+                AdaptiveConcurrencyIncreaseIntervalSec: _editAdaptiveConcurrencyIncreaseIntervalSec,
+                UseRateControl: _editUseRateControl,
+                RcShortWindowSec: _editRcShortWindowSec,
+                RcLongWindowSec: _editRcLongWindowSec,
+                RcEmergencyThresholdPct: _editRcEmergencyThresholdPct,
+                RcSlowdownThresholdPct: _editRcSlowdownThresholdPct,
+                RcDecayK: _editRcDecayK,
+                RcMinDecayFactor: _editRcMinDecayFactor,
+                RcMaxDecayFactor: _editRcMaxDecayFactor,
+                RcInFlightThreshold: _editRcInFlightThreshold,
+                RcMaxConcurrency: _editRcMaxConcurrency);
             await ConfigService.UpdateConfigAsync(update);
             _config = await ConfigService.GetConfigAsync();
             Snackbar.Add("設定を保存しました。", Severity.Success);
