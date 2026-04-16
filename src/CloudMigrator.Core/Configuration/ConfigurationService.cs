@@ -232,6 +232,24 @@ public sealed class ConfigurationService : IConfigurationService
     /// <inheritdoc />
     public async Task UpdateConfigAsync(ConfigUpdateDto update, CancellationToken ct = default)
     {
+        // 単一フィールド範囲チェック（ロック外でフェイルファスト）
+        if (update.RcShortWindowSec.HasValue && update.RcShortWindowSec.Value < 1)
+            throw new ArgumentException("RcShortWindowSec は 1 以上である必要があります。", nameof(update));
+        if (update.RcLongWindowSec.HasValue && update.RcLongWindowSec.Value < 5)
+            throw new ArgumentException("RcLongWindowSec は 5 以上である必要があります。", nameof(update));
+        if (update.RcEmergencyThresholdPct.HasValue && update.RcEmergencyThresholdPct.Value is < 0 or > 100)
+            throw new ArgumentException("RcEmergencyThresholdPct は 0〜100 の範囲で入力してください。", nameof(update));
+        if (update.RcSlowdownThresholdPct.HasValue && update.RcSlowdownThresholdPct.Value is < 0 or > 100)
+            throw new ArgumentException("RcSlowdownThresholdPct は 0〜100 の範囲で入力してください。", nameof(update));
+        if (update.RcMinDecayFactor.HasValue && update.RcMinDecayFactor.Value is < 0 or > 1)
+            throw new ArgumentException("RcMinDecayFactor は 0〜1 の範囲で入力してください。", nameof(update));
+        if (update.RcMaxDecayFactor.HasValue && update.RcMaxDecayFactor.Value is < 0 or > 1)
+            throw new ArgumentException("RcMaxDecayFactor は 0〜1 の範囲で入力してください。", nameof(update));
+        if (update.RcInFlightThreshold.HasValue && update.RcInFlightThreshold.Value < 1)
+            throw new ArgumentException("RcInFlightThreshold は 1 以上である必要があります。", nameof(update));
+        if (update.RcMaxConcurrency.HasValue && update.RcMaxConcurrency.Value < 1)
+            throw new ArgumentException("RcMaxConcurrency は 1 以上である必要があります。", nameof(update));
+
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -240,6 +258,31 @@ public sealed class ConfigurationService : IConfigurationService
                 ?? throw new InvalidOperationException("config.json のパースに失敗しました。");
             var m = root["migrator"]?.AsObject()
                 ?? throw new InvalidOperationException("config.json に migrator セクションが存在しません。");
+
+            // クロスフィールドバリデーション: update と現在の config.json をマージした「実際に保存される値」で検証する
+            // 片方だけ更新するケースでも既存値との組み合わせが不正にならないよう保護する
+            if (update.RcShortWindowSec.HasValue || update.RcLongWindowSec.HasValue)
+            {
+                var rcForValidation = m["rateControl"] as JsonObject;
+                var effectiveShort = update.RcShortWindowSec
+                    ?? (rcForValidation?["shortWindowSec"] is JsonNode sn ? sn.GetValue<int>() : 5);
+                var effectiveLong = update.RcLongWindowSec
+                    ?? (rcForValidation?["longWindowSec"] is JsonNode ln ? ln.GetValue<int>() : 30);
+                if (effectiveShort >= effectiveLong)
+                    throw new ArgumentException(
+                        "RcShortWindowSec は RcLongWindowSec より小さい値にしてください。", nameof(update));
+            }
+            if (update.RcMinDecayFactor.HasValue || update.RcMaxDecayFactor.HasValue)
+            {
+                var rcForValidation = m["rateControl"] as JsonObject;
+                var effectiveMin = update.RcMinDecayFactor
+                    ?? (rcForValidation?["minDecayFactor"] is JsonNode mn ? mn.GetValue<double>() : 0.3);
+                var effectiveMax = update.RcMaxDecayFactor
+                    ?? (rcForValidation?["maxDecayFactor"] is JsonNode mx ? mx.GetValue<double>() : 0.9);
+                if (effectiveMin >= effectiveMax)
+                    throw new ArgumentException(
+                        "RcMinDecayFactor は RcMaxDecayFactor より小さい値にしてください。", nameof(update));
+            }
 
             if (update.MaxParallelTransfers.HasValue) m["maxParallelTransfers"] = update.MaxParallelTransfers.Value;
             if (update.MaxParallelFolderCreations.HasValue) m["maxParallelFolderCreations"] = update.MaxParallelFolderCreations.Value;

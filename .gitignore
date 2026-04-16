@@ -64,6 +64,9 @@ publish/
 .store/
 .husky-bin/
 
+# Claude Code
+.claude/
+
 # 実行時生成ファイル
 logs/
 .env

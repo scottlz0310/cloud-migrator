@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.State;
 using CloudMigrator.Core.Transfer;
+using CloudMigrator.Providers.Abstractions;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -230,6 +232,153 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
             "429 率 50% → 緊急減速でレートが下がる");
         sut.CurrentRateLimit.Should().BeGreaterThanOrEqualTo(1,
             "MinRatePerSec = 1 以下にはならない");
+    }
+
+    // ── ヒステリシス stateCode 記録（MetricsBuffer 経由）────────────────────
+
+    // stateCode テスト専用: 実 DB 相当の捕捉クラスを使って Moq の tuple 型解決問題を回避する
+    private sealed class CapturingDb : ITransferStateDb
+    {
+        public readonly ConcurrentBag<(string Name, double Value)> Metrics = [];
+
+        public Task RecordMetricsBatchAsync(
+            IEnumerable<(string Name, double Value, DateTimeOffset Timestamp)> snapshots,
+            CancellationToken ct)
+        {
+            foreach (var s in snapshots) Metrics.Add((s.Name, s.Value));
+            return Task.CompletedTask;
+        }
+
+        // ── 残りのメソッドは stateCode テストでは使用しない（no-op / 空値）──
+        public Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task<TransferStatus?> GetStatusAsync(string path, string name, CancellationToken ct) => Task.FromResult<TransferStatus?>(null);
+        public Task UpsertPendingAsync(StorageItem item, CancellationToken ct) => Task.CompletedTask;
+        public Task UpsertPendingIfNotTerminalAsync(StorageItem item, CancellationToken ct) => Task.CompletedTask;
+        public Task ResetProcessingAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task<int> ResetPermanentFailedAsync(CancellationToken ct) => Task.FromResult(0);
+        public Task MarkProcessingAsync(string path, string name, CancellationToken ct) => Task.CompletedTask;
+        public Task MarkDoneAsync(string path, string name, CancellationToken ct) => Task.CompletedTask;
+        public Task MarkFailedAsync(string path, string name, string error, CancellationToken ct) => Task.CompletedTask;
+        public Task<string?> GetCheckpointAsync(string key, CancellationToken ct) => Task.FromResult<string?>(null);
+        public Task SaveCheckpointAsync(string key, string value, CancellationToken ct) => Task.CompletedTask;
+        public IAsyncEnumerable<TransferRecord> GetPendingStreamAsync(CancellationToken ct) => AsyncEnumerable.Empty<TransferRecord>();
+        public Task<TransferDbSummary> GetSummaryAsync(CancellationToken ct) => Task.FromResult(new TransferDbSummary());
+        public Task RecordMetricAsync(string name, double value, CancellationToken ct) => Task.CompletedTask;
+        public Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(string name, int recentMinutes, CancellationToken ct) => Task.FromResult<IReadOnlyList<MetricPoint>>([]);
+        public Task<IReadOnlyDictionary<string, double>> GetLatestMetricsAsync(IEnumerable<string> names, int recentMinutes, CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<string, double>>(new Dictionary<string, double>());
+        public Task ResetAllAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task<bool> InsertPendingIfNewAsync(StorageItem item, CancellationToken ct) => Task.FromResult(false);
+        public Task InsertDoneIfNotExistsAsync(string path, string name, CancellationToken ct) => Task.CompletedTask;
+        public Task<IReadOnlyList<string>> GetDistinctFolderPathsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>([]);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    // stateCode テスト用: CapturingDb + 指定した Rate429 でコントローラーを生成する
+    private (RateControlledTransferController Sut, MetricsBuffer Buffer, CapturingDb Db)
+        CreateSutForStateCodeTest(double rate429)
+    {
+        var capturingDb = new CapturingDb();
+        var settings = new RateControlSettings
+        {
+            UseRateControl = true,
+            InitialRatePerSec = 10,
+            MinRatePerSec = 1,
+            MaxConcurrency = 20,
+            InFlightThreshold = 100,
+            ShortWindowSec = 5,
+            LongWindowSec = 30,
+            EmergencyThreshold = 0.1,
+            SlowdownThreshold = 0.03,
+            MinDecayFactor = 0.5,
+            MaxDecayFactor = 0.9,
+            DecayK = 2.0,
+            AccelerateRatio = 0.1,
+            MetricsFlushIntervalSec = 3,
+        };
+        _mockAggregator.Setup(a => a.GetSnapshot(It.IsAny<TimeSpan>()))
+            .Returns(new MetricsSnapshot(Rps: 5, Rate429: rate429, AvgLatencyMs: 50, Timestamp: DateTimeOffset.UtcNow));
+
+        // flushIntervalSec: 1 = MetricsBuffer の最小フラッシュ間隔。ポーリングで検出可能にする
+        var buffer = new MetricsBuffer(capturingDb, flushIntervalSec: 1, NullLogger<MetricsBuffer>.Instance);
+        var sut = new RateControlledTransferController(
+            _mockAggregator.Object, settings, buffer, NullLogger<RateControlledTransferController>.Instance);
+
+        return (sut, buffer, capturingDb);
+    }
+
+    // 指定メトリクスが DB に書き込まれるまでポーリングする（CI での固定待ち起因フレークを防止）
+    private static async Task WaitForMetricAsync(CapturingDb db, string name, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (db.Metrics.Any(m => m.Name == name)) return;
+            await Task.Delay(100);
+        }
+    }
+
+    [Fact]
+    public async Task AdjustRate_WhenShortRate429ExceedsEmergencyThreshold_RecordsStateCode3()
+    {
+        // 検証対象: AdjustRate（緊急減速）→ MetricsBuffer → DB
+        // 目的: 短期 429 率 > emergencyThreshold (0.1) のとき stateCode = 3 が書き込まれること
+        var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0.5); // > 0.1
+
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
+        await sut.DisposeAsync();
+        await buffer.DisposeAsync();
+
+        var stateCodes = db.Metrics.Where(m => m.Name == "hysteresis_state_code").ToList();
+        stateCodes.Should().NotBeEmpty();
+        stateCodes.Should().AllSatisfy(m => m.Value.Should().Be(3));
+    }
+
+    [Fact]
+    public async Task AdjustRate_WhenLongRate429ExceedsSlowdownThreshold_RecordsStateCode2()
+    {
+        // 検証対象: AdjustRate（緩減速）→ MetricsBuffer → DB
+        // 目的: 短期 ≤ 0.1 かつ 中期 429 率 > slowdownThreshold (0.03) のとき stateCode = 2 が書き込まれること
+        var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0.05); // 0.03 < 0.05 ≤ 0.1
+
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
+        await sut.DisposeAsync();
+        await buffer.DisposeAsync();
+
+        var stateCodes = db.Metrics.Where(m => m.Name == "hysteresis_state_code").ToList();
+        stateCodes.Should().NotBeEmpty();
+        stateCodes.Should().AllSatisfy(m => m.Value.Should().Be(2));
+    }
+
+    [Fact]
+    public async Task AdjustRate_WhenLongRate429IsZero_RecordsStateCode1()
+    {
+        // 検証対象: AdjustRate（加速）→ MetricsBuffer → DB
+        // 目的: 中期 429 率 = 0 のとき stateCode = 1 が書き込まれること
+        var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0); // = 0
+
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
+        await sut.DisposeAsync();
+        await buffer.DisposeAsync();
+
+        var stateCodes = db.Metrics.Where(m => m.Name == "hysteresis_state_code").ToList();
+        stateCodes.Should().NotBeEmpty();
+        stateCodes.Should().AllSatisfy(m => m.Value.Should().Be(1));
+    }
+
+    [Fact]
+    public async Task AdjustRate_WhenRate429InStableRange_RecordsStateCode0()
+    {
+        // 検証対象: AdjustRate（安定域）→ MetricsBuffer → DB
+        // 目的: 短期 ≤ 0.1 かつ 0 < 中期 ≤ 0.03 のとき stateCode = 0（維持）が書き込まれること
+        var (sut, buffer, db) = CreateSutForStateCodeTest(rate429: 0.02); // 0 < 0.02 ≤ 0.03
+
+        await WaitForMetricAsync(db, "hysteresis_state_code", TimeSpan.FromSeconds(5));
+        await sut.DisposeAsync();
+        await buffer.DisposeAsync();
+
+        var stateCodes = db.Metrics.Where(m => m.Name == "hysteresis_state_code").ToList();
+        stateCodes.Should().NotBeEmpty();
+        stateCodes.Should().AllSatisfy(m => m.Value.Should().Be(0));
     }
 
     // ── DisposeAsync ─────────────────────────────────────────────────────

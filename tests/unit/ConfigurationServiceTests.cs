@@ -363,6 +363,266 @@ public sealed class ConfigurationServiceTests : IDisposable
         result.AdaptiveConcurrencyDecreasePercent.Should().Be(expectedPercent);
     }
 
+    // ── RateControl（GetConfigAsync 経由）────────────────────────────────
+
+    [Fact]
+    public async Task GetConfigAsync_WhenRateControlSectionAbsent_ReturnsDefaults()
+    {
+        // 検証対象: GetConfigAsync（rateControl なし）
+        // 目的: rateControl セクションが存在しないとき、デフォルト値を返すこと
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.UseRateControl.Should().BeFalse();
+        result.RcShortWindowSec.Should().Be(5);
+        result.RcLongWindowSec.Should().Be(30);
+        result.RcEmergencyThresholdPct.Should().Be(10);
+        result.RcSlowdownThresholdPct.Should().Be(3);
+        result.RcMinDecayFactor.Should().Be(0.3);
+        result.RcMaxDecayFactor.Should().Be(0.9);
+        result.RcInFlightThreshold.Should().Be(32);
+        result.RcMaxConcurrency.Should().Be(16);
+    }
+
+    [Theory]
+    [InlineData(0.10, 10)]
+    [InlineData(0.03, 3)]
+    [InlineData(0.01, 1)]
+    public async Task GetConfigAsync_RateControl_EmergencyThresholdConvertedToPct(double jsonValue, int expectedPct)
+    {
+        // 検証対象: GetConfigAsync（emergencyThreshold 変換）
+        // 目的: JSON 0–1 の値が UI 用 % (0–100) に変換されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                rateControl = new { emergencyThreshold = jsonValue }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.RcEmergencyThresholdPct.Should().Be(expectedPct);
+    }
+
+    [Theory]
+    [InlineData(0.0, 0)]
+    [InlineData(1.0, 100)]
+    public async Task GetConfigAsync_RateControl_EmergencyThresholdBoundary(double jsonValue, int expectedPct)
+    {
+        // 検証対象: GetConfigAsync（emergencyThreshold 境界値）
+        // 目的: 0.0 → 0%、1.0 → 100% に変換されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                rateControl = new { emergencyThreshold = jsonValue }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.RcEmergencyThresholdPct.Should().Be(expectedPct);
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_RateControl_WhenEmergencyThresholdMissing_ReturnsDefault()
+    {
+        // 検証対象: GetConfigAsync（emergencyThreshold 欠損）
+        // 目的: rateControl セクションはあるが emergencyThreshold が欠損している場合、デフォルト値を返すこと
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                rateControl = new { useRateControl = true }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.RcEmergencyThresholdPct.Should().Be(10);
+    }
+
+    [Theory]
+    [InlineData(0.10, 10)]
+    [InlineData(0.03, 3)]
+    public async Task GetConfigAsync_RateControl_SlowdownThresholdConvertedToPct(double jsonValue, int expectedPct)
+    {
+        // 検証対象: GetConfigAsync（slowdownThreshold 変換）
+        // 目的: JSON 0–1 の値が UI 用 % に変換されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                rateControl = new { slowdownThreshold = jsonValue }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.RcSlowdownThresholdPct.Should().Be(expectedPct);
+    }
+
+    // ── RateControl（UpdateConfigAsync 経由）────────────────────────────
+
+    [Fact]
+    public async Task UpdateConfigAsync_RateControl_EmergencyThresholdPctSavedAsRatio()
+    {
+        // 検証対象: UpdateConfigAsync（emergencyThreshold 変換）
+        // 目的: UI の % 値 (10) が config.json には 0–1 (0.10) で保存されること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(RcEmergencyThresholdPct: 10));
+
+        var json = await File.ReadAllTextAsync(_configPath);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("migrator")
+            .GetProperty("rateControl")
+            .GetProperty("emergencyThreshold")
+            .GetDouble()
+            .Should().BeApproximately(0.10, 0.0001);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_RateControl_SlowdownThresholdPctSavedAsRatio()
+    {
+        // 検証対象: UpdateConfigAsync（slowdownThreshold 変換）
+        // 目的: UI の % 値 (3) が config.json には 0–1 (0.03) で保存されること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(RcSlowdownThresholdPct: 3));
+
+        var json = await File.ReadAllTextAsync(_configPath);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("migrator")
+            .GetProperty("rateControl")
+            .GetProperty("slowdownThreshold")
+            .GetDouble()
+            .Should().BeApproximately(0.03, 0.0001);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_RateControl_RoundTrip_EmergencyThreshold()
+    {
+        // 検証対象: GetConfigAsync + UpdateConfigAsync（往復変換）
+        // 目的: % で保存した値を読み直すと同じ % 値が返ること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(RcEmergencyThresholdPct: 15));
+        var result = await svc.GetConfigAsync();
+
+        result.RcEmergencyThresholdPct.Should().Be(15);
+    }
+
+    // ── UpdateConfigAsync バリデーション ────────────────────────────────
+
+    [Fact]
+    public async Task UpdateConfigAsync_RateControl_ThrowsWhenMinDecayFactorGeqMaxDecayFactor()
+    {
+        // 検証対象: UpdateConfigAsync バリデーション
+        // 目的: RcMinDecayFactor >= RcMaxDecayFactor の場合に ArgumentException が発生すること
+        var svc = new ConfigurationService(_configPath);
+
+        var act = async () => await svc.UpdateConfigAsync(new ConfigUpdateDto(
+            RcMinDecayFactor: 0.9, RcMaxDecayFactor: 0.5));
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*RcMinDecayFactor*RcMaxDecayFactor*");
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_RateControl_ThrowsWhenShortWindowGeqLongWindow()
+    {
+        // 検証対象: UpdateConfigAsync バリデーション
+        // 目的: RcShortWindowSec >= RcLongWindowSec の場合に ArgumentException が発生すること
+        var svc = new ConfigurationService(_configPath);
+
+        var act = async () => await svc.UpdateConfigAsync(new ConfigUpdateDto(
+            RcShortWindowSec: 30, RcLongWindowSec: 30));
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*RcShortWindowSec*");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    public async Task UpdateConfigAsync_RateControl_ThrowsWhenEmergencyThresholdOutOfRange(int pct)
+    {
+        // 検証対象: UpdateConfigAsync バリデーション
+        // 目的: RcEmergencyThresholdPct が 0–100 外の場合に ArgumentException が発生すること
+        var svc = new ConfigurationService(_configPath);
+
+        var act = async () => await svc.UpdateConfigAsync(new ConfigUpdateDto(RcEmergencyThresholdPct: pct));
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    public async Task UpdateConfigAsync_RateControl_ThrowsWhenSlowdownThresholdOutOfRange(int pct)
+    {
+        // 検証対象: UpdateConfigAsync バリデーション
+        // 目的: RcSlowdownThresholdPct が 0–100 外の場合に ArgumentException が発生すること
+        var svc = new ConfigurationService(_configPath);
+
+        var act = async () => await svc.UpdateConfigAsync(new ConfigUpdateDto(RcSlowdownThresholdPct: pct));
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_RateControl_ValidValuesDoNotThrow()
+    {
+        // 検証対象: UpdateConfigAsync バリデーション
+        // 目的: 有効な組み合わせでは例外が発生しないこと
+        var svc = new ConfigurationService(_configPath);
+
+        var act = async () => await svc.UpdateConfigAsync(new ConfigUpdateDto(
+            RcShortWindowSec: 5,
+            RcLongWindowSec: 30,
+            RcEmergencyThresholdPct: 10,
+            RcSlowdownThresholdPct: 3,
+            RcMinDecayFactor: 0.3,
+            RcMaxDecayFactor: 0.9));
+
+        await act.Should().NotThrowAsync();
+    }
+
     // ── ヘルパー ────────────────────────────────────────────────────────
 
     private void WriteConfig(object data)

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <!--
+            カバレッジ計測対象外のコード（UI 層・インフラ層）:
+            - Blazor Razor コンポーネント: bUnit なしではユニットテスト不可
+            - WPF ブートストラップ / ウィンドウ: WPF ランタイム依存
+            - CLI エントリポイント / 合成ルート: 実行環境依存
+          -->
+          <ExcludeByFile>
+            **/CloudMigrator.Dashboard/Components/**,
+            **/CloudMigrator.Dashboard/App.xaml.cs,
+            **/CloudMigrator.Dashboard/MainWindow.xaml.cs,
+            **/CloudMigrator.Dashboard/WpfDialogService.cs,
+            **/CloudMigrator.Dashboard/obj/**,
+            **/CloudMigrator.Cli/CliServices.cs,
+            **/CloudMigrator.Cli/Commands/DashboardCommand.cs,
+            **/CloudMigrator.Cli/Program.cs,
+            **/CloudMigrator.Setup.Cli/Program.cs
+          </ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
