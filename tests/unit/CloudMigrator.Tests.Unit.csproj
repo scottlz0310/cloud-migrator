@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- AdaptiveConcurrencyController/Adapter は [Obsolete] 化済み。テストでは引き続き直接検証するため CS0618 を抑制する。 -->
+    <NoWarn>CS0618</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

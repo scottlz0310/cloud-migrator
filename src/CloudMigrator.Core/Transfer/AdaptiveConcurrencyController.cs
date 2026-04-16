@@ -11,6 +11,14 @@ namespace CloudMigrator.Core.Transfer;
 ///   <item>内部で <see cref="SemaphoreSlim"/> を使用し、スロット取得 / 解放で並列数を制御する</item>
 /// </list>
 /// </summary>
+/// <remarks>
+/// v0.5.0 で <see cref="RateControlledTransferController"/> が新規実装されたため、このクラスは Obsolete になりました。
+/// v0.6.0 で削除予定。新規コードは <see cref="ITransferRateController"/> を使用してください。
+/// </remarks>
+[Obsolete(
+    "v0.5.0 以降は RateControlledTransferController を使用してください。" +
+    "既存の動作を維持するには AdaptiveConcurrencyControllerAdapter 経由で ITransferRateController として使用できます。" +
+    "v0.6.0 で削除予定。")]
 public sealed class AdaptiveConcurrencyController : IDisposable
 {
     private readonly SemaphoreSlim _semaphore;

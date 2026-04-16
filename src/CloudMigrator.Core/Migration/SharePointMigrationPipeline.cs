@@ -33,9 +33,9 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
     private readonly IStorageProvider _destinationProvider;
     private readonly ITransferStateDb _stateDb;
     private readonly MigratorOptions _options;
-    private readonly AdaptiveConcurrencyController? _concurrencyController;
-    private readonly AdaptiveConcurrencyController? _folderCreationController;
-    private readonly Action<AdaptiveConcurrencyController?>? _activateController;
+    private readonly ITransferRateController? _concurrencyController;
+    private readonly ITransferRateController? _folderCreationController;
+    private readonly Action<ITransferRateController?>? _activateController;
     private readonly ILogger<SharePointMigrationPipeline> _logger;
 
     // Phase D メトリクスカウンタ（Interlocked によるスレッドセーフな並列カウント）
@@ -52,9 +52,9 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         ITransferStateDb stateDb,
         MigratorOptions options,
         ILogger<SharePointMigrationPipeline> logger,
-        AdaptiveConcurrencyController? concurrencyController = null,
-        AdaptiveConcurrencyController? folderCreationController = null,
-        Action<AdaptiveConcurrencyController?>? activateController = null)
+        ITransferRateController? concurrencyController = null,
+        ITransferRateController? folderCreationController = null,
+        Action<ITransferRateController?>? activateController = null)
     {
         _sourceProvider = sourceProvider;
         _destinationProvider = destinationProvider;
@@ -153,9 +153,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         }
         await producerTask.ConfigureAwait(false);
 
-        var totalRlCount = _concurrencyController is not null
-            ? _concurrencyController.RateLimitCount
-            : (long)_rateLimitHitCount;
+        var totalRlCount = (long)_rateLimitHitCount;
         var rateLimitRate = _totalTransferAttempts > 0
             ? (double)totalRlCount / _totalTransferAttempts * 100.0
             : 0.0;
@@ -242,17 +240,17 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         // Phase C 専用コントローラーがあればそちらを優先する（MaxParallelFolderCreations ベース）
         // ない場合は転送用コントローラーにフォールバックし、maxDegree で上限を補正する
         var controller = _folderCreationController ?? _concurrencyController;
-        // MaxParallelFolderCreations を上限として維持する（転送用 controller.MaxDegree は MaxParallelTransfers ベースのため）
         var maxFolderCreationDegree = Math.Max(1, _options.MaxParallelFolderCreations);
-        var maxDegree = controller is null
-            ? maxFolderCreationDegree
-            : Math.Min(maxFolderCreationDegree, controller.MaxDegree);
+        var maxDegree = maxFolderCreationDegree;
 
         // Phase C の初期並列度をメトリクスに記録（ダッシュボードの「現在並列数」表示用）
         try
         {
+            var initialParallelism = controller is not null
+                ? Math.Min(maxDegree, (int)Math.Round(controller.CurrentRateLimit))
+                : maxDegree;
             await _stateDb.RecordMetricAsync(
-                "current_parallelism", (double)Math.Min(maxDegree, controller?.CurrentDegree ?? maxDegree), ct).ConfigureAwait(false);
+                "current_parallelism", (double)initialParallelism, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -286,9 +284,13 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                 },
                 async (folderRelPath, folderCt) =>
                 {
-                    // 動的並列度制御のゲート（AdaptiveConcurrencyController が有効な場合）
+                    // 動的並列度制御のゲート（ITransferRateController が有効な場合）
                     if (controller is not null)
                         await controller.AcquireAsync(folderCt).ConfigureAwait(false);
+
+                    // AcquireAsync 成功後に NotifyRequestSent（インフライトカウンターのインクリメント）
+                    // これにより NotifySuccess/NotifyRateLimit と対になりカウンターが整合する
+                    controller?.NotifyRequestSent();
 
                     try
                     {
@@ -300,7 +302,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                         // EnsureFolderAsync は 409 Conflict を無視する冪等実装のため並列・再実行で安全
                         await _destinationProvider.EnsureFolderAsync(destFolderPath, folderCt).ConfigureAwait(false);
 
-                        controller?.NotifySuccess();
+                        controller?.NotifySuccess(TimeSpan.Zero);
 
                         var count = Interlocked.Increment(ref _folderDoneCount);
                         try
@@ -315,7 +317,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                         // 並列度が変化した場合は即時記録（Phase C 上限 maxDegree でキャップ）
                         if (controller is not null)
                         {
-                            var currentDegree = Math.Min(maxDegree, controller.CurrentDegree);
+                            var currentDegree = Math.Min(maxDegree, (int)Math.Round(controller.CurrentRateLimit));
                             if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
                             {
                                 try
@@ -329,6 +331,18 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                                 }
                             }
                         }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // キャンセル時はカウンターを戻す（NotifyRequestSent のペアとして必要）
+                        controller?.NotifyCompleted(TimeSpan.Zero);
+                        throw;
+                    }
+                    catch (Exception)
+                    {
+                        // 一般例外時もインフライトカウンターを戻す（NotifyRequestSent のペアとして必要）
+                        controller?.NotifyCompleted(TimeSpan.Zero);
+                        throw;
                     }
                     finally
                     {
@@ -375,7 +389,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
         var failed = 0;
 
         var controller = _concurrencyController;
-        var maxDegree = controller?.MaxDegree ?? _options.MaxParallelTransfers;
+        var maxDegree = _options.MaxParallelTransfers;
 
         await Parallel.ForEachAsync(
             reader.ReadAllAsync(ct),
@@ -386,23 +400,28 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
             },
             async (job, itemCt) =>
             {
-                // 動的並列度制御のゲート（AdaptiveConcurrencyController が有効な場合）
+                // レート制御のゲート（ITransferRateController が有効な場合）
                 if (controller is not null)
                     await controller.AcquireAsync(itemCt).ConfigureAwait(false);
 
                 var totalNow = Interlocked.Increment(ref _totalTransferAttempts);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                controller?.NotifyRequestSent();
 
                 try
                 {
                     await TransferItemAsync(job, itemCt).ConfigureAwait(false);
+                    var latency = sw.Elapsed;
                     await _stateDb.MarkDoneAsync(job.Source.Path, job.Source.Name, itemCt).ConfigureAwait(false);
                     Interlocked.Increment(ref success);
                     Interlocked.Add(ref _totalBytesTransferred, job.Source.SizeBytes ?? 0);
                     _logger.LogInformation("SharePoint 転送完了: {SkipKey}", job.Source.SkipKey);
-                    controller?.NotifySuccess();
+                    controller?.NotifySuccess(latency);
                 }
                 catch (OperationCanceledException)
                 {
+                    controller?.NotifyCompleted(sw.Elapsed); // リリース前にカウンターを戻す
                     throw;
                 }
                 catch (Exception ex)
@@ -432,19 +451,23 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                         }
                         controller?.NotifyRateLimit(retryAfter);
                     }
+                    else
+                    {
+                        controller?.NotifyCompleted(sw.Elapsed); // 非レート制限エラーはカウンターを戻す
+                    }
                 }
                 finally
                 {
-                    // 並列度が変化した場合は即時記録
+                    // 並列度（またはレート）が変化した場合は即時記録
                     if (controller is not null)
                     {
-                        var currentDegree = controller.CurrentDegree;
-                        if (Interlocked.Exchange(ref _lastRecordedParallelism, currentDegree) != currentDegree)
+                        var currentRate = (int)Math.Round(controller.CurrentRateLimit);
+                        if (Interlocked.Exchange(ref _lastRecordedParallelism, currentRate) != currentRate)
                         {
                             try
                             {
                                 await _stateDb.RecordMetricAsync(
-                                    "current_parallelism", (double)currentDegree, itemCt).ConfigureAwait(false);
+                                    "current_parallelism", (double)currentRate, itemCt).ConfigureAwait(false);
                             }
                             catch (Exception ex)
                             {
@@ -456,9 +479,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                     // 100 回ごとにメトリクスを記録する（ダッシュボード向け）
                     if (totalNow % 100 == 0)
                     {
-                        var rlCount = controller is not null
-                            ? controller.RateLimitCount
-                            : (long)Volatile.Read(ref _rateLimitHitCount);
+                        var rlCount = (long)Volatile.Read(ref _rateLimitHitCount);
                         var pct = rlCount > 0 ? (double)rlCount / totalNow * 100.0 : 0.0;
                         var elapsedSeconds = (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds;
                         var filesPerMin = elapsedSeconds > 0 ? totalNow / elapsedSeconds * 60.0 : 0.0;
@@ -472,7 +493,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                             await _stateDb.RecordMetricAsync("throughput_bytes_per_sec", bytesPerSec, itemCt).ConfigureAwait(false);
                             await _stateDb.RecordMetricAsync(
                                 "current_parallelism",
-                                (double)(controller?.CurrentDegree ?? _options.MaxParallelTransfers),
+                                (double)(int)Math.Round(controller?.CurrentRateLimit ?? _options.MaxParallelTransfers),
                                 itemCt).ConfigureAwait(false);
                         }
                         catch (Exception ex)

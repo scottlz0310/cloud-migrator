@@ -78,6 +78,14 @@ public interface ITransferStateDb : IAsyncDisposable
     Task RecordMetricAsync(string name, double value, CancellationToken ct);
 
     /// <summary>
+    /// メトリクス値をバッチで記録する（<see cref="MetricsBuffer"/> から呼び出される）。
+    /// 1 トランザクションにまとめて書き込むことで <c>_writeLock</c> の取得回数を最小化する。
+    /// </summary>
+    Task RecordMetricsBatchAsync(
+        IEnumerable<(string Name, double Value, DateTimeOffset Timestamp)> snapshots,
+        CancellationToken ct);
+
+    /// <summary>
     /// 直近 <paramref name="recentMinutes"/> 分以内の指定メトリクスを時系列で取得する。
     /// メトリクステーブルが空の場合は空リストを返す。
     /// </summary>

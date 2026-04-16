@@ -22,7 +22,7 @@ public class SharePointMigrationPipelineTests
     private readonly Mock<ITransferStateDb> _mockDb = new(MockBehavior.Loose);
     private readonly MigratorOptions _options = new() { DestinationRoot = "SP-Root", MaxParallelFolderCreations = 2 };
 
-    private SharePointMigrationPipeline CreatePipeline(AdaptiveConcurrencyController? controller = null) =>
+    private SharePointMigrationPipeline CreatePipeline(ITransferRateController? controller = null) =>
         new(_mockSource.Object, _mockDest.Object, _mockDb.Object, _options,
             NullLogger<SharePointMigrationPipeline>.Instance, controller);
 
@@ -356,12 +356,13 @@ public class SharePointMigrationPipelineTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var controller = new AdaptiveConcurrencyController(
+            using var acc = new AdaptiveConcurrencyController(
                 initialDegree: _options.MaxParallelTransfers,
                 minDegree: 1,
                 maxDegree: _options.MaxParallelTransfers,
                 increaseIntervalSec: 30,
                 NullLogger<AdaptiveConcurrencyController>.Instance);
+            var controller = new AdaptiveConcurrencyControllerAdapter(acc);
 
             SetupDbWithBothPhasesComplete();
             _mockDb.Setup(db => db.GetPendingStreamAsync(It.IsAny<CancellationToken>())).Returns(FromRecords([record]));
@@ -466,15 +467,18 @@ public class SharePointMigrationPipelineTests
         _mockDb.Setup(db => db.RecordMetricAsync(It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // activateController への引数をキャプチャする
-        var activatedControllers = new List<AdaptiveConcurrencyController?>();
-        Action<AdaptiveConcurrencyController?> activateController = ctrl => activatedControllers.Add(ctrl);
+        var activatedControllers = new List<ITransferRateController?>();
+        Action<ITransferRateController?> activateController = ctrl => activatedControllers.Add(ctrl);
 
-        using var concurrencyController = new AdaptiveConcurrencyController(
+        // ITransferRateController として渡すため Adapter でラップ（ACC は using で Dispose）
+        using var accMain = new AdaptiveConcurrencyController(
             initialDegree: 2, minDegree: 1, maxDegree: 2, increaseIntervalSec: 0,
             NullLogger<AdaptiveConcurrencyController>.Instance);
-        using var folderCreationController = new AdaptiveConcurrencyController(
+        using var accFolder = new AdaptiveConcurrencyController(
             initialDegree: 2, minDegree: 1, maxDegree: 2, increaseIntervalSec: 0,
             NullLogger<AdaptiveConcurrencyController>.Instance);
+        ITransferRateController concurrencyController = new AdaptiveConcurrencyControllerAdapter(accMain);
+        ITransferRateController folderCreationController = new AdaptiveConcurrencyControllerAdapter(accFolder);
 
         var pipeline = new SharePointMigrationPipeline(
             _mockSource.Object, _mockDest.Object, _mockDb.Object, _options,

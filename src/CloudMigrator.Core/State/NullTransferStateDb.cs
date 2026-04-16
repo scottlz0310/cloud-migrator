@@ -26,6 +26,7 @@ public sealed class NullTransferStateDb : ITransferStateDb
     public IAsyncEnumerable<TransferRecord> GetPendingStreamAsync(CancellationToken ct) => AsyncEnumerable.Empty<TransferRecord>();
     public Task<TransferDbSummary> GetSummaryAsync(CancellationToken ct) => Task.FromResult(new TransferDbSummary());
     public Task RecordMetricAsync(string name, double value, CancellationToken ct) => Task.CompletedTask;
+    public Task RecordMetricsBatchAsync(IEnumerable<(string Name, double Value, DateTimeOffset Timestamp)> snapshots, CancellationToken ct) => Task.CompletedTask;
     public Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(string name, int recentMinutes, CancellationToken ct) => Task.FromResult<IReadOnlyList<MetricPoint>>([]);
     public Task ResetAllAsync(CancellationToken ct) => Task.CompletedTask;
     public Task<bool> InsertPendingIfNewAsync(StorageItem item, CancellationToken ct) => Task.FromResult(false);
