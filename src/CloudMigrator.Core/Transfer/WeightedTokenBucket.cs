@@ -35,8 +35,15 @@ public sealed class WeightedTokenBucket
     /// </param>
     public WeightedTokenBucket(double initialRate, double maxBurst, double? initialTokens = null)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(initialRate, 0.0);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxBurst, 0.0);
+        if (!double.IsFinite(initialRate) || initialRate <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(initialRate), initialRate,
+                "initialRate は有限で 0 より大きい値でなければなりません。");
+        if (!double.IsFinite(maxBurst) || maxBurst <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(maxBurst), maxBurst,
+                "maxBurst は有限で 0 より大きい値でなければなりません。");
+        if (initialTokens.HasValue && !double.IsFinite(initialTokens.Value))
+            throw new ArgumentOutOfRangeException(nameof(initialTokens), initialTokens,
+                "initialTokens に非有限値は指定できません。");
 
         _rate = initialRate;
         _maxBurst = maxBurst;
@@ -73,7 +80,9 @@ public sealed class WeightedTokenBucket
     /// <param name="rate">新しい補充レート（tokens/sec、0 より大きい値）。</param>
     public void SetRate(double rate)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(rate, 0.0);
+        if (!double.IsFinite(rate) || rate <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(rate), rate,
+                "rate は有限で 0 より大きい値でなければなりません。");
         lock (_lock)
         {
             Refill();
@@ -87,7 +96,9 @@ public sealed class WeightedTokenBucket
     /// <param name="maxBurst">新しいバケット容量（0 より大きい値）。</param>
     public void SetMaxBurst(double maxBurst)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxBurst, 0.0);
+        if (!double.IsFinite(maxBurst) || maxBurst <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(maxBurst), maxBurst,
+                "maxBurst は有限で 0 より大きい値でなければなりません。");
         lock (_lock)
         {
             Refill();

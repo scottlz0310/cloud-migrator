@@ -20,8 +20,8 @@ public enum FileCostMode
 /// サイズに応じてコストを加重する。
 /// </para>
 /// <para>
-/// 離散モード（デフォルト）: 1 MB 未満 = small、100 MB 未満 = medium、それ以上 = large。<br/>
-/// 連続モード: <c>cost = clamp(size / scaleBytes, minCost, maxCost)</c>。
+/// 離散モード（デフォルト）: 1 MiB 未満 = small、100 MiB 未満 = medium、それ以上 = large。<br/>
+/// 連続モード: <c>cost = clamp(ceil(size / scaleBytes), minCost, maxCost)</c>。
 /// </para>
 /// </summary>
 public sealed class FileCostCalculator
@@ -99,6 +99,9 @@ public sealed class FileCostCalculator
     private int CalculateContinuous(long size)
     {
         var raw = (double)size / _costScaleBytes;
+        // int キャストオーバーフロー防止: maxCost に達する前に早期リターン
+        if (raw >= _maxCost)
+            return _maxCost;
         var rounded = (int)Math.Ceiling(raw);
         return Math.Clamp(rounded < 1 ? 1 : rounded, _minCost, _maxCost);
     }

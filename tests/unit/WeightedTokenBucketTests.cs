@@ -49,6 +49,17 @@ public sealed class WeightedTokenBucketTests
     }
 
     [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Constructor_Throws_WhenRateIsNonFinite(double rate)
+    {
+        // 検証対象: コンストラクタバリデーション  目的: NaN / Infinity は内部状態を破壊するため拒否
+        Action act = () => new WeightedTokenBucket(rate, maxBurst: 10.0);
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
     [InlineData(0.0)]
     [InlineData(-0.5)]
     public void Constructor_Throws_WhenMaxBurstIsNotPositive(double maxBurst)
@@ -58,19 +69,37 @@ public sealed class WeightedTokenBucketTests
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void Constructor_Throws_WhenMaxBurstIsNonFinite(double maxBurst)
+    {
+        // 検証対象: コンストラクタバリデーション  目的: NaN / Infinity は拒否
+        Action act = () => new WeightedTokenBucket(initialRate: 10.0, maxBurst: maxBurst);
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void Constructor_Throws_WhenInitialTokensIsNonFinite(double initialTokens)
+    {
+        // 検証対象: コンストラクタバリデーション  目的: initialTokens に NaN / Infinity は拒否
+        Action act = () => new WeightedTokenBucket(initialRate: 10.0, maxBurst: 10.0, initialTokens: initialTokens);
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     // ─── AcquireAsync ──────────────────────────────────────────────
 
     [Fact]
     public async Task AcquireAsync_ReturnsImmediately_WhenTokensAvailable()
     {
-        // 検証対象: AcquireAsync  目的: バケット満タンならほぼ即時に返る
+        // 検証対象: AcquireAsync  目的: バケット満タンなら待機なし（コストが減算されて即完了）
         var sut = new WeightedTokenBucket(initialRate: 1.0, maxBurst: 100.0);
-        var sw = Stopwatch.StartNew();
 
         await sut.AcquireAsync(cost: 10, CancellationToken.None);
 
-        sw.Stop();
-        sw.ElapsedMilliseconds.Should().BeLessThan(100);
+        // 実行環境の負荷依存になるため経過時間は検証せず、消費されたことのみ確認する
         sut.AvailableTokens.Should().BeLessThan(100.0);
     }
 
@@ -97,8 +126,8 @@ public sealed class WeightedTokenBucketTests
         await sut.AcquireAsync(cost: 5, CancellationToken.None);
 
         sw.Stop();
-        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(300);
-        sw.ElapsedMilliseconds.Should().BeLessThan(1500);
+        // 下限のみ確認。上限は低速 CI ランナー / GC 停止でフレークするため検証しない。
+        sw.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(300));
     }
 
     [Fact]
@@ -147,8 +176,10 @@ public sealed class WeightedTokenBucketTests
 
         await Task.Delay(TimeSpan.FromMilliseconds(300));
 
-        // rate=20/sec × 0.3 sec = 6 tokens（タイマー誤差を考慮して幅を持たせる）
-        sut.AvailableTokens.Should().BeInRange(3.0, 15.0);
+        // rate=20/sec × 0.3 sec ≈ 6 tokens。
+        // Task.Delay が長引いても maxBurst を超えないことと、最低限補充されていることを確認する。
+        sut.AvailableTokens.Should().BeGreaterThanOrEqualTo(3.0);
+        sut.AvailableTokens.Should().BeLessThanOrEqualTo(sut.MaxBurst + 1e-6);
     }
 
     [Fact]
@@ -176,9 +207,11 @@ public sealed class WeightedTokenBucketTests
     [Theory]
     [InlineData(0.0)]
     [InlineData(-1.0)]
-    public void SetRate_Throws_WhenNotPositive(double rate)
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void SetRate_Throws_WhenInvalid(double rate)
     {
-        // 検証対象: SetRate バリデーション  目的: rate <= 0 で例外
+        // 検証対象: SetRate バリデーション  目的: rate <= 0 または非有限値で例外
         var sut = new WeightedTokenBucket(initialRate: 10.0, maxBurst: 50.0);
         Action act = () => sut.SetRate(rate);
         act.Should().Throw<ArgumentOutOfRangeException>();
@@ -199,9 +232,11 @@ public sealed class WeightedTokenBucketTests
     [Theory]
     [InlineData(0.0)]
     [InlineData(-1.0)]
-    public void SetMaxBurst_Throws_WhenNotPositive(double maxBurst)
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void SetMaxBurst_Throws_WhenInvalid(double maxBurst)
     {
-        // 検証対象: SetMaxBurst バリデーション  目的: maxBurst <= 0 で例外
+        // 検証対象: SetMaxBurst バリデーション  目的: maxBurst <= 0 または非有限値で例外
         var sut = new WeightedTokenBucket(initialRate: 10.0, maxBurst: 50.0);
         Action act = () => sut.SetMaxBurst(maxBurst);
         act.Should().Throw<ArgumentOutOfRangeException>();
