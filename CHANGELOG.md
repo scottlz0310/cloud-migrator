@@ -9,6 +9,12 @@
 
 ### Added
 
+- **v0.6.0 スループット主制御基盤: トークンバケット + 重み付きコスト** (#160)
+  - `FileCostCalculator`: 離散モード（小/中/大 3 区分）/ 連続モード（`cost = ceil(size / scaleBytes)` + clamp）両対応の重み付きコスト算出クラス
+  - `WeightedTokenBucket`: `tokens/sec` ベースのトークンバケット。`Stopwatch.GetTimestamp()` monotonic clock で補充し、`maxBurst` でクランプ。`SetRate` / `SetMaxBurst` による AIMD 動的更新（#162 先行）対応。残量不足時は `sleep + retry`（ビジーウェイトなし）で待機
+  - `MigratorOptions.RateControl` に v0.6.0 トークンバケット設定を追加: `InitialTokensPerSec` / `MaxBurstTokens` / `MinTokensPerSec` / `MaxTokensPerSec` / `CostMode` / `SmallFileCost` / `MediumFileCost` / `LargeFileCost` / `CostScaleBytes` / `MinCost` / `MaxCost`
+  - ユニットテスト 42 件追加（`FileCostCalculatorTests` / `WeightedTokenBucketTests`）
+
 - **Graph API レートベース転送制御エンジン** (PR #148)
   - `ITransferRateController`: 転送レート制御の統一インターフェース（`AcquireAsync` / `NotifyCompleted` / `NotifyRateLimitHit`）
   - `IMetricsAggregator`: メトリクス集計の抽象（Aggregator 層）
