@@ -1,3 +1,5 @@
+using CloudMigrator.Core.Transfer;
+
 namespace CloudMigrator.Core.Configuration;
 
 /// <summary>
@@ -280,6 +282,44 @@ public sealed class RateControlSettings
 
     /// <summary>メトリクスバッファのフラッシュ間隔（秒）。デフォルト 3</summary>
     public int MetricsFlushIntervalSec { get; set; } = 3;
+
+    // --- v0.6.0 トークンバケット設定（#160）---
+    // v0.6.0 以降は tokens/sec の重み付きコスト制御を主制御とする。
+    // 本設定は #160 時点ではトークンバケット単体の生成パラメーターとして使用され、
+    // 既存の InitialRatePerSec / MinRatePerSec（req/sec）とは意味が異なる点に注意。
+
+    /// <summary>トークンバケット（v0.6.0）の初期補充レート（tokens/sec）。保守的な低めの値を推奨。デフォルト 10.0</summary>
+    public double InitialTokensPerSec { get; set; } = 10.0;
+
+    /// <summary>トークンバケットの容量（最大蓄積トークン数）。補充時はこの値でクランプされる。デフォルト 100.0</summary>
+    public double MaxBurstTokens { get; set; } = 100.0;
+
+    /// <summary>トークンバケットのレート下限（tokens/sec）。実質停止を避けるため最低 1 以上を推奨。デフォルト 1.0</summary>
+    public double MinTokensPerSec { get; set; } = 1.0;
+
+    /// <summary>トークンバケットのレート上限（tokens/sec）。AIMD 増加でこの値を超えない。デフォルト 200.0</summary>
+    public double MaxTokensPerSec { get; set; } = 200.0;
+
+    /// <summary>重み付きコスト算出モード。<c>Discrete</c> or <c>Continuous</c>。デフォルト <c>Discrete</c></summary>
+    public FileCostMode CostMode { get; set; } = FileCostMode.Discrete;
+
+    /// <summary>離散モード: 小ファイル（〜1 MiB）のコスト。デフォルト 1</summary>
+    public int SmallFileCost { get; set; } = 1;
+
+    /// <summary>離散モード: 中ファイル（1〜100 MiB）のコスト。デフォルト 5</summary>
+    public int MediumFileCost { get; set; } = 5;
+
+    /// <summary>離散モード: 大ファイル（100 MiB〜）のコスト。デフォルト 20</summary>
+    public int LargeFileCost { get; set; } = 20;
+
+    /// <summary>連続モードのスケール係数（バイト）。<c>cost = ceil(size / scaleBytes)</c>。デフォルト 10,000,000（10 MB）</summary>
+    public long CostScaleBytes { get; set; } = 10_000_000L;
+
+    /// <summary>連続モードの下限コスト。デフォルト 1</summary>
+    public int MinCost { get; set; } = 1;
+
+    /// <summary>連続モードの上限コスト。デフォルト 50</summary>
+    public int MaxCost { get; set; } = 50;
 }
 
 /// <summary>
