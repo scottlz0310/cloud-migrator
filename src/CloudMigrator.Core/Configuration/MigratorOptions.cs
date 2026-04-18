@@ -345,6 +345,50 @@ public sealed class RateControlSettings
     /// デフォルト 10
     /// </summary>
     public int MinSamples { get; set; } = 10;
+
+    // --- v0.6.0 AIMD フィードバック制御設定（#162）---
+    // スライディングウィンドウの指標を入力にトークンバケットの補充レートを動的調整する。
+    // 制御ループ本体への組込み・WeightedTokenBucket.SetRate への反映は #163 で実装する。
+
+    /// <summary>急減速の 429 率閾値（0–1）。この値を超えると <c>EmergencyDecrease</c> を発動する。デフォルト 0.10（10%）</summary>
+    public double AimdEmergencyThreshold { get; set; } = 0.10;
+
+    /// <summary>急減速係数（0 &lt; factor &lt; 1）。<c>rate *= EmergencyDecay</c>。デフォルト 0.7</summary>
+    public double EmergencyDecay { get; set; } = 0.7;
+
+    /// <summary>緩減速係数（0 &lt; factor &lt; 1）。<c>rate *= SlowDecay</c>。デフォルト 0.9</summary>
+    public double SlowDecay { get; set; } = 0.9;
+
+    /// <summary>緩増加ステップ（tokens/sec）。<c>rate += AddStep</c>。デフォルト 1.0</summary>
+    public double AddStep { get; set; } = 1.0;
+
+    /// <summary>レイテンシ悪化判定比率。ベースライン / 直近比較時に <c>(1 + LatencyRiseRatio)</c> 倍を閾値とする。デフォルト 0.3（+30%）</summary>
+    public double LatencyRiseRatio { get; set; } = 0.3;
+
+    /// <summary>
+    /// 初期ベースライン確立に必要な成功サンプル推定数の閾値。
+    /// Stable 経路で評価されたスナップショット内の <c>SampleCount × SuccessRate</c> が
+    /// この値に達した時点で、そのサイクルの P95 を初期ベースラインとして採用する。
+    /// <see cref="SlidingWindowSnapshot"/> は累積成功数を公開しないため、単一スナップショット内の
+    /// 最大観測成功数で判定する（確立される P95 は常に「安定期のスナップショット P95」となる）。
+    /// デフォルト 20。
+    /// </summary>
+    public int BaselineSamples { get; set; } = 20;
+
+    /// <summary>ベースライン EMA 更新係数（0 &lt; α &lt; 1）。<c>baseline = baseline*(1-α) + current*α</c>。デフォルト 0.1</summary>
+    public double BaselineEmaAlpha { get; set; } = 0.1;
+
+    /// <summary>直近比判定の比較窓幅（秒）。<c>LatencyEvaluationMode.Recent</c> / <c>Both</c> で使用する。デフォルト 10</summary>
+    public int TrendWindowSec { get; set; } = 10;
+
+    /// <summary>緩増加判定に必要な安定継続時間（秒）。この期間 429 ゼロ＋クールダウン外なら <c>Stable</c>。デフォルト 30</summary>
+    public int StableWindowSec { get; set; } = 30;
+
+    /// <summary>急減速後に緩増加を凍結する時間（秒）。スラッシング防止。デフォルト 20</summary>
+    public int CooldownSec { get; set; } = 20;
+
+    /// <summary>レイテンシ悪化判定モード。デフォルト <see cref="LatencyEvaluationMode.Baseline"/></summary>
+    public LatencyEvaluationMode LatencyEvaluationMode { get; set; } = LatencyEvaluationMode.Baseline;
 }
 
 /// <summary>

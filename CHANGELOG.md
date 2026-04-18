@@ -9,6 +9,16 @@
 
 ### Added
 
+- **v0.6.0 AIMD フィードバック制御 + クールダウン（評価ロジック）** (#162)
+  - `AimdSignal` enum（`Hold` / `EmergencyDecrease` / `SlowDecrease` / `Stable`）
+  - `AimdEvaluation` record: 評価結果（信号・新旧レート・ベースライン P95・クールダウン状態・スナップショット）
+  - `LatencyEvaluationMode` enum（`Baseline` / `Recent` / `Both`）: レイテンシ悪化判定モード。デフォルト `Baseline`
+  - `IAimdFeedbackController` / `AimdFeedbackController`: スライディングウィンドウ指標を入力に 4 信号を判定し、`[MinRate, MaxRate]` でクランプした新レートを返す純粋クラス。副作用なし（`WeightedTokenBucket.SetRate` 反映・制御ループ駆動は #163）
+  - ベースライン EMA（安定期のみ更新・悪化中は凍結）とクールダウン（急減速後 `CooldownSec` 秒 `Stable` 抑制、`EmergencyDecrease` / `SlowDecrease` は通常動作）
+  - `AimdFeedbackSettings` + `FromRateControlSettings()` コピーヘルパー
+  - `MigratorOptions.RateControl` に AIMD パラメーターを追加: `AimdEmergencyThreshold` / `EmergencyDecay` / `SlowDecay` / `AddStep` / `LatencyRiseRatio` / `BaselineSamples` / `BaselineEmaAlpha` / `TrendWindowSec` / `StableWindowSec` / `CooldownSec` / `LatencyEvaluationMode`
+  - ユニットテスト 24 件追加（`AimdFeedbackControllerTests`）
+
 - **v0.6.0 スライディングウィンドウ指標収集** (#161)
   - `ISlidingWindowMetrics` / `SlidingWindowMetrics`: 時間ベース / 件数ベース両対応のウィンドウ集計
   - `SlidingWindowSnapshot`: サンプル数・`HasMinSamples`・429 率・成功率・平均/P95 レイテンシを提供
