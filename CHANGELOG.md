@@ -9,6 +9,15 @@
 
 ### Added
 
+- **v0.6.0 スライディングウィンドウ指標収集** (#161)
+  - `ISlidingWindowMetrics` / `SlidingWindowMetrics`: 時間ベース / 件数ベース両対応のウィンドウ集計
+  - `SlidingWindowSnapshot`: サンプル数・`HasMinSamples`・429 率・成功率・平均/P95 レイテンシを提供
+  - `SlidingWindowMode` enum（`Time` / `Count`）
+  - `Stopwatch.GetTimestamp()` による monotonic clock 時間判定、時間モードに安全上限（デフォルト 100,000 件）
+  - P95 は線形補間（NIST Method 3 / Excel PERCENTILE.INC 相当）
+  - `MigratorOptions.RateControl` に `WindowMode` / `WindowSec` / `MaxWindowCount` / `MinSamples` を追加
+  - ユニットテスト 24 件追加（`SlidingWindowMetricsTests`）
+
 - **v0.6.0 スループット主制御基盤: トークンバケット + 重み付きコスト** (#160)
   - `FileCostCalculator`: 離散モード（小/中/大 3 区分）/ 連続モード（`cost = ceil(size / scaleBytes)` + clamp）両対応の重み付きコスト算出クラス
   - `WeightedTokenBucket`: `tokens/sec` ベースのトークンバケット。`Stopwatch.GetTimestamp()` monotonic clock で補充し、`maxBurst` でクランプ。`SetRate` / `SetMaxBurst` による AIMD 動的更新（#162 先行）対応。残量不足時は `sleep + retry`（ビジーウェイトなし）で待機
