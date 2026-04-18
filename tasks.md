@@ -29,32 +29,34 @@
 
 ---
 
-## 次フェーズ
+## 次フェーズ: v0.6.0 スループット主制御ハイブリッド方式
 
-> Epic ISSUE: （未定）
+> 設計書: [docs/transfer-control-design-v2.md](docs/transfer-control-design-v2.md)
 
 ### 概要
 
-<!-- 次フェーズの概要を記述 -->
+v0.5.0 のヒステリシス制御（requests/sec）から **トークンバケット × AIMD フィードバック × 並列数補助制御のハイブリッド方式**（tokens/sec）へ移行する。
 
-### 対応路線 / スコープ
+### 実装順序
 
-<!-- 対象路線・機能スコープを記述 -->
+| 順番 | ISSUE | タイトル | 状態 | 備考 |
+|------|-------|---------|------|------|
+| 1（並行） | [#160](https://github.com/scottlz0310/cloud-migrator/issues/160) | トークンバケット + 重み付きコスト | 🔜 未着手 | v0.6.0 基盤。他全 ISSUE の前提 |
+| 1（並行） | [#161](https://github.com/scottlz0310/cloud-migrator/issues/161) | スライディングウィンドウ指標収集 | 🔜 未着手 | #160 と並行着手可 |
+| 2 | [#162](https://github.com/scottlz0310/cloud-migrator/issues/162) | AIMD フィードバック制御 + クールダウン | 🔜 未着手 | #160 + #161 完了後 |
+| 3 | [#163](https://github.com/scottlz0310/cloud-migrator/issues/163) | 並列数補助制御ハイブリッド移行 | 🔜 未着手 | #160 + #162 完了後 |
+| 4 | [#159](https://github.com/scottlz0310/cloud-migrator/issues/159) | スループット表示を制御窓ベースに変更（UI） | 🔜 未着手 | #161 完了後 |
+| 5 | [#155](https://github.com/scottlz0310/cloud-migrator/issues/155) | 統計エリア統合（UI） | 🔜 未着手 | #163 完了後（表示データ確定） |
+| 自由 | [#154](https://github.com/scottlz0310/cloud-migrator/issues/154) | ルート情報をダッシュボードに移動（UI） | 🔜 未着手 | logic と独立 |
+| 自由 | [#156](https://github.com/scottlz0310/cloud-migrator/issues/156) | グラフ表示オン/オフ切り替え（UI） | 🔜 未着手 | logic と独立 |
+| 自由 | [#157](https://github.com/scottlz0310/cloud-migrator/issues/157) | グラフ列数可変設定（UI） | 🔜 未着手 | logic と独立 |
+| 自由 | [#158](https://github.com/scottlz0310/cloud-migrator/issues/158) | フォルダ/ファイル進捗 Phase 連動表示（UI） | 🔜 未着手 | logic と独立 |
 
----
+### スコープ外（凍結・v0.6.0 効果確認後に判断）
 
-## ISSUE #XXX: （タイトル）
-
-**Issue**: [#XXX]()  
-**Milestone**: （バージョン）  
-**依存**: （依存 ISSUE）
-
-### 実装タスク
-
-- [ ] 
-
-### 受け入れ基準
-
-- [ ] 
+| ISSUE | 内容 | 判断タイミング |
+|-------|------|---------------|
+| [#136](https://github.com/scottlz0310/cloud-migrator/issues/136) §1 | パルス制御 | #162 完了後 |
+| [#136](https://github.com/scottlz0310/cloud-migrator/issues/136) §2 | ファイルサイズ別レーン分離 | #160 完了後 |
 
 ---
