@@ -328,10 +328,15 @@ public sealed class RateControlSettings
     /// <summary>スライディングウィンドウ評価モード。時間ベース or 件数ベース。デフォルト <c>Time</c></summary>
     public SlidingWindowMode WindowMode { get; set; } = SlidingWindowMode.Time;
 
-    /// <summary>時間モード時のウィンドウ幅（秒）。件数モードでは無視。デフォルト 30</summary>
+    /// <summary>時間モード時のウィンドウ幅（秒）。件数モードでは未使用だが 1 以上が必要。デフォルト 30</summary>
     public int WindowSec { get; set; } = 30;
 
-    /// <summary>件数モード時の最大件数。時間モードでは無視。デフォルト 1000</summary>
+    /// <summary>
+    /// 件数モード時の最大イベント件数。
+    /// <c>NotifyRequestSent</c> / <c>NotifySuccess</c> / <c>NotifyRateLimit</c> がそれぞれ 1 イベントのため、
+    /// 「直近 N リクエスト」ではなく「直近 N イベント」の上限である点に注意。
+    /// 時間モードでは未使用だが 1 以上が必要。デフォルト 1000
+    /// </summary>
     public int MaxWindowCount { get; set; } = 1000;
 
     /// <summary>

@@ -31,8 +31,17 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
     /// スライディングウィンドウ集計器を初期化する。
     /// </summary>
     /// <param name="mode">評価モード（時間 / 件数）。</param>
-    /// <param name="windowSec">時間モード時のウィンドウ幅（秒、1 以上）。件数モードでは無視される。</param>
-    /// <param name="maxCount">件数モード時の最大件数（1 以上）。時間モードでは無視される。</param>
+    /// <param name="windowSec">
+    /// 時間モード時のウィンドウ幅（秒、1 以上）。
+    /// 件数モードでは未使用だが、1 以上でなければ例外が発生する（設定バインド時の誤値を早期検出するため）。
+    /// </param>
+    /// <param name="maxCount">
+    /// 件数モード時の最大イベント件数（1 以上）。
+    /// <c>NotifyRequestSent</c> / <c>NotifySuccess</c> / <c>NotifyRateLimit</c> はそれぞれ別イベントとして計上されるため、
+    /// 「直近 N リクエスト」ではなく「直近 N イベント」である点に注意。
+    /// 件数モードでは <paramref name="maxCount"/> が実質の safetyCap を兼ねる。
+    /// 時間モードでは未使用だが、1 以上でなければ例外が発生する。
+    /// </param>
     /// <param name="minSamples">
     /// 有効判定に必要な最低サンプル数（1 以上）。
     /// <c>SampleCount &lt; minSamples</c> の場合 <see cref="SlidingWindowSnapshot.HasMinSamples"/> が <c>false</c> になる。
@@ -73,6 +82,7 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
 
     /// <inheritdoc/>
     public void NotifyRateLimit(TimeSpan? retryAfter) =>
+        // retryAfter は現時点では未使用（集計対象外）。#162 AIMD クールダウン計算での活用を予定。
         Enqueue(new MetricEvent(Stopwatch.GetTimestamp(), EventKind.RateLimit, 0));
 
     /// <inheritdoc/>
@@ -103,9 +113,12 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
                 }
             }
 
-            // SampleCount は「NotifyRequestSent が呼ばれた件数」。
-            // 呼び出し側が NotifyRequestSent を省略した場合に 0 除算を避けるため、
-            // success + rateLimit を最低値として使用する。
+            // SampleCount: 基本は requestCount（NotifyRequestSent の呼び出し回数）。
+            // ただし以下のケースでは success+rateLimit を下限にして 0 除算を避ける:
+            //   (a) 呼び出し側が NotifyRequestSent を省略した
+            //   (b) 件数モード evict で RequestSent イベントが先に落ち Success が残った（部分サンプル）
+            // なお、NotifyRequestSent 後に応答なく evict された in-flight リクエストは
+            // 分母に含まれるため、Rate429/SuccessRate は実態より低く見える場合がある。
             var sampleCount = Math.Max(requestCount, successCount + rateLimitCount);
 
             var rate429 = sampleCount > 0 ? (double)rateLimitCount / sampleCount : 0.0;
@@ -141,6 +154,8 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
     {
         if (_mode == SlidingWindowMode.Count)
         {
+            // 件数モードでは _maxCount が実質の safetyCap を兼ねる（別途 _safetyCap は適用しない）。
+            // _maxCount は「イベント件数」上限（リクエスト数ではない）。
             while (_events.Count > _maxCount)
                 _events.Dequeue();
             return;
