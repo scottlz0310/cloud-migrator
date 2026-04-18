@@ -1,4 +1,12 @@
 pre-commit:
+  parallel: false
   commands:
+    # 1. フォーマットチェック（CI の「フォーマットチェック」ステップ相当）
     dotnet-format:
       run: dotnet format CloudMigrator.slnx --verify-no-changes
+    # 2. ビルド（CI の「ビルド」ステップ相当）
+    dotnet-build:
+      run: dotnet build CloudMigrator.slnx --no-restore --configuration Release
+    # 3. ユニットテスト（CI の unit テスト相当。integration/E2E は時間がかかるため除外）
+    dotnet-test-unit:
+      run: dotnet test tests/unit/CloudMigrator.Tests.Unit.csproj --no-build --configuration Release
