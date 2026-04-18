@@ -3,6 +3,7 @@
   "extends": [
     "github>scottlz0310/renovate-config//presets/default",
     "github>scottlz0310/renovate-config//presets/languages/csharp",
+    "github>scottlz0310/renovate-config//presets/tools/lefthook",
     "github>scottlz0310/renovate-config//presets/options/schedule",
     "github>scottlz0310/renovate-config//presets/options/security",
     "github>scottlz0310/renovate-config//presets/options/automerge"

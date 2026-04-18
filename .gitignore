@@ -62,7 +62,9 @@ publish/
 
 # dotnet ローカルツールキャッシュ（dotnet-tools.json のみ管理対象）
 .store/
-.husky-bin/
+
+# Node.js
+node_modules/
 
 # Claude Code
 .claude/

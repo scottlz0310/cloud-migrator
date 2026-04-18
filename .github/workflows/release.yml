@@ -13,7 +13,7 @@ jobs:
     name: Publish (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     env:
-      HUSKY: 0
+      LEFTHOOK: 0
     strategy:
       fail-fast: false
       matrix:
@@ -141,7 +141,7 @@ jobs:
     runs-on: windows-latest
     needs: publish
     env:
-      HUSKY: 0
+      LEFTHOOK: 0
 
     steps:
       - uses: actions/checkout@v6
