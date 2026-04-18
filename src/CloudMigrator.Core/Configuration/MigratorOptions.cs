@@ -320,6 +320,31 @@ public sealed class RateControlSettings
 
     /// <summary>連続モードの上限コスト。デフォルト 50</summary>
     public int MaxCost { get; set; } = 50;
+
+    // --- v0.6.0 スライディングウィンドウ指標収集設定（#161）---
+    // AIMD フィードバック（#162）の入力となる指標ウィンドウの設定。
+    // 既存の ShortWindowSec / LongWindowSec（v0.5.0 多時間窓）とは別概念。
+
+    /// <summary>スライディングウィンドウ評価モード。時間ベース or 件数ベース。デフォルト <c>Time</c></summary>
+    public SlidingWindowMode WindowMode { get; set; } = SlidingWindowMode.Time;
+
+    /// <summary>時間モード時のウィンドウ幅（秒）。件数モードでは未使用だが 1 以上が必要。デフォルト 30</summary>
+    public int WindowSec { get; set; } = 30;
+
+    /// <summary>
+    /// 件数モード時の最大イベント件数。
+    /// <c>NotifyRequestSent</c> / <c>NotifySuccess</c> / <c>NotifyRateLimit</c> がそれぞれ 1 イベントのため、
+    /// 「直近 N リクエスト」ではなく「直近 N イベント」の上限である点に注意。
+    /// 時間モードでは未使用だが 1 以上が必要。デフォルト 1000
+    /// </summary>
+    public int MaxWindowCount { get; set; } = 1000;
+
+    /// <summary>
+    /// フィードバック判断に必要な最低サンプル数。<c>SampleCount &lt; MinSamples</c> の場合は
+    /// <see cref="SlidingWindowSnapshot.HasMinSamples"/> が false となり、AIMD ループは判定をスキップする。
+    /// デフォルト 10
+    /// </summary>
+    public int MinSamples { get; set; } = 10;
 }
 
 /// <summary>
