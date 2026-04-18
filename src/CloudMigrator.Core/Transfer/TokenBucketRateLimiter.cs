@@ -22,6 +22,13 @@ namespace CloudMigrator.Core.Transfer;
 /// アーキテクチャ: Queue → WorkerPool → <see cref="TokenBucketRateLimiter"/> → Graph API
 /// </para>
 /// </summary>
+/// <remarks>
+/// v0.6.0 で <see cref="HybridRateController"/>（<see cref="WeightedTokenBucket"/> + AIMD フィードバック）に移行したため、
+/// このクラスは Obsolete になりました。後続 PR で削除予定。
+/// </remarks>
+[Obsolete(
+    "v0.6.0 以降は HybridRateController（WeightedTokenBucket + AimdFeedbackController）を使用してください。" +
+    "本クラスは後続 PR で削除予定。")]
 public sealed class TokenBucketRateLimiter : IDisposable
 {
     private readonly SemaphoreSlim _tokens;     // ワーカー待機ゲート（バケット）

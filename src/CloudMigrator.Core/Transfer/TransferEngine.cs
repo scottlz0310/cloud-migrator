@@ -25,10 +25,10 @@ public sealed class TransferEngine
     private readonly MigratorOptions _options;
     private readonly ILogger<TransferEngine> _logger;
     // TransferEngine は旧来のスキップリストベース転送エンジン。v0.5.0 以降は SQLite パイプライン推奨。
-#pragma warning disable CS0618 // AdaptiveConcurrencyController は Obsolete だが TransferEngine は後方互換維持のため継続使用
+#pragma warning disable CS0618 // AdaptiveConcurrencyController / TokenBucketRateLimiter は Obsolete だが TransferEngine は後方互換維持のため継続使用
     private readonly AdaptiveConcurrencyController? _concurrencyController;
-#pragma warning restore CS0618
     private readonly TokenBucketRateLimiter? _rateLimiter;
+#pragma warning restore CS0618
 
     /// <param name="destProvider">転送先プロバイダー</param>
     /// <param name="skipList">スキップリスト管理</param>
@@ -40,7 +40,7 @@ public sealed class TransferEngine
     /// 転送元プロバイダー（クロスプロバイダー転送用）。null の場合は destProvider が
     /// ダウンロード・アップロードを一括処理する（後方互換）。
     /// </param>
-#pragma warning disable CS0618 // AdaptiveConcurrencyController は Obsolete だが TransferEngine は後方互換維持のため継続使用
+#pragma warning disable CS0618 // AdaptiveConcurrencyController / TokenBucketRateLimiter は Obsolete だが TransferEngine は後方互換維持のため継続使用
     public TransferEngine(
         IStorageProvider destProvider,
         SkipListManager skipList,
@@ -49,7 +49,7 @@ public sealed class TransferEngine
         AdaptiveConcurrencyController? concurrencyController = null,
         TokenBucketRateLimiter? rateLimiter = null,
         IStorageProvider? sourceProvider = null)
-#pragma warning restore CS0618
+#pragma warning restore CS0618 // 復元
     {
         _destProvider = destProvider;
         _sourceProvider = sourceProvider;
