@@ -93,16 +93,15 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
             var now = _timestampProvider();
             var previousRate = _currentRate;
 
-            AppendP95History(now, snapshot.P95LatencyMs);
-
             // 最低サンプル未満は判定をスキップ（Hold）。
-            // ただし P95 履歴・ベースライン初期化カウンターは更新しておき、
-            // 十分なサンプルに到達した後のサイクルで正常判定できるようにする。
+            // P95 履歴・ベースライン確立は安定期の代表値で行うため、不安定な P95 を
+            // 履歴に混入させないよう HasMinSamples=false のサイクルでは一切更新しない。
             if (!snapshot.HasMinSamples)
             {
-                TryInitializeBaseline(snapshot);
                 return BuildResult(AimdSignal.Hold, previousRate, snapshot, now);
             }
+
+            AppendP95History(now, snapshot.P95LatencyMs);
 
             // 1. 急減速判定（最優先）
             if (snapshot.Rate429 > _settings.EmergencyThreshold)
@@ -134,7 +133,8 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
                 return BuildResult(AimdSignal.SlowDecrease, previousRate, snapshot, now);
             }
 
-            // 3. Stable 判定
+            // 3. Stable 判定。ベースライン確立・EMA 更新はこの経路でのみ実施し、
+            //    Hold やサンプル不足時に「安定でない P95」を学習しないようにする。
             var cooldownActive = now < _cooldownEndTicks;
             var stableElapsed = (now - _lastRate429Ticks) >= _stableWindowTicks;
             if (!cooldownActive && stableElapsed)
@@ -147,8 +147,7 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
                 return BuildResult(AimdSignal.Stable, previousRate, snapshot, now);
             }
 
-            // 4. Hold（いずれにも該当せず）
-            TryInitializeBaseline(snapshot);
+            // 4. Hold（いずれにも該当せず）。ベースライン初期化はここでは行わない。
             return BuildResult(AimdSignal.Hold, previousRate, snapshot, now);
         }
     }
@@ -245,18 +244,23 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
     }
 
     /// <summary>
-    /// ベースライン初期化。累積成功サンプル数が <c>BaselineSamples</c> に達した時点で
-    /// 現サイクルの P95 を初期ベースラインとして採用する。
+    /// ベースライン初期化。Stable 経路（<see cref="UpdateBaselineEma"/> のフォールバック）でのみ呼ばれる。
+    /// <para>
+    /// 設計書§6.1 は「最初の baselineSamples 件の成功リクエストの P95」と記述しているが、
+    /// <see cref="SlidingWindowSnapshot"/> は累積成功数を公開していないため、単一スナップショット内で
+    /// 観測された成功サンプル推定数（<c>SampleCount × SuccessRate</c>）の最大値が <c>BaselineSamples</c> に
+    /// 達した時点で、そのサイクルの P95 を初期ベースラインとして採用する。
+    /// 呼び出し経路が Stable に限定されているため、確立される P95 は常に「安定期のスナップショット P95」である。
+    /// </para>
     /// </summary>
     private void TryInitializeBaseline(SlidingWindowSnapshot snapshot)
     {
         if (_baselineP95Ms > 0.0) return;
         if (snapshot.P95LatencyMs <= 0.0) return;
 
-        // SlidingWindowSnapshot は SuccessCount を公開していないため、SuccessRate × SampleCount で近似する。
-        // 小数誤差は数件レベルで、BaselineSamples のしきい値判定には十分。
-        var approxSuccessCount = (long)Math.Round(snapshot.SampleCount * snapshot.SuccessRate);
-        _baselineSuccessSamples = Math.Max(_baselineSuccessSamples, approxSuccessCount);
+        // スナップショット内の成功サンプル推定数（小数誤差は数件レベルで閾値判定に十分）。
+        var approxSuccessCountInSnapshot = (long)Math.Round(snapshot.SampleCount * snapshot.SuccessRate);
+        _baselineSuccessSamples = Math.Max(_baselineSuccessSamples, approxSuccessCountInSnapshot);
 
         if (_baselineSuccessSamples >= _settings.BaselineSamples)
         {
@@ -267,6 +271,9 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
     private AimdEvaluation BuildResult(AimdSignal signal, double previousRate, SlidingWindowSnapshot snapshot, long nowTicks)
     {
         var inCooldown = nowTicks < _cooldownEndTicks;
+        // EvaluatedAt は snapshot.Timestamp に統一する。呼び出し側のテストでは
+        // snapshot 生成時に任意時刻を注入できるため、これにより DateTimeOffset の
+        // 完全な時刻制御が可能になる（monotonic ticks は時刻注入で別管理）。
         return new AimdEvaluation(
             Signal: signal,
             PreviousRate: previousRate,
@@ -274,7 +281,7 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
             BaselineP95Ms: _baselineP95Ms,
             InCooldown: inCooldown,
             Snapshot: snapshot,
-            EvaluatedAt: DateTimeOffset.UtcNow);
+            EvaluatedAt: snapshot.Timestamp);
     }
 }
 

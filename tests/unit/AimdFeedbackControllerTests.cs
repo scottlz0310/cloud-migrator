@@ -282,17 +282,22 @@ public sealed class AimdFeedbackControllerTests
     [Fact]
     public void Evaluate_SuppressesStable_DuringCooldown()
     {
-        // 検証対象: クールダウン中 Stable 抑制  目的: 急減速直後は CooldownSec 経過まで Stable を発火させない
+        // 検証対象: クールダウン中 Stable 抑制
+        // 目的: stableElapsed が true を満たす条件でもクールダウン中は Stable が発火しないことを検証。
+        // そのため StableWindowSec < CooldownSec に設定し、stableElapsed=true だが cooldownActive=true の
+        // ウィンドウを作ってクールダウン抑制のみを切り分けて検証する。
         var clock = new FakeClock();
-        var sut = new AimdFeedbackController(MakeSettings(), clock.Now);
+        var settings = MakeSettings(s => { s.StableWindowSec = 5; s.CooldownSec = 20; });
+        var sut = new AimdFeedbackController(settings, clock.Now);
 
-        // 1. EmergencyDecrease でクールダウン突入
+        // 1. EmergencyDecrease でクールダウン突入（_lastRate429Ticks も now にリセットされる）
         clock.AdvanceSeconds(1);
         var r1 = sut.Evaluate(MakeSnapshot(rate429: 0.5));
         r1.Signal.Should().Be(AimdSignal.EmergencyDecrease);
 
-        // 2. クールダウン期間中（CooldownSec=20 未満）に StableWindow 相当の時間経過させても Stable にならない
-        clock.AdvanceSeconds(10);
+        // 2. StableWindowSec=5 を超える 6 秒経過（stableElapsed=true）だが、
+        //    CooldownSec=20 の範囲内（cooldownActive=true）のため Stable 抑制により Hold になる。
+        clock.AdvanceSeconds(6);
         var r2 = sut.Evaluate(MakeSnapshot(sampleCount: 20, rate429: 0.0, p95LatencyMs: 100.0));
         r2.Signal.Should().Be(AimdSignal.Hold);
         r2.InCooldown.Should().BeTrue();
@@ -375,6 +380,76 @@ public sealed class AimdFeedbackControllerTests
         var r = sut.Evaluate(MakeSnapshot(sampleCount: 20, p95LatencyMs: 200.0));
         r.Signal.Should().Be(AimdSignal.SlowDecrease);
         sut.BaselineP95Ms.Should().Be(baselineBefore);
+    }
+
+    [Fact]
+    public void Evaluate_BaselineNotEstablished_OutsideStablePath()
+    {
+        // 検証対象: ベースライン確立の経路限定
+        // 目的: HasMinSamples=false の Hold・StableWindow 未経過の Hold では
+        // ベースラインが確立されず、後続の SlowDecrease が誤発動しないこと。
+        var clock = new FakeClock();
+        var settings = MakeSettings(s => { s.BaselineSamples = 1; });
+        var sut = new AimdFeedbackController(settings, clock.Now);
+
+        // 1. HasMinSamples=false で Hold → ベースラインは確立しない
+        clock.AdvanceSeconds(1);
+        sut.Evaluate(MakeSnapshot(sampleCount: 3, hasMinSamples: false, p95LatencyMs: 100.0));
+        sut.BaselineP95Ms.Should().Be(0.0);
+
+        // 2. HasMinSamples=true でも StableWindow 未経過で Hold → ベースラインは確立しない
+        clock.AdvanceSeconds(1);
+        sut.Evaluate(MakeSnapshot(sampleCount: 20, rate429: 0.0, p95LatencyMs: 100.0));
+        sut.BaselineP95Ms.Should().Be(0.0);
+
+        // 3. StableWindow 経過で Stable → ここで初めてベースライン確立
+        clock.AdvanceSeconds(30);
+        var r = sut.Evaluate(MakeSnapshot(sampleCount: 20, rate429: 0.0, p95LatencyMs: 100.0));
+        r.Signal.Should().Be(AimdSignal.Stable);
+        sut.BaselineP95Ms.Should().Be(100.0);
+    }
+
+    [Fact]
+    public void Evaluate_P95History_IgnoredWhenBelowMinSamples()
+    {
+        // 検証対象: サンプル不足時の P95 履歴非混入
+        // 目的: HasMinSamples=false のサイクルでは P95 履歴にエントリが追加されず、
+        // その後の Recent モード直近比判定に不安定値が影響しないこと。
+        var clock = new FakeClock();
+        var settings = MakeSettings(s => { s.LatencyMode = LatencyEvaluationMode.Recent; s.TrendWindowSec = 5; });
+        var sut = new AimdFeedbackController(settings, clock.Now);
+
+        // 前窓に該当する時間帯に「サンプル不足 + 異常に低い P95」を詰める（履歴に混入したら後続で大幅悪化と誤認される）
+        for (int i = 0; i < 3; i++)
+        {
+            clock.AdvanceSeconds(1);
+            sut.Evaluate(MakeSnapshot(sampleCount: 3, hasMinSamples: false, p95LatencyMs: 10.0));
+        }
+
+        // 直近窓に通常の P95=100 を投入
+        clock.AdvanceSeconds(6);
+        sut.Evaluate(MakeSnapshot(sampleCount: 20, p95LatencyMs: 100.0));
+        clock.AdvanceSeconds(1);
+        var r = sut.Evaluate(MakeSnapshot(sampleCount: 20, p95LatencyMs: 100.0));
+
+        // 前窓に履歴がなければ previousCount=0 で判定不能となり SlowDecrease にならない。
+        // 旧実装では前窓に 10ms が混入し、100/10 = 10 倍で誤発動していた。
+        r.Signal.Should().NotBe(AimdSignal.SlowDecrease);
+    }
+
+    [Fact]
+    public void Evaluate_EvaluatedAt_UsesSnapshotTimestamp()
+    {
+        // 検証対象: EvaluatedAt の時刻ソース
+        // 目的: BuildResult は snapshot.Timestamp をそのまま返し、DateTimeOffset.UtcNow に依存しない。
+        var clock = new FakeClock();
+        var sut = new AimdFeedbackController(MakeSettings(), clock.Now);
+        var fixedAt = new DateTimeOffset(2026, 4, 18, 12, 0, 0, TimeSpan.Zero);
+        var snapshot = new SlidingWindowSnapshot(20, true, 0.0, 1.0, 100.0, 100.0, fixedAt);
+
+        var r = sut.Evaluate(snapshot);
+
+        r.EvaluatedAt.Should().Be(fixedAt);
     }
 
     // ─── LatencyEvaluationMode = Both ─────────────────────────

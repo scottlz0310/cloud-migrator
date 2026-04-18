@@ -365,7 +365,14 @@ public sealed class RateControlSettings
     /// <summary>レイテンシ悪化判定比率。ベースライン / 直近比較時に <c>(1 + LatencyRiseRatio)</c> 倍を閾値とする。デフォルト 0.3（+30%）</summary>
     public double LatencyRiseRatio { get; set; } = 0.3;
 
-    /// <summary>初期ベースライン算出に使用する成功サンプル件数（累積）。この件数に達するまでベースライン比判定はスキップする。デフォルト 20</summary>
+    /// <summary>
+    /// 初期ベースライン確立に必要な成功サンプル推定数の閾値。
+    /// Stable 経路で評価されたスナップショット内の <c>SampleCount × SuccessRate</c> が
+    /// この値に達した時点で、そのサイクルの P95 を初期ベースラインとして採用する。
+    /// <see cref="SlidingWindowSnapshot"/> は累積成功数を公開しないため、単一スナップショット内の
+    /// 最大観測成功数で判定する（確立される P95 は常に「安定期のスナップショット P95」となる）。
+    /// デフォルト 20。
+    /// </summary>
     public int BaselineSamples { get; set; } = 20;
 
     /// <summary>ベースライン EMA 更新係数（0 &lt; α &lt; 1）。<c>baseline = baseline*(1-α) + current*α</c>。デフォルト 0.1</summary>

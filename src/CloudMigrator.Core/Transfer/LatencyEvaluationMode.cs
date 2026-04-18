@@ -21,9 +21,9 @@ public enum LatencyEvaluationMode
 
     /// <summary>
     /// 直近比判定。
-    /// 直近 <c>trendWindowSec</c> 秒の P95 と、その前の同時間窓の P95 を比較し
-    /// <c>latencyRiseRatio</c> 以上の悪化で発動する。ベースライン学習を必要としないため
-    /// 起動直後から効くが、徐々に進行する悪化を取りこぼす可能性がある。
+    /// 直近 <c>trendWindowSec</c> 秒の窓に含まれる履歴エントリ（サイクルごとのスナップショット P95）
+    /// の平均値と、その前の同時間窓の P95 平均値を比較し <c>latencyRiseRatio</c> 以上の悪化で発動する。
+    /// ベースライン学習を必要としないため起動直後から効くが、徐々に進行する悪化を取りこぼす可能性がある。
     /// </summary>
     Recent,
 
