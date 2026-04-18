@@ -76,18 +76,20 @@ v1 の問題点：
 ```
 Queue（transfer_records: pending）
   ↓
-[ゲート A] トークンバケット（スループット制御）
-  wait until tokens >= cost(file)
-  ↓
 [ゲート B] 並列数セマフォ（補助制御）
   wait until inflight < max_inflight
+  ↓
+[ゲート A] トークンバケット（スループット制御）
+  wait until tokens >= cost(file)
+  tokens -= cost(file)   // ← ゲート B 通過後、dispatch 直前に消費
   ↓
 Dispatch → Worker（Graph API 呼び出し）
   ↓
 結果を指標バッファへ push（429 / latency / success）
 ```
 
-ゲート A と B は **直列に** 適用する。両方のゲートを通過したものだけが dispatch される。
+ゲート B → ゲート A の順で直列適用する。**トークンの消費はゲート B（並列数セマフォ）の取得後、dispatch 直前**に行う。
+ゲート A を先に通過させると、ゲート B の待機中にトークンが補充され続け、意図した tokens/sec のスループット制御が崩れるため、順序は B→A とする。
 
 ### 非同期フィードバック経路
 
@@ -304,7 +306,25 @@ rate = clamp(rate, minRate, maxRate)
 3. 状態ファイルは制御ループごとに atomic write（temp→rename）で更新する
 ```
 
-`logs/rate_state.json` に保存する最小項目: `rate_tokens_per_sec` / `max_inflight` / `updated_at`。
+#### `logs/rate_state.json` のフォーマット仕様と後方互換
+
+**v0.6.0 の保存形式**（最小項目）:
+
+| キー | 型 | 説明 |
+|------|-----|------|
+| `version` | `integer` | フォーマットバージョン。v0.6.0 以降は `2` を付与 |
+| `rate_tokens_per_sec` | `number` | トークンバケットの現在補充レート |
+| `max_inflight` | `integer` | 補助並列数制御の上限値 |
+| `updated_at` | `string` | UTC ISO 8601 形式のタイムスタンプ |
+
+**後方互換読込（v0.5.x → v0.6.0 アップグレード時）**:
+
+- v0.5.x の状態ファイルはキー `rate`（file/sec 単位）を持ち `version` がない
+- `version` が存在しない場合でも `rate` キーがあれば読込対象とし、その値を `rate_tokens_per_sec` の前回値として復元する（復元後に `[minRate, maxRate]` でクランプ）
+- 旧形式に `max_inflight` は存在しないため、読込時は設定値（未設定時は既定値 `16`）を使用する
+- 旧形式を正常に読めた場合はコールドスタート（`initialRate` から開始）へフォールバックせず、前回値を引き継ぐ
+- 次回の状態保存時に v0.6.0 形式（`version: 2`）で上書きし、段階的に移行する
+- `version` も `rate` も存在しない、または値が壊れている場合のみ、状態ファイルなし相当として `initialRate` から開始する
 
 ---
 
