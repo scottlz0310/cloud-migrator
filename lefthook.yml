@@ -1,0 +1,4 @@
+pre-commit:
+  commands:
+    dotnet-format:
+      run: dotnet format CloudMigrator.slnx --verify-no-changes
