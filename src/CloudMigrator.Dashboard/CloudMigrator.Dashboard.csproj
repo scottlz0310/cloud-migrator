@@ -8,9 +8,14 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>CloudMigrator.Dashboard</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\assets\CloudMigrator.ico</ApplicationIcon>
     <!-- AdaptiveConcurrencyController/Adapter は [Obsolete] 化済みだが後方互換のため継続使用。v0.6.0 で削除予定。 -->
     <NoWarn>CS0618</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\CloudMigrator.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.51" />

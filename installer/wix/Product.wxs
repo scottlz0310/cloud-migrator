@@ -35,6 +35,10 @@
     -->
     <Property Id="ADDTOPATH" Value="1" />
 
+    <!-- Add/Remove Programs に表示されるアイコン -->
+    <Icon Id="CloudMigratorIcon" SourceFile="$(sys.SOURCEFILEDIR)..\..\assets\CloudMigrator.ico" />
+    <Property Id="ARPPRODUCTICON" Value="CloudMigratorIcon" />
+
     <MediaTemplate EmbedCab="yes" />
 
     <!-- インストール先: %LOCALAPPDATA%\Programs\CloudMigrator\ -->
@@ -84,7 +88,8 @@
                   Name="Cloud Migrator"
                   Target="[INSTALLFOLDER]CloudMigrator.Dashboard.exe"
                   WorkingDirectory="INSTALLFOLDER"
-                  Description="Cloud storage migration tool" />
+                  Description="Cloud storage migration tool"
+                  Icon="CloudMigratorIcon" />
         <RemoveFolder Id="RemoveAppMenuFolder"
                       Directory="AppMenuFolder"
                       On="uninstall" />

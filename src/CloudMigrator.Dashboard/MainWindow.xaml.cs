@@ -1,4 +1,6 @@
+using System;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using Microsoft.AspNetCore.Components.WebView.Wpf;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,7 +17,21 @@ public partial class MainWindow : Window
     {
         _services = services;
         InitializeComponent();
+        ApplyWindowIcon();
         InitializeBlazor();
+    }
+
+    private void ApplyWindowIcon()
+    {
+        try
+        {
+            var uri = new Uri("pack://application:,,,/Assets/CloudMigrator.png", UriKind.Absolute);
+            Icon = BitmapFrame.Create(uri, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        }
+        catch
+        {
+            // アイコン設定失敗はアプリ起動を妨げない
+        }
     }
 
     private void InitializeBlazor()
