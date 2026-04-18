@@ -1,6 +1,9 @@
+using System;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using Microsoft.AspNetCore.Components.WebView.Wpf;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace CloudMigrator.Dashboard;
 
@@ -10,12 +13,28 @@ namespace CloudMigrator.Dashboard;
 public partial class MainWindow : Window
 {
     private readonly IServiceProvider _services;
+    private readonly ILogger<MainWindow> _logger;
 
     public MainWindow(IServiceProvider services)
     {
         _services = services;
+        _logger = services.GetRequiredService<ILogger<MainWindow>>();
         InitializeComponent();
+        ApplyWindowIcon();
         InitializeBlazor();
+    }
+
+    private void ApplyWindowIcon()
+    {
+        try
+        {
+            var uri = new Uri("pack://application:,,,/Assets/CloudMigrator.png", UriKind.Absolute);
+            Icon = BitmapFrame.Create(uri, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ウィンドウアイコンの設定に失敗しました。アプリの起動は継続します。");
+        }
     }
 
     private void InitializeBlazor()
