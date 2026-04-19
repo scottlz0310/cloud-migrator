@@ -11,9 +11,9 @@
 
 - **HybridRateController 設定メニュー対応**（SettingsPage）
   - 設定ページの「HybridRateController（AIMD）」セクションに以下6項目を追加:
-    `UseHybridController`（スイッチ）/ `CooldownSec`（クールダウン秒）/ `EmergencyDecay`（緊急減速係数）/ `EmergencyInflightDecay`（緊急インフライト減速係数）/ `AddStep`（安定時増速ステップ）/ `LatencyEvaluationMode`（ドロップダウン: None / Baseline / Recent / Both）
+    `UseHybridController`（スイッチ）/ `CooldownSec`（クールダウン秒）/ `EmergencyDecay`（緊急減速係数）/ `EmergencyInflightDecay`（緊急インフライト減速係数）/ `AddStep`（安定時増速ステップ）/ `LatencyEvaluationMode`（ドロップダウン: None / Baseline / Recent / Both、現在のデフォルトは `None`）
   - `ConfigDto` / `ConfigUpdateDto` に対応フィールドを追加（`RcCooldownSec` / `RcEmergencyDecay` / `RcEmergencyInflightDecay` / `RcAddStep` / `RcLatencyMode` / `UseHybridController`）
-  - `ConfigurationService.GetConfigAsync` / `UpdateConfigAsync` で読み書き実装。バリデーション: `CooldownSec≥0` / `EmergencyDecay∈(0,1)` / `EmergencyInflightDecay∈(0,1)` / `AddStep>0`
+  - `ConfigurationService.GetConfigAsync` / `UpdateConfigAsync` で読み書き実装。バリデーション: `CooldownSec≥0` / `EmergencyDecay∈(0,1)` / `EmergencyInflightDecay∈(0,1)` / `AddStep>0` / `RcLatencyMode∈{None,Baseline,Recent,Both}`
 
 - **`LatencyEvaluationMode.None` 追加**（#162）
   - `LatencyEvaluationMode` enum の先頭に `None`（レイテンシ判定なし、429専制御）を追加

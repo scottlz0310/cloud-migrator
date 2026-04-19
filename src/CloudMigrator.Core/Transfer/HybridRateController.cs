@@ -256,8 +256,8 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
         // §9 メトリクス出力
         EmitMetrics(evaluation, newMaxInflight);
 
-        // 減速・増速・クールダウン変化は Information で記録して診断可能にする。
-        // Hold が継続するだけの場合は Debug に抑制する。
+        // 減速・増速・安定（Stable）信号は Information で記録して診断可能にする。
+        // Hold が継続するだけの場合は Debug に抑制する。クールダウン遷移は Signal に反映されないため別途 InCooldown を参照のこと。
         var isStateChange = evaluation.Signal is AimdSignal.EmergencyDecrease
             or AimdSignal.SlowDecrease
             or AimdSignal.Stable;
