@@ -57,6 +57,10 @@ public sealed class RateStateStore
         {
             return null;
         }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
 
         if (string.IsNullOrWhiteSpace(text)) return null;
 
@@ -66,14 +70,22 @@ public sealed class RateStateStore
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
 
-            // v2 形式: version=2 + rate_tokens_per_sec + max_inflight
+            // v2 形式: version=SupportedVersion(現状は 2) + rate_tokens_per_sec + max_inflight
+            // 未知バージョンは前方互換を仮定せず、下の互換判定にも一致しなければ null（コールドスタート）にフォールバックする。
             if (root.TryGetProperty("version", out var vEl)
                 && vEl.ValueKind == JsonValueKind.Number
                 && vEl.TryGetInt32(out var version)
-                && version >= SupportedVersion)
+                && version == SupportedVersion)
             {
                 if (!TryGetDouble(root, "rate_tokens_per_sec", out var rate)) return null;
-                var maxInflight = TryGetInt(root, "max_inflight", 0);
+                // max_inflight は MinInflight >= 1 制約があるため、欠落・非数値・<=0 は無効としてコールドスタート扱いにする。
+                if (!root.TryGetProperty("max_inflight", out var maxInflightEl)
+                    || maxInflightEl.ValueKind != JsonValueKind.Number
+                    || !maxInflightEl.TryGetInt32(out var maxInflight)
+                    || maxInflight <= 0)
+                {
+                    return null;
+                }
                 return new RateState(rate, maxInflight, RateStateFormat.V2);
             }
 
@@ -122,12 +134,6 @@ public sealed class RateStateStore
             && prop.TryGetDouble(out value)
             && double.IsFinite(value);
     }
-
-    private static int TryGetInt(JsonElement element, string name, int defaultValue)
-        => element.TryGetProperty(name, out var prop)
-           && prop.ValueKind == JsonValueKind.Number
-           && prop.TryGetInt32(out var v)
-            ? v : defaultValue;
 
     private sealed class V2Payload
     {

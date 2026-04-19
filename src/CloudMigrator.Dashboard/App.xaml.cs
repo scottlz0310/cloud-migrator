@@ -165,8 +165,14 @@ public partial class App : Application
                     if (opts.RateControl.UseHybridController)
                     {
                         hybridController = BuildHybridController(opts, rateMetricsBuffer, loggerFactory2);
-                        // 429 通知は ITransferRateController 経由で GraphClient のリトライ層が通知するため、
-                        // 別途 onRateLimit チェーンに組む必要はない。
+                        // RetryHandler が 429/503 をリトライして成功した場合、パイプライン側からは NotifyRateLimit が呼ばれない。
+                        // RateLimitAwareHandler 経由で AIMD の rate_429 入力を取り込めるよう onRateLimit チェーンへ接続する。
+                        var existingOnRateLimit = onRateLimit;
+                        onRateLimit = retryAfter =>
+                        {
+                            existingOnRateLimit?.Invoke(retryAfter);
+                            hybridController.NotifyRateLimit(retryAfter);
+                        };
                         concurrencyController = hybridController;
                     }
                     else

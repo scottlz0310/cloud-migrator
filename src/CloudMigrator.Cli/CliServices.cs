@@ -71,6 +71,14 @@ internal sealed class CliServices : IDisposable
         _controllerProxy.Active = ctrl;
 
     /// <summary>
+    /// UseRateControl 経路の <see cref="ITransferRateController"/>（<c>HybridRateController</c> や
+    /// <c>RateControlledTransferController</c>）を <c>onRateLimit</c> 通知先として登録する。
+    /// graphClient 構築後に呼び出しても、onRateLimit クロージャは最新値を参照するため有効になる。
+    /// </summary>
+    public void SetActiveRateController(ITransferRateController? ctrl) =>
+        _controllerProxy.RateController = ctrl;
+
+    /// <summary>
     /// 内部の旧 <see cref="AdaptiveConcurrencyController"/> を直接返す（フェーズ切り替え内部用）。
     /// </summary>
     internal AdaptiveConcurrencyController? GetAdaptiveController(string providerName) =>
@@ -172,6 +180,19 @@ internal sealed class CliServices : IDisposable
 
         if (controllers.Count > 0)
             onRateLimit = retryAfter => controllerProxy.Active?.NotifyRateLimit(retryAfter);
+
+        // UseRateControl 経路では HybridRateController / RateControlledTransferController を後から
+        // controllerProxy.RateController にセットする（TransferCommand 内で構築されるため）。
+        // graphClient はここで生成されるが、onRateLimit はクロージャ経由で常に最新の RateController を参照する。
+        if (options.RateControl.UseRateControl)
+        {
+            var prev = onRateLimit;
+            onRateLimit = retryAfter =>
+            {
+                prev?.Invoke(retryAfter);
+                controllerProxy.RateController?.NotifyRateLimit(retryAfter);
+            };
+        }
 
         // Token Bucket レートリミッターを生成（設定で有効な場合）
         TokenBucketRateLimiter? rateLimiter = null;
@@ -373,5 +394,8 @@ internal sealed class CliServices : IDisposable
     private sealed class ControllerProxy
     {
         internal volatile AdaptiveConcurrencyController? Active;
+        // UseRateControl 経路（HybridRateController / RateControlledTransferController）への通知用。
+        // graphClient 生成後に TransferCommand から SetActiveRateController で差し込まれる。
+        internal volatile ITransferRateController? RateController;
     }
 }

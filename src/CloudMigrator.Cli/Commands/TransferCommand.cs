@@ -218,6 +218,11 @@ internal static class TransferCommand
             ?? rateController
             ?? svc.GetController("sharepoint");
 
+        // RateLimitAwareHandler 経由で 429/503 を受け取れるよう onRateLimit プロキシへ接続する。
+        // RetryHandler が成功させたケースでもパイプライン側に通知が届かない問題を補う。
+        if (hybridController is not null || rateController is not null)
+            svc.SetActiveRateController(transferController);
+
         // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
         // stateDb は SQLite 状態を保持するため使い回す
         TransferSummary summary;
@@ -249,6 +254,10 @@ internal static class TransferCommand
         }
         finally
         {
+            // Dispose 後に onRateLimit から通知されないよう、まずプロキシを切り離す
+            if (hybridController is not null || rateController is not null)
+                svc.SetActiveRateController(null);
+
             // AdaptiveConcurrencyController を Dispose（Adapter は内部コントローラーを所有しないため直接 Dispose）
             accFolderController?.Dispose();
             // HybridRateController / RateControlledTransferController と MetricsBuffer を Dispose

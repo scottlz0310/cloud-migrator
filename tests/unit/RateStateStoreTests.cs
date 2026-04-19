@@ -137,4 +137,28 @@ public sealed class RateStateStoreTests : IDisposable
         File.Exists(tmpPath).Should().BeFalse("atomic write で temp ファイルは残ってはならない");
         File.Exists(_filePath).Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("""{"version": 3, "rate_tokens_per_sec": 12.5, "max_inflight": 14}""")]
+    [InlineData("""{"version": 99, "rate_tokens_per_sec": 12.5, "max_inflight": 14}""")]
+    public void Load_ReturnsNull_WhenVersionIsUnknown(string json)
+    {
+        // 未知の version は前方互換を仮定せずコールドスタート扱い
+        File.WriteAllText(_filePath, json);
+        var store = new RateStateStore(_filePath);
+        store.Load().Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("""{"version": 2, "rate_tokens_per_sec": 12.5}""")]
+    [InlineData("""{"version": 2, "rate_tokens_per_sec": 12.5, "max_inflight": 0}""")]
+    [InlineData("""{"version": 2, "rate_tokens_per_sec": 12.5, "max_inflight": -3}""")]
+    [InlineData("""{"version": 2, "rate_tokens_per_sec": 12.5, "max_inflight": "abc"}""")]
+    public void Load_ReturnsNull_WhenV2MaxInflightIsInvalid(string json)
+    {
+        // v2 で max_inflight が欠落・非正・非数値の場合は null（無効値 0 を作らない）
+        File.WriteAllText(_filePath, json);
+        var store = new RateStateStore(_filePath);
+        store.Load().Should().BeNull();
+    }
 }
