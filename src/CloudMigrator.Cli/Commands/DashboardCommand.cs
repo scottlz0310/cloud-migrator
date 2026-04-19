@@ -101,12 +101,34 @@ internal static class DashboardLauncher
     /// <summary>CloudMigrator.Dashboard.exe のパスを探す。</summary>
     private static string? FindDashboardExe()
     {
+        // 1. 同一ディレクトリ（publish / self-contained インストール）
         var candidate = Path.Combine(AppContext.BaseDirectory, "CloudMigrator.Dashboard.exe");
         if (File.Exists(candidate))
             return candidate;
 
+        // 2. インストール済みパス
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var installCandidate = Path.Combine(localAppData, "Programs", "CloudMigrator", "CloudMigrator.Dashboard.exe");
-        return File.Exists(installCandidate) ? installCandidate : null;
+        if (File.Exists(installCandidate))
+            return installCandidate;
+
+        // 3. 開発モード: dotnet run 時の sibling プロジェクト bin を探す
+        //    AppContext.BaseDirectory = .../CloudMigrator.Cli/bin/{config}/{tfm}/
+        //    3 階層上 = .../CloudMigrator.Cli/  → さらに 1 つ上 = .../src/
+        var srcDir = new DirectoryInfo(AppContext.BaseDirectory).Parent?.Parent?.Parent?.Parent;
+        if (srcDir != null)
+        {
+            var dashboardBin = Path.Combine(srcDir.FullName, "CloudMigrator.Dashboard", "bin");
+            if (Directory.Exists(dashboardBin))
+            {
+                var devExe = Directory
+                    .GetFiles(dashboardBin, "CloudMigrator.Dashboard.exe", SearchOption.AllDirectories)
+                    .FirstOrDefault();
+                if (devExe != null)
+                    return devExe;
+            }
+        }
+
+        return null;
     }
 }

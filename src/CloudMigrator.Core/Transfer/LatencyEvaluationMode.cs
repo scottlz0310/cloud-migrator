@@ -13,7 +13,13 @@ namespace CloudMigrator.Core.Transfer;
 public enum LatencyEvaluationMode
 {
     /// <summary>
-    /// ベースライン比判定（デフォルト）。
+    /// レイテンシ判定を無効化（デフォルト）。
+    /// 429/503 レートのみで制御し、レイテンシ悪化による <c>SlowDecrease</c> は発動しない。
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// ベースライン比判定。
     /// 過去の安定期 P95 を EMA で追跡し、<c>current_p95 &gt; baseline * (1 + latencyRiseRatio)</c>
     /// で悪化と判定する。起動直後は <c>baselineSamples</c> 件の成功サンプルが蓄積されるまで判定しない。
     /// </summary>

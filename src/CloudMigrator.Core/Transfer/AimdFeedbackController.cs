@@ -106,14 +106,23 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
             // 1. 急減速判定（最優先）
             if (snapshot.Rate429 > _settings.EmergencyThreshold)
             {
-                _currentRate = Math.Clamp(
-                    _currentRate * _settings.EmergencyDecay,
-                    _settings.MinRate,
-                    _settings.MaxRate);
-                _cooldownEndTicks = now + _cooldownTicks;
+                var inCooldown = now < _cooldownEndTicks;
+                if (!inCooldown)
+                {
+                    // クールダウン外: 初回削減とクールダウン開始
+                    _currentRate = Math.Clamp(
+                        _currentRate * _settings.EmergencyDecay,
+                        _settings.MinRate,
+                        _settings.MaxRate);
+                    _cooldownEndTicks = now + _cooldownTicks;
+                }
+                // クールダウン中でも _lastRate429Ticks を更新して Stable 復帰を抑制する
                 _lastRate429Ticks = now;
                 // ベースライン凍結（§6.1）
-                return BuildResult(AimdSignal.EmergencyDecrease, previousRate, snapshot, now);
+                // クールダウン中は Hold を返して「半分落としたまま様子見」を実現する
+                return BuildResult(
+                    inCooldown ? AimdSignal.Hold : AimdSignal.EmergencyDecrease,
+                    previousRate, snapshot, now);
             }
 
             // 429 が現ウィンドウに存在する場合も安定カウンターを更新しておく
@@ -185,10 +194,11 @@ public sealed class AimdFeedbackController : IAimdFeedbackController
 
         return _settings.LatencyMode switch
         {
+            LatencyEvaluationMode.None => false,
             LatencyEvaluationMode.Baseline => baselineWorsened,
             LatencyEvaluationMode.Recent => recentWorsened,
             LatencyEvaluationMode.Both => baselineWorsened || recentWorsened,
-            _ => baselineWorsened,
+            _ => false,
         };
     }
 
@@ -295,7 +305,7 @@ public sealed class AimdFeedbackSettings
     public double MinRate { get; set; } = 1.0;
     public double MaxRate { get; set; } = 200.0;
     public double EmergencyThreshold { get; set; } = 0.10;
-    public double EmergencyDecay { get; set; } = 0.7;
+    public double EmergencyDecay { get; set; } = 0.9;
     public double SlowDecay { get; set; } = 0.9;
     public double AddStep { get; set; } = 1.0;
     public double LatencyRiseRatio { get; set; } = 0.3;
@@ -304,7 +314,7 @@ public sealed class AimdFeedbackSettings
     public int TrendWindowSec { get; set; } = 10;
     public int StableWindowSec { get; set; } = 30;
     public int CooldownSec { get; set; } = 20;
-    public LatencyEvaluationMode LatencyMode { get; set; } = LatencyEvaluationMode.Baseline;
+    public LatencyEvaluationMode LatencyMode { get; set; } = LatencyEvaluationMode.None;
 
     /// <summary>設定値の整合性を検証する。不正値があれば <see cref="ArgumentOutOfRangeException"/>。</summary>
     public void Validate()

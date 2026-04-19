@@ -256,9 +256,24 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
         // §9 メトリクス出力
         EmitMetrics(evaluation, newMaxInflight);
 
-        _logger.LogDebug(
-            "HybridRateController サイクル: レート={Rate:F2} tokens/sec, max_inflight={MaxInflight}, 信号={Signal}, クールダウン={Cooldown}",
-            evaluation.NewRate, newMaxInflight, evaluation.Signal, evaluation.InCooldown);
+        // 減速・増速・クールダウン変化は Information で記録して診断可能にする。
+        // Hold が継続するだけの場合は Debug に抑制する。
+        var isStateChange = evaluation.Signal is AimdSignal.EmergencyDecrease
+            or AimdSignal.SlowDecrease
+            or AimdSignal.Stable;
+        if (isStateChange)
+        {
+            _logger.LogInformation(
+                "HybridRateController サイクル: レート={Rate:F2} tokens/sec, max_inflight={MaxInflight}, 信号={Signal}, クールダウン={Cooldown}, 429率={Rate429:P1}, P95={P95:F0}ms",
+                evaluation.NewRate, newMaxInflight, evaluation.Signal, evaluation.InCooldown,
+                snapshot.Rate429, snapshot.P95LatencyMs);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "HybridRateController サイクル: レート={Rate:F2} tokens/sec, max_inflight={MaxInflight}, 信号={Signal}, クールダウン={Cooldown}",
+                evaluation.NewRate, newMaxInflight, evaluation.Signal, evaluation.InCooldown);
+        }
     }
 
     /// <summary>

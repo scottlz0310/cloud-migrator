@@ -209,10 +209,62 @@ else
                                                  Variant="Variant.Outlined"
                                                  HelperText="並列数の上限であると同時に、req/sec のレート上限としても使用されます。デフォルト: 16" />
                             </MudItem>
+
+                            @* ── HybridRateController 専用パラメーター ──────── *@
+                            <MudItem xs="12">
+                                <MudDivider Class="my-2" />
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">HybridRateController（AIMD）</MudText>
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudSwitch @bind-Value="_editUseHybridController"
+                                           Label="HybridRateController を使用する（実験的）"
+                                           Color="Color.Secondary" />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    ON: AIMD ベースのスループット主制御 + max_inflight 補助制御（v0.6.0 設計書 §4.3/§7）を有効化します。
+                                    OFF: 通常の RateControlledTransferController を使用します。
+                                </MudText>
+                            </MudItem>
+                            @if (_editUseHybridController)
+                            {
+                                <MudItem xs="12" sm="6">
+                                    <MudNumericField @bind-Value="_editRcCooldownSec"
+                                                     Label="クールダウン秒数"
+                                                     Min="0" Max="300"
+                                                     Variant="Variant.Outlined"
+                                                     HelperText="緊急減速後に増速を停止する時間（秒）。デフォルト: 20" />
+                                </MudItem>
+                                <MudItem xs="12" sm="6">
+                                    <MudNumericField @bind-Value="_editRcAddStep"
+                                                     Label="増速ステップ (tokens/sec)"
+                                                     Min="0.1" Max="10.0" Step="0.1"
+                                                     Variant="Variant.Outlined"
+                                                     HelperText="安定期に 1 制御サイクルごとに加算するレート量。大きいほど素早く回復。デフォルト: 1.0" />
+                                </MudItem>
+                                <MudItem xs="12" sm="6">
+                                    <MudNumericField @bind-Value="_editRcEmergencyDecay"
+                                                     Label="緊急減速係数"
+                                                     Min="0.1" Max="0.99" Step="0.05"
+                                                     Variant="Variant.Outlined"
+                                                     HelperText="429 激増時にレートに乗じる係数。SharePoint は Retry-After 待機が主制御なので控えめに設定することを推奨。例: 0.9 = 10%削減。デフォルト: 0.9" />
+                                </MudItem>
+                                <MudItem xs="12" sm="6">
+                                    <MudNumericField @bind-Value="_editRcEmergencyInflightDecay"
+                                                     Label="max_inflight 緊急削減係数"
+                                                     Min="0.1" Max="0.99" Step="0.05"
+                                                     Variant="Variant.Outlined"
+                                                     HelperText="緊急減速時に max_inflight（並列数上限）に乗じる係数。Retry-After が主制御なので控えめに。例: 0.9 = 10%削減。デフォルト: 0.9" />
+                                </MudItem>                                <MudItem xs="12" sm="6">
+                                    <MudSelect @bind-Value="_editRcLatencyMode"
+                                               Label="レイテンシ判定モード"
+                                               Variant="Variant.Outlined"
+                                               HelperText="429 なしでの減速を許可するかどうか。通常は None。">
+                                        <MudSelectItem Value="@("None")">None — レイテンシ判定なし（429専制御、推奨）</MudSelectItem>
+                                        <MudSelectItem Value="@("Baseline")">Baseline — 安定期 P95 の長期 EMA 比で判定</MudSelectItem>
+                                        <MudSelectItem Value="@("Recent")">Recent — 直近笔 vs 前筑 P95 平均比で判定</MudSelectItem>
+                                        <MudSelectItem Value="@("Both")">Both — Baseline OR Recent（誤検知リスクあり）</MudSelectItem>
+                                    </MudSelect>
+                                </MudItem>                            }
                         }
-                        else
-                        {
-                            @* ── 旧来の動的並列制御 ──────────────────────────── *@
                             <MudItem xs="12">
                                 <MudDivider Class="my-2" />
                                 <MudText Typo="Typo.subtitle2" Class="mb-2">動的並列制御（レート制限対応）</MudText>
@@ -344,6 +396,13 @@ else
     private double _editRcMaxDecayFactor;
     private int _editRcInFlightThreshold;
     private int _editRcMaxConcurrency;
+    // HybridRateController 専用フィールド（v0.6.0）
+    private bool _editUseHybridController;
+    private int _editRcCooldownSec;
+    private double _editRcEmergencyDecay;
+    private double _editRcEmergencyInflightDecay;
+    private double _editRcAddStep;
+    private string _editRcLatencyMode = "None";
     // グラフ表示設定（#156/#157）
     private bool _editShowGraphs;
     private int _editGraphColumns;
@@ -412,6 +471,12 @@ else
         _editRcMaxDecayFactor = cfg.RcMaxDecayFactor;
         _editRcInFlightThreshold = cfg.RcInFlightThreshold;
         _editRcMaxConcurrency = cfg.RcMaxConcurrency;
+        _editUseHybridController = cfg.UseHybridController;
+        _editRcCooldownSec = cfg.RcCooldownSec;
+        _editRcEmergencyDecay = cfg.RcEmergencyDecay;
+        _editRcEmergencyInflightDecay = cfg.RcEmergencyInflightDecay;
+        _editRcAddStep = cfg.RcAddStep;
+        _editRcLatencyMode = cfg.RcLatencyMode;
         _editShowGraphs = cfg.ShowGraphs;
         _editGraphColumns = cfg.GraphColumns;
     }
@@ -463,6 +528,12 @@ else
                 RcMaxDecayFactor: _editUseRateControl ? _editRcMaxDecayFactor : null,
                 RcInFlightThreshold: _editUseRateControl ? _editRcInFlightThreshold : null,
                 RcMaxConcurrency: _editUseRateControl ? _editRcMaxConcurrency : null,
+                UseHybridController: _editUseRateControl ? _editUseHybridController : null,
+                RcCooldownSec: (_editUseRateControl && _editUseHybridController) ? _editRcCooldownSec : null,
+                RcEmergencyDecay: (_editUseRateControl && _editUseHybridController) ? _editRcEmergencyDecay : null,
+                RcEmergencyInflightDecay: (_editUseRateControl && _editUseHybridController) ? _editRcEmergencyInflightDecay : null,
+                RcAddStep: (_editUseRateControl && _editUseHybridController) ? _editRcAddStep : null,
+                RcLatencyMode: (_editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null,
                 ShowGraphs: _editShowGraphs,
                 GraphColumns: _editGraphColumns);
             await ConfigService.UpdateConfigAsync(update);

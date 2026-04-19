@@ -31,6 +31,13 @@ public sealed record ConfigDto(
     double RcMaxDecayFactor = 0.9,
     int RcInFlightThreshold = 32,
     int RcMaxConcurrency = 16,
+    // ── HybridRateController 専用パラメーター（v0.6.0 #163）──
+    bool UseHybridController = false,
+    int RcCooldownSec = 20,
+    double RcEmergencyDecay = 0.9,
+    double RcEmergencyInflightDecay = 0.9,
+    double RcAddStep = 1.0,
+    string RcLatencyMode = "None",
     // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
     bool ShowGraphs = true,
     int GraphColumns = 2);
@@ -62,6 +69,13 @@ public sealed record ConfigUpdateDto(
     double? RcMaxDecayFactor = null,
     int? RcInFlightThreshold = null,
     int? RcMaxConcurrency = null,
+    // ── HybridRateController 専用パラメーター（v0.6.0 #163）──
+    bool? UseHybridController = null,
+    int? RcCooldownSec = null,
+    double? RcEmergencyDecay = null,
+    double? RcEmergencyInflightDecay = null,
+    double? RcAddStep = null,
+    string? RcLatencyMode = null,
     // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
     bool? ShowGraphs = null,
     int? GraphColumns = null);
@@ -197,6 +211,12 @@ public sealed class ConfigurationService : IConfigurationService
             var rcMaxDecayFactor = 0.9;
             var rcInFlightThreshold = 32;
             var rcMaxConcurrency = 16;
+            var useHybridController = false;
+            var rcCooldownSec = 20;
+            var rcEmergencyDecay = 0.7;
+            var rcEmergencyInflightDecay = 0.75;
+            var rcAddStep = 1.0;
+            var rcLatencyMode = "None";
             if (m.TryGetProperty("rateControl", out var rcProp) && rcProp.ValueKind == JsonValueKind.Object)
             {
                 useRateControl = rcProp.TryGetProperty("useRateControl", out var urProp) && urProp.ValueKind == JsonValueKind.True;
@@ -215,6 +235,16 @@ public sealed class ConfigurationService : IConfigurationService
                     rcMaxDecayFactor = maxDf;
                 rcInFlightThreshold = GetInt(rcProp, "inFlightThreshold", 32);
                 rcMaxConcurrency = GetInt(rcProp, "maxConcurrency", 16);
+                useHybridController = rcProp.TryGetProperty("useHybridController", out var uhProp) && uhProp.ValueKind == JsonValueKind.True;
+                rcCooldownSec = GetInt(rcProp, "cooldownSec", 20);
+                if (rcProp.TryGetProperty("emergencyDecay", out var edProp) && edProp.TryGetDouble(out var ed))
+                    rcEmergencyDecay = ed;
+                if (rcProp.TryGetProperty("emergencyInflightDecay", out var eidProp) && eidProp.TryGetDouble(out var eid))
+                    rcEmergencyInflightDecay = eid;
+                if (rcProp.TryGetProperty("addStep", out var asProp) && asProp.TryGetDouble(out var addS))
+                    rcAddStep = addS;
+                if (rcProp.TryGetProperty("latencyEvaluationMode", out var lmProp) && lmProp.ValueKind == JsonValueKind.String)
+                    rcLatencyMode = lmProp.GetString() ?? "None";
             }
 
             return new ConfigDto(
@@ -240,6 +270,12 @@ public sealed class ConfigurationService : IConfigurationService
                 RcMaxDecayFactor: rcMaxDecayFactor,
                 RcInFlightThreshold: rcInFlightThreshold,
                 RcMaxConcurrency: rcMaxConcurrency,
+                UseHybridController: useHybridController,
+                RcCooldownSec: rcCooldownSec,
+                RcEmergencyDecay: rcEmergencyDecay,
+                RcEmergencyInflightDecay: rcEmergencyInflightDecay,
+                RcAddStep: rcAddStep,
+                RcLatencyMode: rcLatencyMode,
                 ShowGraphs: !(m.TryGetProperty("showGraphs", out var sgProp) && sgProp.ValueKind == JsonValueKind.False),
                 GraphColumns: Math.Clamp(GetInt(m, "graphColumns", 2), 1, 4));
         }
@@ -274,6 +310,14 @@ public sealed class ConfigurationService : IConfigurationService
             throw new ArgumentException("RcInFlightThreshold は 1 以上である必要があります。", nameof(update));
         if (update.RcMaxConcurrency.HasValue && update.RcMaxConcurrency.Value < 1)
             throw new ArgumentException("RcMaxConcurrency は 1 以上である必要があります。", nameof(update));
+        if (update.RcCooldownSec.HasValue && update.RcCooldownSec.Value < 0)
+            throw new ArgumentException("RcCooldownSec は 0 以上である必要があります。", nameof(update));
+        if (update.RcEmergencyDecay.HasValue && update.RcEmergencyDecay.Value is <= 0 or >= 1)
+            throw new ArgumentException("RcEmergencyDecay は 0 より大きく 1 未満の値を指定してください。", nameof(update));
+        if (update.RcEmergencyInflightDecay.HasValue && update.RcEmergencyInflightDecay.Value is <= 0 or >= 1)
+            throw new ArgumentException("RcEmergencyInflightDecay は 0 より大きく 1 未満の値を指定してください。", nameof(update));
+        if (update.RcAddStep.HasValue && update.RcAddStep.Value <= 0)
+            throw new ArgumentException("RcAddStep は 0 より大きい値を指定してください。", nameof(update));
 
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -357,7 +401,11 @@ public sealed class ConfigurationService : IConfigurationService
                 || update.RcLongWindowSec.HasValue || update.RcEmergencyThresholdPct.HasValue
                 || update.RcSlowdownThresholdPct.HasValue || update.RcDecayK.HasValue
                 || update.RcMinDecayFactor.HasValue || update.RcMaxDecayFactor.HasValue
-                || update.RcInFlightThreshold.HasValue || update.RcMaxConcurrency.HasValue)
+                || update.RcInFlightThreshold.HasValue || update.RcMaxConcurrency.HasValue
+                || update.UseHybridController.HasValue || update.RcCooldownSec.HasValue
+                || update.RcEmergencyDecay.HasValue || update.RcEmergencyInflightDecay.HasValue
+                || update.RcAddStep.HasValue
+                || update.RcLatencyMode is not null)
             {
                 if (m["rateControl"] is not JsonObject rcObj)
                 {
@@ -377,6 +425,12 @@ public sealed class ConfigurationService : IConfigurationService
                 if (update.RcMaxDecayFactor.HasValue) rcObj["maxDecayFactor"] = update.RcMaxDecayFactor.Value;
                 if (update.RcInFlightThreshold.HasValue) rcObj["inFlightThreshold"] = update.RcInFlightThreshold.Value;
                 if (update.RcMaxConcurrency.HasValue) rcObj["maxConcurrency"] = update.RcMaxConcurrency.Value;
+                if (update.UseHybridController.HasValue) rcObj["useHybridController"] = update.UseHybridController.Value;
+                if (update.RcCooldownSec.HasValue) rcObj["cooldownSec"] = update.RcCooldownSec.Value;
+                if (update.RcEmergencyDecay.HasValue) rcObj["emergencyDecay"] = update.RcEmergencyDecay.Value;
+                if (update.RcEmergencyInflightDecay.HasValue) rcObj["emergencyInflightDecay"] = update.RcEmergencyInflightDecay.Value;
+                if (update.RcAddStep.HasValue) rcObj["addStep"] = update.RcAddStep.Value;
+                if (update.RcLatencyMode is not null) rcObj["latencyEvaluationMode"] = update.RcLatencyMode;
             }
 
             // UI 表示設定
