@@ -141,7 +141,7 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
         await _inflightSlots.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await _bucket.AcquireAsync(cost: 1, ct).ConfigureAwait(false);
+            await _bucket.AcquireAsync(1, ct).ConfigureAwait(false);
         }
         catch
         {
