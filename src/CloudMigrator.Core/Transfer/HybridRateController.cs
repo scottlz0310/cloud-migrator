@@ -274,9 +274,20 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
                         var delta = _virtualMaxInflight - target;
                         if (delta > 0)
                         {
-                            // 物理的な WaitAsync は発行せず、論理的な「Release 抑止予約」だけ積む。
-                            // SemaphoreSlim.CurrentCount との競合を避け、Release 時に確実に 1:1 で消化する。
-                            _shrinkDebt += delta;
+                            // 縮小は即時に効かせるため、現在空いている permit はこの場で物理回収する。
+                            // 使用中で回収できない分のみ Release 抑止予約として _shrinkDebt に積む。
+                            // ロック内で Wait(0) するため AcquireAsync の WaitAsync とのレースは発生しない。
+                            var reclaimed = 0;
+                            while (reclaimed < delta && _inflightSlots.Wait(0))
+                            {
+                                reclaimed++;
+                            }
+
+                            var remainingDebt = delta - reclaimed;
+                            if (remainingDebt > 0)
+                            {
+                                _shrinkDebt += remainingDebt;
+                            }
                             _virtualMaxInflight = target;
                         }
                         break;

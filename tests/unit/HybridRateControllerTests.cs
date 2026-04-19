@@ -374,4 +374,74 @@ public sealed class HybridRateControllerTests
         controller.Release();
         controller.Release();
     }
+
+    [Fact]
+    public async Task EmergencyDecrease_WhenIdle_PhysicallyReclaimsAvailablePermits()
+    {
+        // アイドル時（Acquire 中スロットなし）に縮小信号が来た場合、
+        // 余剰 permit は Wait(0) で物理回収され、_shrinkDebt は積まれない。
+        // → 縮小直後に新仮想上限を超えて Acquire できないことで検証する。
+        var settings = MakeSettings(s =>
+        {
+            s.MaxInflight = 4;
+            s.MinInflight = 2;
+            s.EmergencyInflightDecay = 0.5; // 4 → 2
+        });
+        var aimd = new FakeAimd();
+        await using var controller = Build(settings, aimd, new FakeMetrics(), out _);
+
+        // Acquire せず、すべて空き permit のまま縮小
+        aimd.NextSignal = AimdSignal.EmergencyDecrease;
+        controller.RunControlCycle();
+        controller.CurrentMaxInflight.Should().Be(2);
+
+        // 物理回収済みなら 2 個までしか取得できない
+        await controller.AcquireAsync(CancellationToken.None);
+        await controller.AcquireAsync(CancellationToken.None);
+        var third = controller.AcquireAsync(CancellationToken.None);
+        third.IsCompleted.Should().BeFalse("アイドル時縮小後は Wait(0) で物理回収され、新仮想上限 2 を超えて Acquire してはならない");
+
+        controller.Release();
+        await third.WaitAsync(TimeSpan.FromSeconds(2));
+        controller.Release();
+        controller.Release();
+    }
+
+    [Fact]
+    public async Task EmergencyDecrease_PartiallyBusy_ReclaimsAvailableAndAccruesRemainderToShrinkDebt()
+    {
+        // 一部 Acquire 中の状態で縮小すると、空き permit を Wait(0) で先に物理回収し、
+        // 不足分のみ _shrinkDebt に積む。
+        // 上限 4 / 2 個 Acquire 中 / EmergencyDecrease 0.25 → 上限 1（min=1） / delta=3
+        // → 空き 2 を回収、残り 1 を _shrinkDebt に積む
+        var settings = MakeSettings(s =>
+        {
+            s.MaxInflight = 4;
+            s.MinInflight = 1;
+            s.EmergencyInflightDecay = 0.25; // 4 → 1
+        });
+        var aimd = new FakeAimd();
+        await using var controller = Build(settings, aimd, new FakeMetrics(), out _);
+
+        // 2 個だけ Acquire（残り 2 個は空き）
+        await controller.AcquireAsync(CancellationToken.None);
+        await controller.AcquireAsync(CancellationToken.None);
+
+        aimd.NextSignal = AimdSignal.EmergencyDecrease;
+        controller.RunControlCycle();
+        controller.CurrentMaxInflight.Should().Be(1);
+
+        // Acquire 中の 2 個を Release: 1 個は _shrinkDebt 消化、1 個は実 Release
+        controller.Release();
+        controller.Release();
+
+        // 上限 1 を超えて Acquire できないこと
+        await controller.AcquireAsync(CancellationToken.None);
+        var second = controller.AcquireAsync(CancellationToken.None);
+        second.IsCompleted.Should().BeFalse("縮小後 virtualMaxInflight=1 を超えて Acquire してはならない");
+
+        controller.Release();
+        await second.WaitAsync(TimeSpan.FromSeconds(2));
+        controller.Release();
+    }
 }
