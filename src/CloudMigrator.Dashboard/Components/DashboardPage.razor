@@ -296,7 +296,7 @@ else
             <MudItem xs="12" md="6">
                 <MudCard Elevation="2">
                     <MudCardHeader>
-                        <CardHeaderContent><MudText Typo="Typo.subtitle2">スループット (files/min)</MudText></CardHeaderContent>
+                        <CardHeaderContent><MudText Typo="Typo.subtitle2">スループット (files/min)@ThroughputWindowSuffix</MudText></CardHeaderContent>
                     </MudCardHeader>
                     <MudCardContent>
                         <MudChart ChartType="ChartType.Line"
@@ -313,7 +313,7 @@ else
             <MudItem xs="12" md="6">
                 <MudCard Elevation="2">
                     <MudCardHeader>
-                        <CardHeaderContent><MudText Typo="Typo.subtitle2">スループット (bytes/sec)</MudText></CardHeaderContent>
+                        <CardHeaderContent><MudText Typo="Typo.subtitle2">スループット (bytes/sec)@ThroughputWindowSuffix</MudText></CardHeaderContent>
                     </MudCardHeader>
                     <MudCardContent>
                         <MudChart ChartType="ChartType.Line"
@@ -444,6 +444,8 @@ else
 
     // ── RateControl 観測パネル ─────────────────────────────────────────────────
     private bool _useRateControl;
+    private bool _useHybridController;
+    private double _throughputWindowSec; // #159: HybridRateController 経路時のウィンドウ幅（秒）。0 のとき表示しない
     private double _rcCurrentRate = -1;
     private double _rcInFlight = -1;
     private double _rcRate429Short = -1;
@@ -452,6 +454,15 @@ else
     // Config から読み込んだ閾値（429率色分けに使用）
     private double _rcSlowdownThreshold;    // 0–1 スケール
     private double _rcEmergencyThreshold;   // 0–1 スケール
+
+    /// <summary>
+    /// #159: HybridRateController 経路でウィンドウ集計値が記録されている場合、
+    /// スループットカードのタイトルに「（直近 N 秒）」と付記する。
+    /// </summary>
+    private string ThroughputWindowSuffix =>
+        _useRateControl && _useHybridController && _throughputWindowSec > 0
+            ? $"（直近 {_throughputWindowSec:F0} 秒）"
+            : "";
 
     private string HysteresisLabel => _rcHysteresisStateCode switch
     {
@@ -516,6 +527,7 @@ else
         // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
         var opts = OptionsFactory();
         _useRateControl = opts.RateControl.UseRateControl;
+        _useHybridController = opts.RateControl.UseHybridController;
         _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
         _rcEmergencyThreshold = opts.RateControl.EmergencyThreshold;
 
@@ -651,6 +663,10 @@ else
         var bytesData = await TransferStateDb.GetMetricsAsync("throughput_bytes_per_sec", minutes, ct);
         var rlData    = await TransferStateDb.GetMetricsAsync("rate_limit_pct",            minutes, ct);
         var parData   = await TransferStateDb.GetMetricsAsync("current_parallelism",       minutes, ct);
+        // #159: HybridRateController 経路でのみ書き込まれるウィンドウ幅。
+        // 値が無いときは累積平均表示のままにする。
+        var winData   = await TransferStateDb.GetMetricsAsync("throughput_window_sec",     minutes, ct);
+        _throughputWindowSec = winData.Count > 0 ? winData[^1].Value : 0;
 
         if (filesData.Count > 0)
         {

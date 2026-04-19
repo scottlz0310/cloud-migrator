@@ -50,10 +50,20 @@ public sealed class HybridRateControllerTests
             SuccessRate: 1.0,
             AvgLatencyMs: 100.0,
             P95LatencyMs: 100.0,
+            FilesPerSec: 0.0,
+            BytesPerSec: 0.0,
+            WindowSeconds: 30.0,
             Timestamp: DateTimeOffset.UtcNow);
 
+        public long LastBytes { get; private set; }
+        public int SuccessCalls { get; private set; }
+
         public void NotifyRequestSent() { }
-        public void NotifySuccess(TimeSpan latency) { }
+        public void NotifySuccess(TimeSpan latency, long bytes = 0)
+        {
+            SuccessCalls++;
+            LastBytes = bytes;
+        }
         public void NotifyRateLimit(TimeSpan? retryAfter) { }
         public SlidingWindowSnapshot GetSnapshot() => Snapshot;
     }
@@ -443,5 +453,52 @@ public sealed class HybridRateControllerTests
         controller.Release();
         await second.WaitAsync(TimeSpan.FromSeconds(2));
         controller.Release();
+    }
+
+    // ─── #159 ウィンドウスループット ─────────────────────────────
+
+    [Fact]
+    public async Task NotifySuccess_ForwardsBytes_ToSlidingWindowMetrics()
+    {
+        // 検証対象: bytes 透過  目的: HybridRateController が内部 ISlidingWindowMetrics に bytes を渡す
+        var aimd = new FakeAimd();
+        var metrics = new FakeMetrics();
+        var controller = Build(MakeSettings(), aimd, metrics, out _);
+        await using var _disposer = controller;
+
+        controller.NotifyRequestSent();
+        controller.NotifySuccess(TimeSpan.FromMilliseconds(50), bytes: 1024);
+
+        metrics.SuccessCalls.Should().Be(1);
+        metrics.LastBytes.Should().Be(1024);
+    }
+
+    [Fact]
+    public async Task GetCurrentSnapshot_ReturnsMetricsSnapshot()
+    {
+        // 検証対象: GetCurrentSnapshot  目的: ダッシュボード経路から最新スナップショットを取得できる
+        var aimd = new FakeAimd();
+        var metrics = new FakeMetrics
+        {
+            Snapshot = new SlidingWindowSnapshot(
+                SampleCount: 30,
+                HasMinSamples: true,
+                Rate429: 0.0,
+                SuccessRate: 1.0,
+                AvgLatencyMs: 50.0,
+                P95LatencyMs: 80.0,
+                FilesPerSec: 1.5,
+                BytesPerSec: 1500.0,
+                WindowSeconds: 30.0,
+                Timestamp: DateTimeOffset.UtcNow),
+        };
+        var controller = Build(MakeSettings(), aimd, metrics, out _);
+        await using var _disposer = controller;
+
+        var snap = controller.GetCurrentSnapshot();
+
+        snap.FilesPerSec.Should().Be(1.5);
+        snap.BytesPerSec.Should().Be(1500.0);
+        snap.WindowSeconds.Should().Be(30.0);
     }
 }

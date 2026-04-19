@@ -162,11 +162,17 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
     }
 
     /// <inheritdoc/>
-    public void NotifySuccess(TimeSpan latency)
+    public void NotifySuccess(TimeSpan latency, long bytes = 0)
     {
         DecrementIfPositive(ref _activeCount);
-        _metrics.NotifySuccess(latency);
+        _metrics.NotifySuccess(latency, bytes);
     }
+
+    /// <summary>
+    /// 現在のウィンドウ集計スナップショットを返す（#159 ダッシュボード表示用）。
+    /// 制御ループ周期と独立に呼び出してよい。
+    /// </summary>
+    public SlidingWindowSnapshot GetCurrentSnapshot() => _metrics.GetSnapshot();
 
     /// <inheritdoc/>
     public void NotifyCompleted(TimeSpan latency)

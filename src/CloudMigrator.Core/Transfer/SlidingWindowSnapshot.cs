@@ -28,6 +28,19 @@ namespace CloudMigrator.Core.Transfer;
 /// 成功リクエストの P95 レイテンシ（ms）。成功が 0 件なら 0。
 /// AIMD のベースライン比悪化検知（§6.1）に使用する。
 /// </param>
+/// <param name="FilesPerSec">
+/// ウィンドウ内の成功ファイル数 / ウィンドウ秒数。#159 ダッシュボード表示用。
+/// 時間モードではウィンドウ幅を分母とし、件数モードでは <see cref="WindowSeconds"/>
+/// を <c>(最古〜最新成功イベントの時間幅)</c> から算出する。成功が 0 件なら 0。
+/// </param>
+/// <param name="BytesPerSec">
+/// ウィンドウ内の成功合計バイト数 / ウィンドウ秒数。#159 ダッシュボード表示用。
+/// バイト未指定で <see cref="ISlidingWindowMetrics.NotifySuccess"/> された分は 0 として加算される。
+/// </param>
+/// <param name="WindowSeconds">
+/// スループット算出に使った実効ウィンドウ秒数。時間モードでは設定値そのもの、
+/// 件数モードでは最古〜最新成功イベントの時間幅（最低でも 1 秒）。0 件のときは設定値（または 1）。
+/// </param>
 /// <param name="Timestamp">スナップショットを取得した時刻（UTC）。</param>
 public sealed record SlidingWindowSnapshot(
     int SampleCount,
@@ -36,4 +49,7 @@ public sealed record SlidingWindowSnapshot(
     double SuccessRate,
     double AvgLatencyMs,
     double P95LatencyMs,
+    double FilesPerSec,
+    double BytesPerSec,
+    double WindowSeconds,
     DateTimeOffset Timestamp);

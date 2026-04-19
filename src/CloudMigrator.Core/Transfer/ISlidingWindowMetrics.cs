@@ -21,7 +21,11 @@ public interface ISlidingWindowMetrics
 
     /// <summary>転送成功時に呼び出す。レイテンシは平均 / P95 算出に使用する。</summary>
     /// <param name="latency">実測レイテンシ。</param>
-    void NotifySuccess(TimeSpan latency);
+    /// <param name="bytes">
+    /// 転送バイト数（#159 ウィンドウスループット集計用）。
+    /// バイト数を持たない呼び出し（フォルダ作成等）では 0 を渡す。
+    /// </param>
+    void NotifySuccess(TimeSpan latency, long bytes = 0);
 
     /// <summary>429 / 503（Retry-After 含む）を受信した際に呼び出す。</summary>
     /// <param name="retryAfter">サーバーから返された Retry-After（情報用、集計自体には未使用）。</param>

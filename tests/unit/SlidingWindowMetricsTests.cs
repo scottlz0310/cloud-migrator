@@ -311,4 +311,60 @@ public sealed class SlidingWindowMetricsTests
         // 呼び出し側のリストは破壊されない
         values.Should().Equal(5, 1, 4, 2, 3);
     }
+
+    // ─── #159 ウィンドウスループット ─────────────────────────────
+
+    [Fact]
+    public void GetSnapshot_TimeMode_FilesAndBytesPerSec_DividedByWindowSeconds()
+    {
+        // 検証対象: FilesPerSec / BytesPerSec  目的:
+        //   時間モードでは設定ウィンドウ秒（windowSec）を分母として算出する。
+        //   30 秒窓で 60 件成功なら 2 files/sec、合計 6000 bytes なら 200 bytes/sec。
+        var sut = new SlidingWindowMetrics(
+            mode: SlidingWindowMode.Time,
+            windowSec: 30,
+            minSamples: 1);
+
+        for (int i = 0; i < 60; i++)
+        {
+            sut.NotifyRequestSent();
+            sut.NotifySuccess(TimeSpan.FromMilliseconds(10), bytes: 100);
+        }
+
+        var snap = sut.GetSnapshot();
+
+        snap.WindowSeconds.Should().Be(30.0);
+        snap.FilesPerSec.Should().BeApproximately(2.0, 1e-9);
+        snap.BytesPerSec.Should().BeApproximately(200.0, 1e-9);
+    }
+
+    [Fact]
+    public void GetSnapshot_NoSuccess_FilesAndBytesPerSecZero()
+    {
+        // 検証対象: 成功 0 件時の表示  目的: 0 除算せず 0 を返す
+        var sut = new SlidingWindowMetrics(windowSec: 30, minSamples: 1);
+
+        sut.NotifyRequestSent();
+        sut.NotifyRateLimit(null);
+
+        var snap = sut.GetSnapshot();
+        snap.FilesPerSec.Should().Be(0.0);
+        snap.BytesPerSec.Should().Be(0.0);
+        // 設定ウィンドウ秒は維持される
+        snap.WindowSeconds.Should().Be(30.0);
+    }
+
+    [Fact]
+    public void NotifySuccess_DefaultBytes_IsZero()
+    {
+        // 検証対象: 後方互換  目的: 既存呼び出し（bytes 省略）はバイト数 0 として扱われる
+        var sut = new SlidingWindowMetrics(windowSec: 10, minSamples: 1);
+
+        sut.NotifyRequestSent();
+        sut.NotifySuccess(TimeSpan.FromMilliseconds(10));
+
+        var snap = sut.GetSnapshot();
+        snap.BytesPerSec.Should().Be(0.0);
+        snap.FilesPerSec.Should().BeApproximately(0.1, 1e-9); // 1 件 / 10 秒
+    }
 }

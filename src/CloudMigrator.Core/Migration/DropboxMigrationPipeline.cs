@@ -341,7 +341,7 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
                 Interlocked.Increment(ref _completedTransfers);
                 Interlocked.Add(ref _totalBytesTransferred, job.Source.SizeBytes ?? 0);
                 onSuccess();
-                controller?.NotifySuccess(telemetry.UploadWallElapsed);
+                controller?.NotifySuccess(telemetry.UploadWallElapsed, job.Source.SizeBytes ?? 0);
 
                 var elapsedSeconds = Math.Max(0.001, (DateTimeOffset.UtcNow - _pipelineStartTime).TotalSeconds);
                 var filesPerSec = Volatile.Read(ref _completedTransfers) / elapsedSeconds;
@@ -421,11 +421,24 @@ public sealed class DropboxMigrationPipeline : IMigrationPipeline
         var filesPerMin = elapsedSeconds > 0 ? totalNow / elapsedSeconds * 60.0 : 0.0;
         var bytesPerSec = elapsedSeconds > 0 ? Volatile.Read(ref _totalBytesTransferred) / elapsedSeconds : 0.0;
 
+        // #159: HybridRateController 経路ではウィンドウ集計値で上書きする（直近の実効スループット）。
+        // 旧経路は累積平均のまま。Snapshot 取得は制御ループと別タイミングで安全。
+        double? windowSeconds = null;
+        if (controller is HybridRateController hybrid)
+        {
+            var snap = hybrid.GetCurrentSnapshot();
+            filesPerMin = snap.FilesPerSec * 60.0;
+            bytesPerSec = snap.BytesPerSec;
+            windowSeconds = snap.WindowSeconds;
+        }
+
         try
         {
             await _stateDb.RecordMetricAsync("rate_limit_pct", pct, ct).ConfigureAwait(false);
             await _stateDb.RecordMetricAsync("throughput_files_per_min", filesPerMin, ct).ConfigureAwait(false);
             await _stateDb.RecordMetricAsync("throughput_bytes_per_sec", bytesPerSec, ct).ConfigureAwait(false);
+            if (windowSeconds.HasValue)
+                await _stateDb.RecordMetricAsync("throughput_window_sec", windowSeconds.Value, ct).ConfigureAwait(false);
             await _stateDb.RecordMetricAsync(
                 "current_parallelism",
                 (double)(int)Math.Round(controller?.CurrentRateLimit ?? _options.MaxParallelTransfers),
