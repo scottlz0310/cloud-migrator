@@ -444,7 +444,6 @@ else
 
     // ── RateControl 観測パネル ─────────────────────────────────────────────────
     private bool _useRateControl;
-    private bool _useHybridController;
     private double _throughputWindowSec; // #159: HybridRateController 経路時のウィンドウ幅（秒）。0 のとき表示しない
     private double _rcCurrentRate = -1;
     private double _rcInFlight = -1;
@@ -456,11 +455,12 @@ else
     private double _rcEmergencyThreshold;   // 0–1 スケール
 
     /// <summary>
-    /// #159: HybridRateController 経路でウィンドウ集計値が記録されている場合、
-    /// スループットカードのタイトルに「（直近 N 秒）」と付記する。
+    /// #159: ウィンドウ幅メトリクス（HybridRateController 経路でのみ書き込まれる）
+    /// が DB に記録されている場合、スループットカードのタイトルに「（直近 N 秒）」と付記する。
+    /// 設定値ではなく実際のメトリクス有無で判定するため、設定リアルタイム反映時のラベル不整合を防ぐ。
     /// </summary>
     private string ThroughputWindowSuffix =>
-        _useRateControl && _useHybridController && _throughputWindowSec > 0
+        _throughputWindowSec > 0
             ? $"（直近 {_throughputWindowSec:F0} 秒）"
             : "";
 
@@ -527,7 +527,6 @@ else
         // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
         var opts = OptionsFactory();
         _useRateControl = opts.RateControl.UseRateControl;
-        _useHybridController = opts.RateControl.UseHybridController;
         _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
         _rcEmergencyThreshold = opts.RateControl.EmergencyThreshold;
 

@@ -133,17 +133,21 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
             var avgLatency = latencies.Count > 0 ? Average(latencies) : 0.0;
             var p95Latency = latencies.Count > 0 ? Percentile(latencies, 0.95) : 0.0;
 
-            // ウィンドウ秒数: 時間モードでは設定値、件数モードでは最古〜最新成功イベントの実時間幅。
+            // ウィンドウ秒数:
+            //   - 時間モード: 設定 windowSec
+            //   - 件数モード: 成功 2 件以上あれば最古〜最新成功の実時間幅、それ以外は設定 windowSec にフォールバック
+            // 件数モードでも _windowTicks は設定 windowSec を秒換算した値が入っているため、設定窓幅として再利用できる。
             // 0 件 / 1 件のときに 0 除算しないよう最低 1 秒で下限する。
+            var configuredWindowSeconds = (double)_windowTicks / Stopwatch.Frequency;
             double windowSeconds;
             if (_mode == SlidingWindowMode.Time)
             {
-                windowSeconds = (double)_windowTicks / Stopwatch.Frequency;
+                windowSeconds = configuredWindowSeconds;
             }
             else
             {
                 var spanTicks = newestSuccessTicks - oldestSuccessTicks;
-                windowSeconds = spanTicks > 0 ? (double)spanTicks / Stopwatch.Frequency : 1.0;
+                windowSeconds = spanTicks > 0 ? (double)spanTicks / Stopwatch.Frequency : configuredWindowSeconds;
             }
             if (windowSeconds < 1.0) windowSeconds = 1.0;
 

@@ -367,4 +367,24 @@ public sealed class SlidingWindowMetricsTests
         snap.BytesPerSec.Should().Be(0.0);
         snap.FilesPerSec.Should().BeApproximately(0.1, 1e-9); // 1 件 / 10 秒
     }
+
+    [Fact]
+    public void GetSnapshot_CountMode_NoSuccess_WindowSecondsFallsBackToConfigured()
+    {
+        // 検証対象: 件数モードでの windowSeconds フォールバック  目的:
+        //   成功 2 件未満で実時間幅が決まらない場合、設定 windowSec を返す（XML コメントとの整合）。
+        var sut = new SlidingWindowMetrics(
+            mode: SlidingWindowMode.Count,
+            windowSec: 45,
+            maxCount: 100,
+            minSamples: 1);
+
+        sut.NotifyRequestSent();
+        sut.NotifyRateLimit(null);
+
+        var snap = sut.GetSnapshot();
+        snap.WindowSeconds.Should().Be(45.0);
+        snap.FilesPerSec.Should().Be(0.0);
+        snap.BytesPerSec.Should().Be(0.0);
+    }
 }
