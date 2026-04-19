@@ -475,12 +475,13 @@ else
 
     // ── RateControl 観測パネル ─────────────────────────────────────────────────
     private bool _useRateControl;
+    private bool _useHybridController; // UseHybridController=true のとき HybridRateController のメトリクスキーを使う
     private double _throughputWindowSec; // #159: HybridRateController 経路時のウィンドウ幅（秒）。0 のとき表示しない
     private double _rcCurrentRate = -1;
     private double _rcInFlight = -1;
     private double _rcRate429Short = -1;
     private double _rcRate429Long = -1;
-    private int _rcHysteresisStateCode = -1; // -1=未取得, 0=安定, 1=加速, 2=緩減速, 3=緊急減速
+    private int _rcHysteresisStateCode = -1; // RateControlled: -1=未取得, 0=安定, 1=加速, 2=緩減速, 3=緊急減速 / Hybrid: AimdSignal 0=Hold, 1=Emergency, 2=Slow, 3=Stable
     // Config から読み込んだ閾値（429率色分けに使用）
     private double _rcSlowdownThreshold;    // 0–1 スケール
     private double _rcEmergencyThreshold;   // 0–1 スケール
@@ -495,17 +496,34 @@ else
             ? $"（直近 {_throughputWindowSec:F0} 秒）"
             : "";
 
-    private string HysteresisLabel => _rcHysteresisStateCode switch
-    {
-        3 => "緊急減速",
-        2 => "緩減速",
-        1 => "加速",
-        0 => "安定",
-        _ => "—"
-    };
+    private string HysteresisLabel => _useHybridController
+        ? _rcHysteresisStateCode switch  // AimdSignal: 0=Hold, 1=EmergencyDecrease, 2=SlowDecrease, 3=Stable
+        {
+            1 => "緊急減速",
+            2 => "緩減速",
+            3 => "安定",
+            0 => "維持",
+            _ => "—"
+        }
+        : _rcHysteresisStateCode switch  // RateControlledTransferController: 0=安定, 1=加速, 2=緩減速, 3=緊急減速
+        {
+            3 => "緊急減速",
+            2 => "緩減速",
+            1 => "加速",
+            0 => "安定",
+            _ => "—"
+        };
 
-    private Color HysteresisColor => _rcHysteresisStateCode switch
-    {
+    private Color HysteresisColor => _useHybridController
+        ? _rcHysteresisStateCode switch  // AimdSignal
+        {
+            1 => Color.Error,
+            2 => Color.Warning,
+            3 => Color.Success,
+            _ => Color.Default
+        }
+        : _rcHysteresisStateCode switch
+        {
         3 => Color.Error,
         2 => Color.Warning,
         1 => Color.Success,
@@ -558,6 +576,7 @@ else
         // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
         var opts = OptionsFactory();
         _useRateControl = opts.RateControl.UseRateControl;
+        _useHybridController = opts.RateControl.UseRateControl && opts.RateControl.UseHybridController;
         _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
         _rcEmergencyThreshold = opts.RateControl.EmergencyThreshold;
 
@@ -632,15 +651,32 @@ else
         try
         {
             const int windowMinutes = 2;
-            var latest = await TransferStateDb.GetLatestMetricsAsync(
-                ["current_rate_limit", "current_in_flight", "rate_429_short", "rate_429_long", "hysteresis_state_code"],
-                windowMinutes, ct);
+            if (_useHybridController)
+            {
+                // HybridRateController のメトリクスキー（AimdSignal ベース）
+                var latest = await TransferStateDb.GetLatestMetricsAsync(
+                    [HybridRateController.MetricRateTokensPerSec, HybridRateController.MetricMaxInflight,
+                     HybridRateController.MetricRate429, HybridRateController.MetricSignal],
+                    windowMinutes, ct);
 
-            if (latest.TryGetValue("current_rate_limit",    out var rate))    _rcCurrentRate         = rate;
-            if (latest.TryGetValue("current_in_flight",     out var inFlight))_rcInFlight            = inFlight;
-            if (latest.TryGetValue("rate_429_short",        out var s429))    _rcRate429Short        = s429;
-            if (latest.TryGetValue("rate_429_long",         out var l429))    _rcRate429Long         = l429;
-            if (latest.TryGetValue("hysteresis_state_code", out var state))   _rcHysteresisStateCode = (int)Math.Round(state); // 0–3
+                if (latest.TryGetValue(HybridRateController.MetricRateTokensPerSec, out var rate))    _rcCurrentRate = rate;
+                if (latest.TryGetValue(HybridRateController.MetricMaxInflight,      out var inf))     _rcInFlight    = inf;
+                if (latest.TryGetValue(HybridRateController.MetricRate429,          out var r429))    { _rcRate429Short = r429; _rcRate429Long = r429; }
+                if (latest.TryGetValue(HybridRateController.MetricSignal,           out var sig))     _rcHysteresisStateCode = (int)Math.Round(sig);
+            }
+            else
+            {
+                // RateControlledTransferController のメトリクスキー（ヒステリシスコード）
+                var latest = await TransferStateDb.GetLatestMetricsAsync(
+                    ["current_rate_limit", "current_in_flight", "rate_429_short", "rate_429_long", "hysteresis_state_code"],
+                    windowMinutes, ct);
+
+                if (latest.TryGetValue("current_rate_limit",    out var rate))    _rcCurrentRate         = rate;
+                if (latest.TryGetValue("current_in_flight",     out var inFlight))_rcInFlight            = inFlight;
+                if (latest.TryGetValue("rate_429_short",        out var s429))    _rcRate429Short        = s429;
+                if (latest.TryGetValue("rate_429_long",         out var l429))    _rcRate429Long         = l429;
+                if (latest.TryGetValue("hysteresis_state_code", out var state))   _rcHysteresisStateCode = (int)Math.Round(state); // 0–3
+            }
         }
         catch (OperationCanceledException)
         {

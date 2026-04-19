@@ -353,8 +353,8 @@ public sealed class RateControlSettings
     /// <summary>急減速の 429 率閾値（0–1）。この値を超えると <c>EmergencyDecrease</c> を発動する。デフォルト 0.10（10%）</summary>
     public double AimdEmergencyThreshold { get; set; } = 0.10;
 
-    /// <summary>急減速係数（0 &lt; factor &lt; 1）。<c>rate *= EmergencyDecay</c>。デフォルト 0.7</summary>
-    public double EmergencyDecay { get; set; } = 0.7;
+    /// <summary>急減速係数（0 &lt; factor &lt; 1）。<c>rate *= EmergencyDecay</c>。デフォルト 0.9</summary>
+    public double EmergencyDecay { get; set; } = 0.9;
 
     /// <summary>緩減速係数（0 &lt; factor &lt; 1）。<c>rate *= SlowDecay</c>。デフォルト 0.9</summary>
     public double SlowDecay { get; set; } = 0.9;
@@ -387,8 +387,8 @@ public sealed class RateControlSettings
     /// <summary>急減速後に緩増加を凍結する時間（秒）。スラッシング防止。デフォルト 20</summary>
     public int CooldownSec { get; set; } = 20;
 
-    /// <summary>レイテンシ悪化判定モード。デフォルト <see cref="LatencyEvaluationMode.Baseline"/></summary>
-    public LatencyEvaluationMode LatencyEvaluationMode { get; set; } = LatencyEvaluationMode.Baseline;
+    /// <summary>レイテンシ悪化判定モード。デフォルト <see cref="LatencyEvaluationMode.None"/></summary>
+    public LatencyEvaluationMode LatencyEvaluationMode { get; set; } = LatencyEvaluationMode.None;
 
     // --- v0.6.0 ハイブリッド制御統合設定（#163）---
     // スループット主制御（WeightedTokenBucket）＋並列数補助制御（max_inflight 動的調整）の
@@ -414,9 +414,9 @@ public sealed class RateControlSettings
 
     /// <summary>
     /// <c>EmergencyDecrease</c> 信号で <c>max_inflight</c> に乗じる削減係数（0 &lt; factor &lt; 1）。
-    /// <c>max_inflight = max(floor(max_inflight * factor), minInflight)</c>。デフォルト 0.75
+    /// <c>max_inflight = max(floor(max_inflight * factor), minInflight)</c>。デフォルト 0.9
     /// </summary>
-    public double EmergencyInflightDecay { get; set; } = 0.75;
+    public double EmergencyInflightDecay { get; set; } = 0.9;
 }
 
 /// <summary>

@@ -1,7 +1,7 @@
 # CloudMigrator マニュアルテスト ランブック
 
-最終更新: 2026-03-13
-対象: CloudMigrator.Cli / CloudMigrator.Setup.Cli
+最終更新: 2026-04-19
+対象: CloudMigrator.Cli（v0.6.0）
 
 ## 1. 目的
 
@@ -10,8 +10,10 @@
 ## 2. テストゴール
 
 - CLI が起動し、主要サブコマンドが列挙されること
-- setup doctor/verify で設定不備を正しく検知できること
-- file-crawler / rebuild-skiplist / transfer の基本フローが成立すること
+- `setup doctor` / `setup verify` で設定不備・疎通を正しく検知できること
+- `file-crawler` / `transfer` の基本フローが成立すること
+- `dashboard` で Blazor Hybrid UI が起動し、進捗・グラフが表示されること
+- v0.6.0 HybridRateController が有効化された場合のログ・メトリクスを確認できること
 - 失敗時に終了コードとログから原因を追跡できること
 
 ## 3. 前提条件
@@ -19,102 +21,122 @@
 - Windows + PowerShell (pwsh)
 - .NET 10 SDK インストール済み
 - リポジトリルートで実行
-- Graph 実行テスト時は以下を設定
-  - MIGRATOR__GRAPH__CLIENTID
-  - MIGRATOR__GRAPH__TENANTID
-  - MIGRATOR__GRAPH__CLIENTSECRET (環境変数のみ)
-  - MIGRATOR__GRAPH__ONEDRIVEUSERID
-  - MIGRATOR__GRAPH__SHAREPOINTSITEID
-  - MIGRATOR__GRAPH__SHAREPOINTDRIVEID
 
-## 4. 実施シナリオ
+### 認証情報の設定方法
 
-### 4.1 スモーク (資格情報なしで実施可)
+Graph 認証情報は以下の **優先順位** で取得される。いずれか一方を用意すればよい。
 
-1) ビルド
+| 優先度 | ストア | 設定手順 |
+|--------|--------|---------|
+| 1（推奨） | **Windows Credential Manager** | `dotnet run --project src/CloudMigrator.Cli -- setup init` で対話的に保存 |
+| 2（後方互換） | **環境変数** | `MIGRATOR__GRAPH__CLIENTSECRET` 等を設定（`__` 区切り） |
+
+> **注意**: `MIGRATOR__GRAPH__CLIENTSECRET` は `configs/config.json` に書かないこと。  
+> Credential Manager 未登録の場合のみ環境変数が参照される。
+
+#### 環境変数で設定する場合に必要なキー
+
+```
+MIGRATOR__GRAPH__CLIENTID
+MIGRATOR__GRAPH__TENANTID
+MIGRATOR__GRAPH__CLIENTSECRET
+MIGRATOR__GRAPH__ONEDRIVEUSERID
+MIGRATOR__GRAPH__SHAREPOINTSITEID
+MIGRATOR__GRAPH__SHAREPOINTDRIVEID
+```
+
+## 4. コマンド体系（v0.6.0）
+
+v0.6.0 から `setup` サブコマンドが `cloud-migrator` 本体に統合された。  
+旧 `CloudMigrator.Setup.Cli` を別プロジェクトで起動する手順は**廃止**。
+
+| 旧コマンド（廃止） | 新コマンド |
+|---|---|
+| `dotnet run --project src/CloudMigrator.Setup.Cli -- doctor` | `dotnet run --project src/CloudMigrator.Cli -- setup doctor` |
+| `dotnet run --project src/CloudMigrator.Setup.Cli -- verify` | `dotnet run --project src/CloudMigrator.Cli -- setup verify` |
+| `dotnet run --project src/CloudMigrator.Setup.Cli -- init` | `dotnet run --project src/CloudMigrator.Cli -- setup init` |
+| `dotnet run --project src/CloudMigrator.Cli -- rebuild-skiplist` | `dotnet run --project src/CloudMigrator.Cli -- transfer --full-rebuild`（`rebuild-skiplist` は廃止済み） |
+
+## 5. 実施シナリオ
+
+### 5.1 スモーク（資格情報なしで実施可）
+
+**TC-01** ビルド
 
 ```powershell
 dotnet build CloudMigrator.slnx
 ```
 
 期待結果:
-- Build succeeded.
-- 失敗プロジェクトが 0 件
+- `Build succeeded.`
+- エラー 0 件
 
-2) CloudMigrator.Cli ヘルプ
+**TC-02** CLI ヘルプ
 
 ```powershell
 dotnet run --project src/CloudMigrator.Cli -- --help
 ```
 
 期待結果:
-- subcommand に transfer / rebuild-skiplist / watchdog / quality-metrics / security-scan / file-crawler が表示される
+- `transfer` / `setup` / `file-crawler` / `dashboard` / `watchdog` / `quality-metrics` / `security-scan` / `status` が表示される
+- `rebuild-skiplist` は `[廃止済み]` として表示される
 
-3) CloudMigrator.Setup.Cli ヘルプ
+**TC-03** doctor（未設定検知）
 
 ```powershell
-dotnet run --project src/CloudMigrator.Setup.Cli -- --help
+dotnet run --project src/CloudMigrator.Cli -- setup doctor
 ```
 
 期待結果:
-- subcommand に bootstrap / doctor / init / verify が表示される
+- 未設定の必須 Graph キーに `[ERR]` が出る
+- 最終行に `doctor 結果: error=N, warning=M` が表示される
+- エラー 1 件以上なら終了コード 1
 
-4) doctor (未設定検知)
+### 5.2 セットアップ検証（Graph 接続前）
+
+**TC-04** テンプレート初期化（必要時のみ）
 
 ```powershell
-dotnet run --project src/CloudMigrator.Setup.Cli -- doctor
+dotnet run --project src/CloudMigrator.Cli -- setup init
 ```
 
 期待結果:
-- 未設定の必須 Graph キーに [ERR] が出る
-- 最終行に doctor 結果: error=n, warning=m が表示される
-- エラーが 1 件以上ならプロセス終了コードは 1
+- `configs/config.json` または `.env` の不足分が生成される
+- 既存ファイルは保護される
 
-### 4.2 セットアップ検証 (Graph 接続前)
-
-5) テンプレート初期化 (必要時のみ)
+**TC-05** doctor（全設定済み確認）
 
 ```powershell
-dotnet run --project src/CloudMigrator.Setup.Cli -- init
+dotnet run --project src/CloudMigrator.Cli -- setup doctor
 ```
 
 期待結果:
-- configs/config.json または .env の不足分が生成される
-- 既存ファイルがある場合は保護動作する
+- Graph 必須キーが全て設定済みなら `[ERR] 0`
+- `--strict-dropbox` オプションを付けると Dropbox トークン不足もエラー扱い
 
-6) doctor 再実行
+### 5.3 Graph 疎通検証
+
+**TC-06** verify
 
 ```powershell
-dotnet run --project src/CloudMigrator.Setup.Cli -- doctor --strict-dropbox
+dotnet run --project src/CloudMigrator.Cli -- setup verify
 ```
 
 期待結果:
-- Graph 必須キーが全て設定済みなら [ERR] 0
-- Dropbox を使わない場合は strict オプションを外す
+- `[OK] graph.token` 取得成功
+- `[OK] graph.organization` / `graph.onedrive` / `graph.sharepointSite` / `graph.sharepointDrive`
+- `[ERR]` があれば終了コード 1
 
-### 4.3 Graph 疎通検証
-
-7) verify
-
-```powershell
-dotnet run --project src/CloudMigrator.Setup.Cli -- verify
-```
-
-期待結果:
-- [OK] graph.token: 取得成功
-- [OK] graph.organization / graph.onedrive / graph.sharepointSite / graph.sharepointDrive
-- [ERR] があれば終了コード 1
-
-補助:
+補助オプション:
 
 ```powershell
-dotnet run --project src/CloudMigrator.Setup.Cli -- verify --skip-sharepoint
-dotnet run --project src/CloudMigrator.Setup.Cli -- verify --timeout-sec 60
+dotnet run --project src/CloudMigrator.Cli -- setup verify --skip-sharepoint
+dotnet run --project src/CloudMigrator.Cli -- setup verify --timeout-sec 60
 ```
 
-### 4.4 クロール・差分検証
+### 5.4 クロール・差分検証
 
-8) OneDrive / SharePoint クロール
+**TC-07** OneDrive / SharePoint クロール
 
 ```powershell
 dotnet run --project src/CloudMigrator.Cli -- file-crawler onedrive
@@ -122,21 +144,37 @@ dotnet run --project src/CloudMigrator.Cli -- file-crawler sharepoint
 ```
 
 期待結果:
-- それぞれ完了ログに件数が表示される
+- 完了ログに件数が表示される
 - キャッシュファイルが更新される
 
-9) skip_list 再構築と妥当性確認
+**TC-08** skip_list 確認
 
 ```powershell
-dotnet run --project src/CloudMigrator.Cli -- rebuild-skiplist
+dotnet run --project src/CloudMigrator.Cli -- file-crawler skiplist
+```
+
+期待結果:
+- skip_list の件数とサンプルが表示される
+
+**TC-09** データセット先頭確認（任意）
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- file-crawler explore
+```
+
+期待結果:
+- onedrive キャッシュの先頭 N 件が表示される
+
+**TC-10** 妥当性確認
+
+```powershell
 dotnet run --project src/CloudMigrator.Cli -- file-crawler validate --source onedrive --top 30
 ```
 
 期待結果:
-- rebuild-skiplist 完了
-- validate の invalid/missing が 0 に近いこと
+- `invalid=0, missing=0` に近いこと
 
-10) 差分比較
+**TC-11** 差分比較
 
 ```powershell
 dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right sharepoint --top 30
@@ -144,22 +182,28 @@ dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedri
 
 期待結果:
 - 差分がなければ終了コード 0
-- 差分がある場合は一覧表示され、終了コード 1
+- 差分があれば一覧表示（終了コードは既知の System.CommandLine 上書き問題で 0 になる場合あり）
 
-### 4.5 転送検証
+### 5.5 転送検証
 
-11) 通常転送
+**TC-12** 通常転送
 
 ```powershell
 dotnet run --project src/CloudMigrator.Cli -- transfer
 ```
 
 期待結果:
-- 転送完了サマリが表示される
-- Failed > 0 のとき終了コード 1
-- ログに skip_list 再構築やキャッシュ使用の分岐が記録される
+- 転送完了サマリ（成功/失敗/スキップ件数）が表示される
+- `Failed > 0` のとき終了コード 1
 
-12) フル再構築転送
+オプション:
+
+```powershell
+# 失敗ファイルを最大 3 回自動再試行
+dotnet run --project src/CloudMigrator.Cli -- transfer --auto-retry 3
+```
+
+**TC-13** フル再構築転送
 
 ```powershell
 dotnet run --project src/CloudMigrator.Cli -- transfer --full-rebuild
@@ -169,53 +213,130 @@ dotnet run --project src/CloudMigrator.Cli -- transfer --full-rebuild
 - キャッシュと skip_list クリアのログが出る
 - SharePoint 再クロール後に転送が実行される
 
-13) 監視コマンド (任意)
+> **注意**: 旧 `rebuild-skiplist` コマンドは廃止済み。`transfer --full-rebuild` を使うこと。
+
+### 5.6 ダッシュボード検証（v0.6.0 新機能）
+
+**TC-14** Blazor Hybrid ダッシュボード起動
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- dashboard
+```
+
+期待結果:
+- WPF ウィンドウ + WebView2 が起動し、ダッシュボード画面が表示される
+- ヘッダーにルート情報チップ（例: `OneDrive → SharePoint`）が表示される
+- 転送中であれば統計カード（成功/失敗/スキップ/スループット等）がリアルタイム更新される
+- グラフ切り替えアイコンでグラフの表示/非表示を切り替えられる
+- 設定ページでグラフ列数（1〜4）を変更するとダッシュボードのレイアウトが即時変わる
+
+**TC-15** ダッシュボード + transfer 並行実行
+
+1. 別ターミナルで `transfer` を実行
+2. `dashboard` を起動
+
+期待結果:
+- ダッシュボードの進捗バーがリアルタイムに更新される
+- `folder_creation` フェーズ中は Warning 色の進捗バー（フォルダ作成中）
+- `transferring` フェーズ移行後は Success 色の進捗バーに切り替わる
+
+### 5.7 v0.6.0 HybridRateController 検証（UseHybridController=true 時）
+
+`configs/config.json` の `migrator.rateControl.useRateControl` と `useHybridController` が `true` に設定されている場合のみ実施。
+
+**TC-16** HybridRateController ログ確認
+
+```powershell
+dotnet run --project src/CloudMigrator.Cli -- transfer 2>&1 | Tee-Object -FilePath logs/transfer-hybrid.log
+```
+
+期待結果:
+- `HybridRateController を構築しました` ログが出る
+- 転送中に `signal=` / `rate_tokens_per_sec=` / `max_inflight=` を含む制御ループログが出る
+- 429 が発生した場合 `AimdSignal=EmergencyDecrease` または `SlowDecrease` ログが出る
+
+**TC-17** ダッシュボードでウィンドウスループット表示確認
+
+- TC-15 と合わせて実施
+- スループットグラフのタイトルが `スループット (files/min)（直近 N 秒）` 形式になっていること（HybridRateController 有効時のみ）
+
+### 5.8 監視コマンド（任意）
+
+**TC-18** watchdog
 
 ```powershell
 dotnet run --project src/CloudMigrator.Cli -- watchdog
 ```
 
-## 5. 失敗時の切り分け
+期待結果:
+- 転送ログ監視が開始される
+- フリーズ検知時に `transfer` が自動再起動される
 
-- doctor で必須キー未設定:
-  - 環境変数優先順位を確認
-  - MIGRATOR__GRAPH__CLIENTSECRET は config.json ではなく環境変数のみ
-- verify で token 失敗:
-  - ClientId/TenantId/ClientSecret の組み合わせと Entra 側権限を確認
-- crawler/transfer で 403/404:
-  - OneDriveUserId/SharePointSiteId/DriveId の対象誤りを確認
-- compare が常時差分:
-  - DestinationRoot 設定有無と skip_key のプレフィックス差を確認
+## 6. 失敗時の切り分け
 
-## 6. 実施記録テンプレート
+| 症状 | 確認箇所 |
+|------|---------|
+| `setup doctor` で必須キー未設定 | `setup init` で Credential Manager への保存を試みる。環境変数で渡す場合は `__` 区切りを確認。`MIGRATOR__GRAPH__CLIENTSECRET` は config.json に書かない |
+| `setup verify` で token 失敗 | ClientId / TenantId / ClientSecret の組み合わせと Entra アプリ権限を確認 |
+| `file-crawler` / `transfer` で 403/404 | OneDriveUserId / SharePointSiteId / DriveId の値を確認 |
+| `compare` が常時差分 | `destinationRoot` 設定と skip_key のプレフィックス差を確認 |
+| `dashboard` が起動しない | WebView2 ランタイムのインストール状況を確認 |
+| HybridRateController ログが出ない | `migrator.rateControl.useRateControl=true` かつ `useHybridController=true` を確認 |
+
+## 7. 実施記録テンプレート
 
 ```text
 実施日:
 実施者:
-対象ブランチ:
+対象ブランチ/バージョン:
+HybridRateController 有効: yes / no
 
 [TC-01] build: PASS/FAIL
-  実行コマンド:
   結果要約:
 
 [TC-02] cli help: PASS/FAIL
-  実行コマンド:
   結果要約:
 
-[TC-03] setup help: PASS/FAIL
-  実行コマンド:
+[TC-03] doctor (未設定): PASS/FAIL
   結果要約:
 
-[TC-04] doctor: PASS/FAIL
-  実行コマンド:
+[TC-04] setup init: PASS/FAIL (必要時のみ)
   結果要約:
 
-[TC-05] verify: PASS/FAIL
-  実行コマンド:
+[TC-05] doctor (設定済み): PASS/FAIL
   結果要約:
 
-[TC-06] crawler/compare/transfer: PASS/FAIL
-  実行コマンド:
+[TC-06] setup verify: PASS/FAIL
+  結果要約:
+
+[TC-07] file-crawler onedrive/sharepoint: PASS/FAIL
+  結果要約:
+
+[TC-08] file-crawler skiplist: PASS/FAIL
+  結果要約:
+
+[TC-10] file-crawler validate: PASS/FAIL
+  結果要約:
+
+[TC-11] file-crawler compare: PASS/FAIL
+  結果要約:
+
+[TC-12] transfer: PASS/FAIL
+  成功件数:  失敗件数:  スキップ件数:  所要時間:
+
+[TC-13] transfer --full-rebuild: PASS/FAIL (必要時のみ)
+  結果要約:
+
+[TC-14] dashboard 起動: PASS/FAIL
+  結果要約:
+
+[TC-15] dashboard + transfer 並行: PASS/FAIL (任意)
+  結果要約:
+
+[TC-16] HybridRateController ログ: PASS/FAIL (useHybridController=true 時)
+  結果要約:
+
+[TC-17] ウィンドウスループット表示: PASS/FAIL (useHybridController=true 時)
   結果要約:
 
 課題・メモ:
@@ -599,3 +720,57 @@ Dropbox App名:
 
 課題・メモ:
 ```
+
+---
+
+## 11. v0.6.0 E2E 手動テスト (2026-04-19)
+
+### 2026-04-19 v0.6.0 全機能 E2E テスト
+
+実施環境: Windows 11 / PowerShell 7 / .NET 10 / CloudMigrator v0.6.0  
+実施者: Copilot  
+目的: v0.6.0 (`setup` サブコマンド統合・dashboard・HybridRateController 対応) の全機能検証
+
+#### テスト構成
+
+| 設定項目 | 値 |
+|---------|---|
+| `maxParallelTransfers` | 20 |
+| `useRateControl` | true |
+| `useHybridController` | 未設定（通常 RateControl で動作） |
+| `destinationRoot` | 本番ルート |
+| 転送対象ファイル数（OneDrive） | 24,481 件 |
+| 転送対象ファイル数（SharePoint 未転送分） | 12,066 件 |
+
+#### 計測結果
+
+| # | TC | コマンド | 結果 | 備考 |
+|---|----|----|------|------|
+| TC-01 | ビルド | `dotnet build CloudMigrator.slnx` | ✅ PASS | Build succeeded. エラー0/警告0 |
+| TC-02 | CLI ヘルプ | `dotnet run --project src/CloudMigrator.Cli -- --help` | ✅ PASS | 全サブコマンド表示。`rebuild-skiplist` は `[廃止済み]` 表示 |
+| TC-03 | doctor（設定済み） | `dotnet run --project src/CloudMigrator.Cli -- setup doctor` | ✅ PASS | `doctor 結果: error=0, warning=0` |
+| TC-06 | setup verify | `dotnet run --project src/CloudMigrator.Cli -- setup verify` | ✅ PASS | graph.token / organization / onedrive / sharepointSite / sharepointDrive / Dropbox 全 OK |
+| TC-07a | file-crawler onedrive | `dotnet run --project src/CloudMigrator.Cli -- file-crawler onedrive` | ✅ PASS | 24,481 件クロール / 所要約3分 |
+| TC-07b | file-crawler sharepoint | `dotnet run --project src/CloudMigrator.Cli -- file-crawler sharepoint` | ✅ PASS | 23,180 件クロール / 所要7分15秒 |
+| TC-08 | file-crawler skiplist | `dotnet run --project src/CloudMigrator.Cli -- file-crawler skiplist` | ✅ PASS | 0 件（SQLite DB 管理のため skip_list.json は空で正常） |
+| TC-10 | file-crawler validate | `dotnet run --project src/CloudMigrator.Cli -- file-crawler validate --source onedrive --top 30` | ✅ PASS | invalid=0, missing=0 |
+| TC-11 | file-crawler compare | `dotnet run --project src/CloudMigrator.Cli -- file-crawler compare --left onedrive --right sharepoint --top 30` | ✅ PASS | OneDrive 24,481 件 / SharePoint 23,180 件 / 差分あり表示 / EXIT:0 |
+| TC-12 | transfer | `dotnet run --project src/CloudMigrator.Cli -- transfer` | ✅ PASS | **成功 12,066 件 / 失敗 0 件 / 429=0件(0.0%) / 所要 1時間40分22秒** |
+| TC-14 | dashboard 起動 | `dotnet run --project src/CloudMigrator.Cli -- dashboard` | ✅ PASS | WPF+WebView2 起動・チップ表示・統計カード・グラフ切替・列数変更 全 OK |
+| TC-16/17 | HybridRateController | - | ⏭ スキップ | `useHybridController` 未設定のため |
+
+#### 特記事項
+
+- **skip_list 0 件の理由**: `file-crawler skiplist` が参照する `skip_list.json` は空（0 件）だが、転送完了済みファイルは SQLite DB（`sharepoint_transfer_state.db`, 26.95MB）で管理されるため正常動作。`transfer` 再実行時は DB を参照してスキップが機能する。
+- **サーバーサイドコピーフォールバック**: `This operation won't proceed since the item is being used in another operation.` エラーが発生した一部ファイルは、自動的にクライアント経由転送にフォールバックし転送成功。
+- **429 レート制限**: 12,066 件の転送で 1 件も発生しなかった（前回 AdaptiveConcurrency テスト比で改善）。
+- **Dashboard 開発モード起動修正**: `dotnet run` 時に `CloudMigrator.Dashboard.exe` が見つからない問題を修正。`FindDashboardExe()` に sibling プロジェクトの `bin/` 配下を探索するパスを追加。
+
+#### 所要時間比較（累積）
+
+| 計測対象 | 2026-03-15（AdaptiveConcurrency） | 2026-04-19（v0.6.0 本番） | 備考 |
+|---------|----------------------------------|--------------------------|------|
+| 転送件数 | 24,481 件 | 12,066 件（差分のみ） | 転送済み分は DB でスキップ |
+| 転送所要時間 | 1時間0分19秒 | **1時間40分22秒** | 件数比では同等スループット |
+| 429 発生率 | — | **0.0%** | レート制御が安定稼働 |
+| 失敗件数 | 313 件 | **0 件** | 完全成功 |

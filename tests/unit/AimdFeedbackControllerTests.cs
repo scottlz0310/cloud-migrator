@@ -323,9 +323,9 @@ public sealed class AimdFeedbackControllerTests
     }
 
     [Fact]
-    public void Evaluate_EmergencyDecrease_FiresDuringCooldown()
+    public void Evaluate_EmergencyDecrease_HoldsDuringCooldown()
     {
-        // 検証対象: クールダウン中でも急減速は発動  目的: クールダウンは stable 抑制のみで decrease は通常動作
+        // 検証対象: クールダウン中の 429  目的: 1回削減後はクールダウン中に Hold を返しレートを変えない（様子見）
         var clock = new FakeClock();
         var sut = new AimdFeedbackController(MakeSettings(), clock.Now);
 
@@ -336,8 +336,8 @@ public sealed class AimdFeedbackControllerTests
 
         clock.AdvanceSeconds(5); // クールダウン中
         var r2 = sut.Evaluate(MakeSnapshot(rate429: 0.5));
-        r2.Signal.Should().Be(AimdSignal.EmergencyDecrease);
-        r2.NewRate.Should().BeLessThan(rateAfterFirst);
+        r2.Signal.Should().Be(AimdSignal.Hold);   // クールダウン中は Hold で様子見
+        r2.NewRate.Should().Be(rateAfterFirst);   // レートはそれ以上下げない
         r2.InCooldown.Should().BeTrue();
     }
 

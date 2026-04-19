@@ -9,6 +9,43 @@
 
 ### Added
 
+- **HybridRateController 設定メニュー対応**（SettingsPage）
+  - 設定ページの「HybridRateController（AIMD）」セクションに以下6項目を追加:
+    `UseHybridController`（スイッチ）/ `CooldownSec`（クールダウン秒）/ `EmergencyDecay`（緊急減速係数）/ `EmergencyInflightDecay`（緊急インフライト減速係数）/ `AddStep`（安定時増速ステップ）/ `LatencyEvaluationMode`（ドロップダウン: None / Baseline / Recent / Both、現在のデフォルトは `None`）
+  - `ConfigDto` / `ConfigUpdateDto` に対応フィールドを追加（`RcCooldownSec` / `RcEmergencyDecay` / `RcEmergencyInflightDecay` / `RcAddStep` / `RcLatencyMode` / `UseHybridController`）
+  - `ConfigurationService.GetConfigAsync` / `UpdateConfigAsync` で読み書き実装。バリデーション: `CooldownSec≥0` / `EmergencyDecay∈(0,1)` / `EmergencyInflightDecay∈(0,1)` / `AddStep>0` / `RcLatencyMode∈{None,Baseline,Recent,Both}`
+
+- **`LatencyEvaluationMode.None` 追加**（#162）
+  - `LatencyEvaluationMode` enum の先頭に `None`（レイテンシ判定なし、429専制御）を追加
+  - `AimdFeedbackController` のデフォルトを `LatencyMode = LatencyEvaluationMode.None` に変更
+  - SharePoint は Retry-After が主制御のため SlowDecrease を発動しない設計に変更
+
+### Changed
+
+- **`EmergencyDecay` / `EmergencyInflightDecay` デフォルト値を緩和**
+  - `MigratorOptions.RateControl.EmergencyDecay`: 0.7 → **0.9**（10% 削減）
+  - `MigratorOptions.RateControl.EmergencyInflightDecay`: 0.75 → **0.9**（10% 削減）
+  - SharePoint は Retry-After ヘッダーが主制御のため、AIMD 補助削減は控えめに設定
+
+- **HybridRateController 制御ログを `LogInformation` に昇格**
+  - 制御サイクルで `EmergencyDecrease` / `SlowDecrease` / `Stable` 信号発生時のみ信号・レート・429率・P95 を `LogInformation` で出力（旧: `LogDebug`）
+
+### Fixed
+
+- **`AimdFeedbackController`: クールダウン中の429でも `Hold` を返す修正**
+  - クールダウン中に新たな429が発生しても `EmergencyDecrease` ではなく `Hold` を返すよう修正
+  - 二重クールダウンによる過度な減速を防止
+
+- **Dashboard リアルタイムモニタ: HybridRateController のメトリクスキー不一致修正**
+  - `UseHybridController=true` 時、DB から読むキーを `HybridRateController` の出力キーに合わせて切り替え
+    - `current_rate_limit` → `rate_tokens_per_sec` / `current_in_flight` → `max_inflight` / `rate_429_short+long` → `rate_429` / `hysteresis_state_code` → `signal`
+  - `HysteresisLabel` / `HysteresisColor` も `AimdSignal`（0=Hold/維持, 1=緊急減速, 2=緩減速, 3=安定）の意味に対応
+  - `_useHybridController` フラグを `RefreshAllAsync` で設定し、ポーリングごとに自動切り替え
+
+---
+
+### Added (継続)
+
 - **ルート情報をダッシュボードに常時表示**（#154）
   - `DashboardPage` に `DiscoveryConfigDto` の読み込みを追加（`IConfigurationService` inject）
   - ページヘッダーにルート情報チップ（例: "OneDrive → SharePoint"）を常時表示
@@ -34,7 +71,7 @@
   - `transferring` フェーズ（フォルダ作成完了済み）は「フォルダ作成完了 / ファイル転送進捗」キャプション＋SuccessColor の進捗バーに自動切り替え
   - 従来の独立フォルダ進捗カードを廃止し、メイン進捗カードと統合してスペースを有効活用
 
-
+- **スループット表示を制御窓ベースに変更**（#159）
   - `ISlidingWindowMetrics.NotifySuccess(latency, bytes=0)` overload と `SlidingWindowSnapshot` 拡張（`FilesPerSec` / `BytesPerSec` / `WindowSeconds`）
   - `HybridRateController` に `GetCurrentSnapshot()` を追加し、`NotifySuccess` でバイト数を内部メトリクスへ透過
   - Dropbox / SharePoint パイプライン: `controller is HybridRateController` の場合、`throughput_files_per_min` / `throughput_bytes_per_sec` をウィンドウ集計値で上書きし、`throughput_window_sec` を併記

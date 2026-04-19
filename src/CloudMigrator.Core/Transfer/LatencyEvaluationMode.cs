@@ -3,7 +3,7 @@ namespace CloudMigrator.Core.Transfer;
 /// <summary>
 /// AIMD フィードバック制御のレイテンシ悪化判定モード（#162）。
 /// <para>
-/// 設計書§6.1 で 3 方式を想定している。デフォルトは <see cref="Baseline"/>（長期 EMA 比較）。
+/// 設計書§6.1 で 3 方式を想定している。デフォルトは <see cref="None"/>（レイテンシ判定無効）。
 /// v0.6.0 では急激な変化は主に <c>429_rate &gt; emergencyThreshold</c> で捕捉する方針のため、
 /// レイテンシ判定は <c>slow_decrease</c> 用の補助信号として誤検知を抑えたい場面では
 /// <see cref="Baseline"/> が適する。環境によって応答性が欲しい場合は <see cref="Recent"/>・
@@ -13,7 +13,13 @@ namespace CloudMigrator.Core.Transfer;
 public enum LatencyEvaluationMode
 {
     /// <summary>
-    /// ベースライン比判定（デフォルト）。
+    /// レイテンシ判定を無効化（デフォルト）。
+    /// 429/503 レートのみで制御し、レイテンシ悪化による <c>SlowDecrease</c> は発動しない。
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// ベースライン比判定。
     /// 過去の安定期 P95 を EMA で追跡し、<c>current_p95 &gt; baseline * (1 + latencyRiseRatio)</c>
     /// で悪化と判定する。起動直後は <c>baselineSamples</c> 件の成功サンプルが蓄積されるまで判定しない。
     /// </summary>
