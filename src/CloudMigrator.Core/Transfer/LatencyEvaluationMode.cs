@@ -3,7 +3,7 @@ namespace CloudMigrator.Core.Transfer;
 /// <summary>
 /// AIMD フィードバック制御のレイテンシ悪化判定モード（#162）。
 /// <para>
-/// 設計書§6.1 で 3 方式を想定している。デフォルトは <see cref="Baseline"/>（長期 EMA 比較）。
+/// 設計書§6.1 で 3 方式を想定している。デフォルトは <see cref="None"/>（レイテンシ判定無効）。
 /// v0.6.0 では急激な変化は主に <c>429_rate &gt; emergencyThreshold</c> で捕捉する方針のため、
 /// レイテンシ判定は <c>slow_decrease</c> 用の補助信号として誤検知を抑えたい場面では
 /// <see cref="Baseline"/> が適する。環境によって応答性が欲しい場合は <see cref="Recent"/>・

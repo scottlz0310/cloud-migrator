@@ -213,8 +213,8 @@ public sealed class ConfigurationService : IConfigurationService
             var rcMaxConcurrency = 16;
             var useHybridController = false;
             var rcCooldownSec = 20;
-            var rcEmergencyDecay = 0.7;
-            var rcEmergencyInflightDecay = 0.75;
+            var rcEmergencyDecay = 0.9;
+            var rcEmergencyInflightDecay = 0.9;
             var rcAddStep = 1.0;
             var rcLatencyMode = "None";
             if (m.TryGetProperty("rateControl", out var rcProp) && rcProp.ValueKind == JsonValueKind.Object)
@@ -318,6 +318,12 @@ public sealed class ConfigurationService : IConfigurationService
             throw new ArgumentException("RcEmergencyInflightDecay は 0 より大きく 1 未満の値を指定してください。", nameof(update));
         if (update.RcAddStep.HasValue && update.RcAddStep.Value <= 0)
             throw new ArgumentException("RcAddStep は 0 より大きい値を指定してください。", nameof(update));
+        if (update.RcLatencyMode is not null
+            && !string.Equals(update.RcLatencyMode, "None", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(update.RcLatencyMode, "Baseline", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(update.RcLatencyMode, "Recent", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(update.RcLatencyMode, "Both", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("RcLatencyMode には None/Baseline/Recent/Both のいずれかを指定してください。", nameof(update));
 
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try

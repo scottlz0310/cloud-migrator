@@ -260,7 +260,7 @@ else
                                                HelperText="429 なしでの減速を許可するかどうか。通常は None。">
                                         <MudSelectItem Value="@("None")">None — レイテンシ判定なし（429専制御、推奨）</MudSelectItem>
                                         <MudSelectItem Value="@("Baseline")">Baseline — 安定期 P95 の長期 EMA 比で判定</MudSelectItem>
-                                        <MudSelectItem Value="@("Recent")">Recent — 直近笔 vs 前筑 P95 平均比で判定</MudSelectItem>
+                                        <MudSelectItem Value="@("Recent")">Recent — 直近 vs 前区間 P95 平均比で判定</MudSelectItem>
                                         <MudSelectItem Value="@("Both")">Both — Baseline OR Recent（誤検知リスクあり）</MudSelectItem>
                                     </MudSelect>
                                 </MudItem>                            }

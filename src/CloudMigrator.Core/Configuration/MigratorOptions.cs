@@ -387,7 +387,7 @@ public sealed class RateControlSettings
     /// <summary>急減速後に緩増加を凍結する時間（秒）。スラッシング防止。デフォルト 20</summary>
     public int CooldownSec { get; set; } = 20;
 
-    /// <summary>レイテンシ悪化判定モード。デフォルト <see cref="LatencyEvaluationMode.Baseline"/></summary>
+    /// <summary>レイテンシ悪化判定モード。デフォルト <see cref="LatencyEvaluationMode.None"/></summary>
     public LatencyEvaluationMode LatencyEvaluationMode { get; set; } = LatencyEvaluationMode.None;
 
     // --- v0.6.0 ハイブリッド制御統合設定（#163）---
