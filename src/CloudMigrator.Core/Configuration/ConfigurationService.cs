@@ -30,7 +30,10 @@ public sealed record ConfigDto(
     double RcMinDecayFactor = 0.3,
     double RcMaxDecayFactor = 0.9,
     int RcInFlightThreshold = 32,
-    int RcMaxConcurrency = 16);
+    int RcMaxConcurrency = 16,
+    // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
+    bool ShowGraphs = true,
+    int GraphColumns = 2);
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -58,7 +61,10 @@ public sealed record ConfigUpdateDto(
     double? RcMinDecayFactor = null,
     double? RcMaxDecayFactor = null,
     int? RcInFlightThreshold = null,
-    int? RcMaxConcurrency = null);
+    int? RcMaxConcurrency = null,
+    // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
+    bool? ShowGraphs = null,
+    int? GraphColumns = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -226,7 +232,9 @@ public sealed class ConfigurationService : IConfigurationService
             RcMinDecayFactor: rcMinDecayFactor,
             RcMaxDecayFactor: rcMaxDecayFactor,
             RcInFlightThreshold: rcInFlightThreshold,
-            RcMaxConcurrency: rcMaxConcurrency);
+            RcMaxConcurrency: rcMaxConcurrency,
+            ShowGraphs: !(m.TryGetProperty("showGraphs", out var sgProp) && sgProp.ValueKind == JsonValueKind.False),
+            GraphColumns: Math.Clamp(GetInt(m, "graphColumns", 2), 1, 4));
     }
 
     /// <inheritdoc />
@@ -349,6 +357,10 @@ public sealed class ConfigurationService : IConfigurationService
                 if (update.RcInFlightThreshold.HasValue) rcObj["inFlightThreshold"] = update.RcInFlightThreshold.Value;
                 if (update.RcMaxConcurrency.HasValue) rcObj["maxConcurrency"] = update.RcMaxConcurrency.Value;
             }
+
+            // UI 表示設定
+            if (update.ShowGraphs.HasValue) m["showGraphs"] = update.ShowGraphs.Value;
+            if (update.GraphColumns.HasValue) m["graphColumns"] = Math.Clamp(update.GraphColumns.Value, 1, 4);
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム
             var tmpPath = _configFilePath + ".tmp";
