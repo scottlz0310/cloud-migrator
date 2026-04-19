@@ -153,16 +153,9 @@ public sealed class ConfigurationService : IConfigurationService
     /// <inheritdoc />
     public async Task<ConfigDto> GetConfigAsync(CancellationToken ct = default)
     {
-        if (!File.Exists(_configFilePath))
-            return new ConfigDto(
-                MaxParallelTransfers: 4, MaxParallelFolderCreations: 4,
-                ChunkSizeMb: 5, LargeFileThresholdMb: 4,
-                RetryCount: 3, TimeoutSec: 300,
-                DestinationRoot: string.Empty, DestinationProvider: "sharepoint");
-
-        var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
         try
         {
+            var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("migrator", out var m))
                 return new ConfigDto(
@@ -250,9 +243,9 @@ public sealed class ConfigurationService : IConfigurationService
                 ShowGraphs: !(m.TryGetProperty("showGraphs", out var sgProp) && sgProp.ValueKind == JsonValueKind.False),
                 GraphColumns: Math.Clamp(GetInt(m, "graphColumns", 2), 1, 4));
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is IOException or JsonException)
         {
-            // config.json が不正な JSON の場合はデフォルト値を返す
+            // ファイル不在・アクセス拒否・競合・不正 JSON の場合はデフォルト値を返す
             return new ConfigDto(
                 MaxParallelTransfers: 4, MaxParallelFolderCreations: 4,
                 ChunkSizeMb: 5, LargeFileThresholdMb: 4,
@@ -285,11 +278,15 @@ public sealed class ConfigurationService : IConfigurationService
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
-            var root = JsonNode.Parse(json)
-                ?? throw new InvalidOperationException("config.json のパースに失敗しました。");
-            var m = root["migrator"]?.AsObject()
-                ?? throw new InvalidOperationException("config.json に migrator セクションが存在しません。");
+            var json = File.Exists(_configFilePath)
+                ? await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false)
+                : "{}";
+            var root = JsonNode.Parse(json) ?? new JsonObject();
+            if (root["migrator"] is not JsonObject m)
+            {
+                m = new JsonObject();
+                root["migrator"] = m;
+            }
 
             // クロスフィールドバリデーション: update と現在の config.json をマージした「実際に保存される値」で検証する
             // 片方だけ更新するケースでも既存値との組み合わせが不正にならないよう保護する

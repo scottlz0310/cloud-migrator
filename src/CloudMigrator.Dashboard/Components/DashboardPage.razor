@@ -568,8 +568,10 @@ else
             _showGraphs = cfg.ShowGraphs;
             _graphColumns = cfg.GraphColumns;
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.LogWarning(ex, "UI 設定の読み込みに失敗しました。"); }
         try { _discovery = await ConfigService.GetDiscoveryConfigAsync(ct); }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗しました。"); }
 
         try { _summary = await TransferStateDb.GetSummaryAsync(ct); }
@@ -763,10 +765,15 @@ else
 
     private async Task ToggleGraphsAsync()
     {
-        // #156: ダッシュボードアイコンで即時切り替え＆永続化
+        // #156: ダッシュボードアイコンで即時切り替え＆永続化（保存失敗時は元に戻す）
+        var prev = _showGraphs;
         _showGraphs = !_showGraphs;
         try { await ConfigService.UpdateConfigAsync(new ConfigUpdateDto(ShowGraphs: _showGraphs)); }
-        catch (Exception ex) { Logger.LogWarning(ex, "グラフ表示設定の保存に失敗しました。"); }
+        catch (Exception ex)
+        {
+            _showGraphs = prev;
+            Logger.LogWarning(ex, "グラフ表示設定の保存に失敗しました。");
+        }
     }
 
     private static Color JobStatusColor(JobStatus status) => status switch
