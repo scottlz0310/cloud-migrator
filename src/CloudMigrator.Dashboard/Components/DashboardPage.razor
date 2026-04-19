@@ -36,7 +36,8 @@
     <MudSpacer />
     <MudTooltip Text="@(_showGraphs ? "グラフを非表示" : "グラフを表示")">
         <MudIconButton Icon="@(_showGraphs ? Icons.Material.Filled.BarChart : Icons.Material.Outlined.BarChart)"
-                       Size="Size.Small" OnClick="ToggleGraphsAsync" />
+                       Size="Size.Small" OnClick="ToggleGraphsAsync"
+                       aria-label="グラフ表示切り替え" />
     </MudTooltip>
 </MudStack>
 
