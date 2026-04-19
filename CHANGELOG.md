@@ -9,6 +9,18 @@
 
 ### Added
 
+- **v0.6.0 ハイブリッドレート制御（スループット主制御 + 並列数補助制御）** (#163)
+  - `HybridRateController`: `WeightedTokenBucket`（ゲート A）+ `SemaphoreSlim`（ゲート B、動的 `max_inflight`）+ `AimdFeedbackController` + `SlidingWindowMetrics` を統合する `ITransferRateController` 実装。設計書 v2 §7 制御ループ + §4.3 並列数補助制御に対応
+  - `AcquireAsync`: ゲート B（並列数）→ ゲート A（トークン）の 2 段取得
+  - 制御ループ: `ControlIntervalSec` 秒周期でスナップショット取得 → AIMD 評価 → `WeightedTokenBucket.SetRate` → `max_inflight` 動的調整 → §9 メトリクス出力
+  - 並列数補助制御（§4.3）: `EmergencyDecrease` → `max(floor(max_inflight * emergencyInflightDecay), minInflight)` / `Stable` → `min(max_inflight + 1, configuredMax)` / `SlowDecrease` `Hold` → 据え置き
+  - SemaphoreSlim の仮想上限方式: capacity 変更不可の制約を「仮想上限 `_virtualMaxInflight` + `_shrinkDebt` による縮小差分の繰越・消化」で解決
+  - §9 制御ループメトリクス 7 項目を `MetricsBuffer` に出力: `rate_tokens_per_sec` / `max_inflight` / `tokens_available` / `rate_429` / `p95_latency_ms` / `signal` / `in_cooldown`
+  - `RateStateStore`: `logs/rate_state.json` を v2 形式（`version=2`, `rate_tokens_per_sec`, `max_inflight`, `updated_at`）で atomic 書込、v0.5.x 形式（`rate` キーのみ）を後方互換読込
+  - `MigratorOptions.RateControl` に追加: `UseHybridController` / `ControlIntervalSec` / `MaxInflight` / `MinInflight` / `EmergencyInflightDecay`
+  - CLI（`TransferCommand`）/ Dashboard（`App.xaml.cs`）に構築経路を統合（`UseRateControl=true && UseHybridController=true` で有効化）
+  - ユニットテスト 25 件追加（`HybridRateControllerTests` / `RateStateStoreTests`）
+
 - **v0.6.0 AIMD フィードバック制御 + クールダウン（評価ロジック）** (#162)
   - `AimdSignal` enum（`Hold` / `EmergencyDecrease` / `SlowDecrease` / `Stable`）
   - `AimdEvaluation` record: 評価結果（信号・新旧レート・ベースライン P95・クールダウン状態・スナップショット）
@@ -48,6 +60,7 @@
 
 ### Changed
 
+- `TokenBucketRateLimiter` に `[Obsolete]` を付与（v0.6.0 以降は `HybridRateController` 推奨、後続 PR で削除予定） (#163)
 - `AdaptiveConcurrencyController` に `[Obsolete]` を付与（v0.5.0 以降は `RateControlledTransferController` 推奨）
 - `MigratorOptions.PenaltyWeight` / `LatencyWeight` に `[Obsolete]` を付与（`RateControlledTransferController` では未使用）
 - `CliServices.cs`: 常に null だった `_rateController` / `_rateControllerMetricsBuffer` フィールドを削除し実態と整合

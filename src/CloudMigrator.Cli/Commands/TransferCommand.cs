@@ -183,27 +183,45 @@ internal static class TransferCommand
 
         // UseRateControl=true 時は stateDb 取得後に RateControlledTransferController を構築する
         // （MetricsBuffer が ITransferStateDb を必要とするため stateDb 確定後に組み立てる）
+        // UseRateControl=true && UseHybridController=true の場合はさらに HybridRateController（#163）へ切り替える。
         RateControlledTransferController? rateController = null;
+        HybridRateController? hybridController = null;
         MetricsBuffer? rateMetricsBuffer = null;
         if (opts.RateControl.UseRateControl)
         {
-            var aggregator = new TransferMetricsAggregator();
             rateMetricsBuffer = new MetricsBuffer(
                 stateDb,
                 opts.RateControl.MetricsFlushIntervalSec,
                 svc.LoggerFactory.CreateLogger<MetricsBuffer>());
-            rateController = new RateControlledTransferController(
-                aggregator,
-                opts.RateControl,
-                rateMetricsBuffer,
-                svc.LoggerFactory.CreateLogger<RateControlledTransferController>());
-            logger.LogInformation(
-                "RateControlledTransferController を構築しました（初期レート: {Rate:F1} req/sec）",
-                opts.RateControl.InitialRatePerSec);
+
+            if (opts.RateControl.UseHybridController)
+            {
+                hybridController = BuildHybridController(svc, opts, rateMetricsBuffer, logger);
+            }
+            else
+            {
+                var aggregator = new TransferMetricsAggregator();
+                rateController = new RateControlledTransferController(
+                    aggregator,
+                    opts.RateControl,
+                    rateMetricsBuffer,
+                    svc.LoggerFactory.CreateLogger<RateControlledTransferController>());
+                logger.LogInformation(
+                    "RateControlledTransferController を構築しました（初期レート: {Rate:F1} req/sec）",
+                    opts.RateControl.InitialRatePerSec);
+            }
         }
 
-        // 使用するコントローラー: UseRateControl=true → rateController / false → AdaptiveConcurrencyController Adapter
-        ITransferRateController? transferController = rateController ?? svc.GetController("sharepoint");
+        // 使用するコントローラー: HybridRateController > RateControlledTransferController > AdaptiveConcurrencyController Adapter
+        ITransferRateController? transferController =
+            (ITransferRateController?)hybridController
+            ?? rateController
+            ?? svc.GetController("sharepoint");
+
+        // RateLimitAwareHandler 経由で 429/503 を受け取れるよう onRateLimit プロキシへ接続する。
+        // RetryHandler が成功させたケースでもパイプライン側に通知が届かない問題を補う。
+        if (hybridController is not null || rateController is not null)
+            svc.SetActiveRateController(transferController);
 
         // パイプラインは再試行ごとに新規生成してメトリクスカウンタの累積を防ぐ
         // stateDb は SQLite 状態を保持するため使い回す
@@ -236,9 +254,15 @@ internal static class TransferCommand
         }
         finally
         {
+            // Dispose 後に onRateLimit から通知されないよう、まずプロキシを切り離す
+            if (hybridController is not null || rateController is not null)
+                svc.SetActiveRateController(null);
+
             // AdaptiveConcurrencyController を Dispose（Adapter は内部コントローラーを所有しないため直接 Dispose）
             accFolderController?.Dispose();
-            // RateControlledTransferController と MetricsBuffer を Dispose
+            // HybridRateController / RateControlledTransferController と MetricsBuffer を Dispose
+            if (hybridController is not null)
+                await hybridController.DisposeAsync().ConfigureAwait(false);
             if (rateController is not null)
                 await rateController.DisposeAsync().ConfigureAwait(false);
             if (rateMetricsBuffer is not null)
@@ -329,6 +353,67 @@ internal static class TransferCommand
         Console.Write($"\n{failedCount} 件の転送に失敗しています。再試行しますか？ [y/N]: ");
         var input = Console.ReadLine()?.Trim() ?? string.Empty;
         return input.Equals("y", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// ハイブリッド制御（#163）用のコントローラーを構築する。
+    /// <c>rate_state.json</c> から前回レートを復元し、<c>[minRate, maxRate]</c> にクランプして WeightedTokenBucket の初期レートに反映する。
+    /// </summary>
+    private static HybridRateController BuildHybridController(
+        CliServices svc, MigratorOptions opts, MetricsBuffer metricsBuffer, ILogger logger)
+    {
+        var rc = opts.RateControl;
+
+        // rate_state.json は logs ディレクトリに集約する。
+        var logsDir = Path.GetDirectoryName(opts.Paths.SkipList) ?? "logs";
+        var rateStatePath = Path.Combine(logsDir, "rate_state.json");
+        var stateStore = new RateStateStore(rateStatePath);
+
+        // 前回状態を復元。壊れ・未存在時は初期値でコールドスタート。
+        var loaded = stateStore.Load();
+        double initialRate = loaded is not null
+            ? Math.Clamp(loaded.RateTokensPerSec, rc.MinTokensPerSec, rc.MaxTokensPerSec)
+            : rc.InitialTokensPerSec;
+        // ウォームスタート: max_inflight も [MinInflight, MaxInflight] にクランプして HybridRateController へ渡す。
+        int? initialMaxInflight = loaded?.MaxInflight is int saved
+            ? Math.Clamp(saved, rc.MinInflight, rc.MaxInflight)
+            : null;
+        if (loaded is not null)
+        {
+            logger.LogInformation(
+                "rate_state.json から前回状態を復元しました（形式: {Format}, rate: {Rate:F2} tokens/sec, max_inflight: {MaxInflight}）",
+                loaded.Format, initialRate, initialMaxInflight?.ToString() ?? "(未保存)");
+        }
+
+        var bucket = new WeightedTokenBucket(
+            initialRate: initialRate,
+            maxBurst: rc.MaxBurstTokens);
+
+        // AIMD の初期レートも復元値で上書き（ウォームスタート）
+        var aimdSettings = AimdFeedbackSettings.FromRateControlSettings(rc);
+        aimdSettings.InitialRate = initialRate;
+        var aimd = new AimdFeedbackController(aimdSettings);
+
+        var metrics = new SlidingWindowMetrics(
+            mode: rc.WindowMode,
+            windowSec: rc.WindowSec,
+            maxCount: rc.MaxWindowCount,
+            minSamples: rc.MinSamples);
+
+        var controller = new HybridRateController(
+            bucket,
+            aimd,
+            metrics,
+            rc,
+            metricsBuffer,
+            stateStore,
+            svc.LoggerFactory.CreateLogger<HybridRateController>(),
+            initialMaxInflight);
+
+        logger.LogInformation(
+            "HybridRateController を構築しました（初期レート: {Rate:F2} tokens/sec, max_inflight: {MaxInflight}, 制御周期: {Interval}s）",
+            initialRate, controller.CurrentMaxInflight, rc.ControlIntervalSec);
+        return controller;
     }
 
     /// <summary>

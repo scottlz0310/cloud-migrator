@@ -389,6 +389,34 @@ public sealed class RateControlSettings
 
     /// <summary>レイテンシ悪化判定モード。デフォルト <see cref="LatencyEvaluationMode.Baseline"/></summary>
     public LatencyEvaluationMode LatencyEvaluationMode { get; set; } = LatencyEvaluationMode.Baseline;
+
+    // --- v0.6.0 ハイブリッド制御統合設定（#163）---
+    // スループット主制御（WeightedTokenBucket）＋並列数補助制御（max_inflight 動的調整）の
+    // ハイブリッド方式（設計書§4.3 / §7）を有効化する。v0.5.0 RateControlledTransferController とは
+    // 別系統で、UseHybridController=true 時は HybridRateController が構築される。
+    // UseRateControl との関係: UseRateControl=true が前提。false 時は UseHybridController も無視される。
+
+    /// <summary>
+    /// ハイブリッド制御（v0.6.0 設計書§4.3 / §7）を有効化する。
+    /// <c>true</c> の場合、<c>UseRateControl=true</c> と組み合わせて <c>HybridRateController</c> を構築する。
+    /// <c>false</c>（既定）の場合は既存 v0.5.0 <c>RateControlledTransferController</c> のまま。デフォルト false
+    /// </summary>
+    public bool UseHybridController { get; set; } = false;
+
+    /// <summary>ハイブリッド制御ループの実行周期（秒）。デフォルト 1</summary>
+    public int ControlIntervalSec { get; set; } = 1;
+
+    /// <summary>並列数補助制御の設定上限（<c>configuredMax</c>）。デフォルト 16</summary>
+    public int MaxInflight { get; set; } = 16;
+
+    /// <summary>並列数補助制御の動的調整下限。<c>EmergencyDecrease</c> 時にこれを下回らない。デフォルト 2</summary>
+    public int MinInflight { get; set; } = 2;
+
+    /// <summary>
+    /// <c>EmergencyDecrease</c> 信号で <c>max_inflight</c> に乗じる削減係数（0 &lt; factor &lt; 1）。
+    /// <c>max_inflight = max(floor(max_inflight * factor), minInflight)</c>。デフォルト 0.75
+    /// </summary>
+    public double EmergencyInflightDecay { get; set; } = 0.75;
 }
 
 /// <summary>
