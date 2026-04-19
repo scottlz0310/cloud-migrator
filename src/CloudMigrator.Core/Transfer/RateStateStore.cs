@@ -27,7 +27,10 @@ public sealed class RateStateStore
     };
 
     /// <summary>ストアを初期化する。</summary>
-    /// <param name="filePath">状態ファイルの絶対パス。親ディレクトリは <see cref="SaveAsync"/> 実行時に作成する。</param>
+    /// <param name="filePath">
+    /// 状態ファイルのパス。絶対パス・相対パス（カレント基準）いずれも可。
+    /// 親ディレクトリは <see cref="SaveAsync"/> 実行時に作成する。
+    /// </param>
     public RateStateStore(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using CloudMigrator.Core.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -51,10 +50,12 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
 
     // 並列数補助制御: 「仮想上限」方式
     // SemaphoreSlim は capacity 変更不可のため、_virtualMaxInflight を別途保持し、
-    // Release 時に現上限を超えないよう制御する（縮小時は自然消化、拡大時は Release で補充）。
+    // 縮小時は「Release で消化すべき残数」(_shrinkDebt) をカウントしてワーカー Release を吸収する。
+    // 拡大時は _shrinkDebt をまず相殺し、残りだけ inflightSlots.Release で補充する。
     private readonly SemaphoreSlim _inflightSlots;
     private readonly object _inflightLock = new();
     private int _virtualMaxInflight;
+    private int _shrinkDebt;
 
     // インフライトカウンター（成功メトリクス・ダッシュボード表示用）
     private int _activeCount;
@@ -75,6 +76,10 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
     /// <param name="metricsBuffer">メトリクス非同期書込バッファ。<c>null</c> の場合はメトリクス出力をスキップする（テスト用）。</param>
     /// <param name="stateStore"><c>rate_state.json</c> の読み書きストア。<c>null</c> の場合は状態保存しない（テスト用）。</param>
     /// <param name="logger">ロガー。</param>
+    /// <param name="initialMaxInflight">
+    /// 起動時の <c>_virtualMaxInflight</c> の初期値（ウォームスタート用）。<c>null</c> の場合は <c>settings.MaxInflight</c> を使う。
+    /// 値は <c>[settings.MinInflight, settings.MaxInflight]</c> にクランプされる。
+    /// </param>
     public HybridRateController(
         WeightedTokenBucket bucket,
         IAimdFeedbackController aimd,
@@ -82,7 +87,8 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
         RateControlSettings settings,
         MetricsBuffer? metricsBuffer,
         RateStateStore? stateStore,
-        ILogger<HybridRateController> logger)
+        ILogger<HybridRateController> logger,
+        int? initialMaxInflight = null)
     {
         ArgumentNullException.ThrowIfNull(bucket);
         ArgumentNullException.ThrowIfNull(aimd);
@@ -112,8 +118,11 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
         _emergencyInflightDecay = settings.EmergencyInflightDecay;
         _controlInterval = TimeSpan.FromSeconds(settings.ControlIntervalSec);
 
-        _virtualMaxInflight = _configuredMaxInflight;
-        _inflightSlots = new SemaphoreSlim(_configuredMaxInflight, _configuredMaxInflight);
+        _virtualMaxInflight = Math.Clamp(
+            initialMaxInflight ?? _configuredMaxInflight,
+            _minInflight,
+            _configuredMaxInflight);
+        _inflightSlots = new SemaphoreSlim(_virtualMaxInflight, _configuredMaxInflight);
 
         _controlLoop = Task.Run(ControlLoopAsync);
     }
@@ -248,7 +257,8 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
 
     /// <summary>
     /// §4.3 並列数補助制御。AIMD 信号に応じて <c>_virtualMaxInflight</c> を調整する。
-    /// 縮小時はセマフォから差分を待機取得して消化、拡大時は Release で補充する。
+    /// 縮小時は「Release で消化すべき残数」(<c>_shrinkDebt</c>) を増やして以降のワーカー Release を吸収させ、
+    /// 拡大時はまず <c>_shrinkDebt</c> を相殺し、残りだけ <see cref="SemaphoreSlim.Release(int)"/> で補充する。
     /// </summary>
     private int AdjustMaxInflight(AimdSignal signal)
     {
@@ -264,7 +274,9 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
                         var delta = _virtualMaxInflight - target;
                         if (delta > 0)
                         {
-                            ShrinkSemaphoreAsync(delta);
+                            // 物理的な WaitAsync は発行せず、論理的な「Release 抑止予約」だけ積む。
+                            // SemaphoreSlim.CurrentCount との競合を避け、Release 時に確実に 1:1 で消化する。
+                            _shrinkDebt += delta;
                             _virtualMaxInflight = target;
                         }
                         break;
@@ -275,8 +287,12 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
                         var delta = target - _virtualMaxInflight;
                         if (delta > 0)
                         {
-                            // Release は非同期待機を解除する方向なので即時反映
-                            _inflightSlots.Release(delta);
+                            // 拡大はまず未消化の縮小予約を相殺し、残った分だけ実 Release で補充する。
+                            var canceled = Math.Min(delta, _shrinkDebt);
+                            _shrinkDebt -= canceled;
+                            var remaining = delta - canceled;
+                            if (remaining > 0)
+                                _inflightSlots.Release(remaining);
                             _virtualMaxInflight = target;
                         }
                         break;
@@ -291,49 +307,16 @@ public sealed class HybridRateController : ITransferRateController, IAsyncDispos
     }
 
     /// <summary>
-    /// セマフォを delta 個だけ「消化」する（縮小）。既に空いているスロットを可能な限り取得し、
-    /// 残りは実行中のワーカーが Release してきたときに順次吸収されるようバックグラウンドで Wait を仕掛ける。
-    /// </summary>
-    private void ShrinkSemaphoreAsync(int delta)
-    {
-        if (delta <= 0) return;
-        int consumed = 0;
-        // 1. まず非ブロッキングで可能な限り取得
-        while (consumed < delta && _inflightSlots.Wait(0))
-            consumed++;
-
-        // 2. 残りは非同期待機で吸収（ワーカー Release に追従）
-        for (int i = consumed; i < delta; i++)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _inflightSlots.WaitAsync(_cts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Dispose 中はスロット取得を諦める（プロセス終了）
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Dispose 後の race condition は無視
-                }
-            });
-        }
-    }
-
-    /// <summary>
-    /// スロット解放。仮想上限を超過する分は解放せず「消化」する（AdjustMaxInflight の縮小分と対応）。
+    /// スロット解放。未消化の縮小予約 (<c>_shrinkDebt</c>) があるときは実 Release を抑止して予約を 1 減らす。
+    /// 予約が 0 のときのみ <see cref="SemaphoreSlim.Release()"/> を呼ぶ。
     /// </summary>
     private void ReleaseInflightSlot()
     {
         lock (_inflightLock)
         {
-            // 現在の semaphore カウントが仮想上限以上なら、これ以上 Release すると超過するため消化する。
-            if (_inflightSlots.CurrentCount >= _virtualMaxInflight)
+            if (_shrinkDebt > 0)
             {
-                // 超過: このスロットは既に縮小で消化済み扱い。Release しない。
+                _shrinkDebt--;
                 return;
             }
             _inflightSlots.Release();

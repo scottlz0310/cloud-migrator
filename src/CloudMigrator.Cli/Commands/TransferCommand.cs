@@ -374,11 +374,15 @@ internal static class TransferCommand
         double initialRate = loaded is not null
             ? Math.Clamp(loaded.RateTokensPerSec, rc.MinTokensPerSec, rc.MaxTokensPerSec)
             : rc.InitialTokensPerSec;
+        // ウォームスタート: max_inflight も [MinInflight, MaxInflight] にクランプして HybridRateController へ渡す。
+        int? initialMaxInflight = loaded?.MaxInflight is int saved
+            ? Math.Clamp(saved, rc.MinInflight, rc.MaxInflight)
+            : null;
         if (loaded is not null)
         {
             logger.LogInformation(
-                "rate_state.json から前回レートを復元しました（形式: {Format}, rate: {Rate:F2} tokens/sec）",
-                loaded.Format, initialRate);
+                "rate_state.json から前回状態を復元しました（形式: {Format}, rate: {Rate:F2} tokens/sec, max_inflight: {MaxInflight}）",
+                loaded.Format, initialRate, initialMaxInflight?.ToString() ?? "(未保存)");
         }
 
         var bucket = new WeightedTokenBucket(
@@ -403,11 +407,12 @@ internal static class TransferCommand
             rc,
             metricsBuffer,
             stateStore,
-            svc.LoggerFactory.CreateLogger<HybridRateController>());
+            svc.LoggerFactory.CreateLogger<HybridRateController>(),
+            initialMaxInflight);
 
         logger.LogInformation(
             "HybridRateController を構築しました（初期レート: {Rate:F2} tokens/sec, max_inflight: {MaxInflight}, 制御周期: {Interval}s）",
-            initialRate, rc.MaxInflight, rc.ControlIntervalSec);
+            initialRate, controller.CurrentMaxInflight, rc.ControlIntervalSec);
         return controller;
     }
 
