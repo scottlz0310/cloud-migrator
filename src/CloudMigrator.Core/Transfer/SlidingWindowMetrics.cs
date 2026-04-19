@@ -74,16 +74,16 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
 
     /// <inheritdoc/>
     public void NotifyRequestSent() =>
-        Enqueue(new MetricEvent(Stopwatch.GetTimestamp(), EventKind.RequestSent, 0));
+        Enqueue(new MetricEvent(Stopwatch.GetTimestamp(), EventKind.RequestSent, 0, 0));
 
     /// <inheritdoc/>
-    public void NotifySuccess(TimeSpan latency) =>
-        Enqueue(new MetricEvent(Stopwatch.GetTimestamp(), EventKind.Success, latency.TotalMilliseconds));
+    public void NotifySuccess(TimeSpan latency, long bytes = 0) =>
+        Enqueue(new MetricEvent(Stopwatch.GetTimestamp(), EventKind.Success, latency.TotalMilliseconds, bytes));
 
     /// <inheritdoc/>
     public void NotifyRateLimit(TimeSpan? retryAfter) =>
         // retryAfter は現時点では未使用（集計対象外）。#162 AIMD クールダウン計算での活用を予定。
-        Enqueue(new MetricEvent(Stopwatch.GetTimestamp(), EventKind.RateLimit, 0));
+        Enqueue(new MetricEvent(Stopwatch.GetTimestamp(), EventKind.RateLimit, 0, 0));
 
     /// <inheritdoc/>
     public SlidingWindowSnapshot GetSnapshot()
@@ -93,6 +93,8 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
             Evict();
 
             int requestCount = 0, successCount = 0, rateLimitCount = 0;
+            long totalBytes = 0;
+            long oldestSuccessTicks = 0, newestSuccessTicks = 0;
             // P95 用に成功レイテンシ列を抽出。allocation は制御ループ（1 秒周期）で十分許容範囲
             var latencies = new List<double>(_events.Count);
 
@@ -106,6 +108,11 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
                     case EventKind.Success:
                         successCount++;
                         latencies.Add(e.LatencyMs);
+                        totalBytes += e.Bytes;
+                        if (oldestSuccessTicks == 0 || e.TimestampTicks < oldestSuccessTicks)
+                            oldestSuccessTicks = e.TimestampTicks;
+                        if (e.TimestampTicks > newestSuccessTicks)
+                            newestSuccessTicks = e.TimestampTicks;
                         break;
                     case EventKind.RateLimit:
                         rateLimitCount++;
@@ -126,6 +133,27 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
             var avgLatency = latencies.Count > 0 ? Average(latencies) : 0.0;
             var p95Latency = latencies.Count > 0 ? Percentile(latencies, 0.95) : 0.0;
 
+            // ウィンドウ秒数:
+            //   - 時間モード: 設定 windowSec
+            //   - 件数モード: 成功 2 件以上あれば最古〜最新成功の実時間幅、それ以外は設定 windowSec にフォールバック
+            // 件数モードでも _windowTicks は設定 windowSec を秒換算した値が入っているため、設定窓幅として再利用できる。
+            // 0 件 / 1 件のときに 0 除算しないよう最低 1 秒で下限する。
+            var configuredWindowSeconds = (double)_windowTicks / Stopwatch.Frequency;
+            double windowSeconds;
+            if (_mode == SlidingWindowMode.Time)
+            {
+                windowSeconds = configuredWindowSeconds;
+            }
+            else
+            {
+                var spanTicks = newestSuccessTicks - oldestSuccessTicks;
+                windowSeconds = spanTicks > 0 ? (double)spanTicks / Stopwatch.Frequency : configuredWindowSeconds;
+            }
+            if (windowSeconds < 1.0) windowSeconds = 1.0;
+
+            var filesPerSec = successCount > 0 ? successCount / windowSeconds : 0.0;
+            var bytesPerSec = successCount > 0 ? totalBytes / windowSeconds : 0.0;
+
             return new SlidingWindowSnapshot(
                 SampleCount: sampleCount,
                 HasMinSamples: sampleCount >= _minSamples,
@@ -133,6 +161,9 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
                 SuccessRate: successRate,
                 AvgLatencyMs: avgLatency,
                 P95LatencyMs: p95Latency,
+                FilesPerSec: filesPerSec,
+                BytesPerSec: bytesPerSec,
+                WindowSeconds: windowSeconds,
                 Timestamp: DateTimeOffset.UtcNow);
         }
     }
@@ -210,5 +241,5 @@ public sealed class SlidingWindowMetrics : ISlidingWindowMetrics
         RateLimit,
     }
 
-    private readonly record struct MetricEvent(long TimestampTicks, EventKind Kind, double LatencyMs);
+    private readonly record struct MetricEvent(long TimestampTicks, EventKind Kind, double LatencyMs, long Bytes);
 }

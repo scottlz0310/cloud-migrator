@@ -40,8 +40,9 @@ public sealed class AdaptiveConcurrencyControllerAdapter : ITransferRateControll
     }
 
     /// <inheritdoc/>
-    public void NotifySuccess(TimeSpan latency)
+    public void NotifySuccess(TimeSpan latency, long bytes = 0)
     {
+        // 旧コントローラーはバイト数を扱わないため bytes は無視する。
         DecrementIfPositive(ref _activeCount);
         _inner.NotifySuccess();
     }

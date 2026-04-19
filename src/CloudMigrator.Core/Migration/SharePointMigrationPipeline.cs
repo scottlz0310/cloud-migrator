@@ -417,7 +417,7 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                     Interlocked.Increment(ref success);
                     Interlocked.Add(ref _totalBytesTransferred, job.Source.SizeBytes ?? 0);
                     _logger.LogInformation("SharePoint 転送完了: {SkipKey}", job.Source.SkipKey);
-                    controller?.NotifySuccess(latency);
+                    controller?.NotifySuccess(latency, job.Source.SizeBytes ?? 0);
                 }
                 catch (OperationCanceledException)
                 {
@@ -486,11 +486,25 @@ public sealed class SharePointMigrationPipeline : IMigrationPipeline
                         var bytesPerSec = elapsedSeconds > 0
                             ? Volatile.Read(ref _totalBytesTransferred) / elapsedSeconds
                             : 0.0;
+
+                        // #159: HybridRateController 経路ではウィンドウ集計値で上書きする（直近の実効スループット）。
+                        // 旧経路は累積平均のまま。Snapshot 取得は制御ループと別タイミングで安全。
+                        double? windowSeconds = null;
+                        if (controller is HybridRateController hybrid)
+                        {
+                            var snap = hybrid.GetCurrentSnapshot();
+                            filesPerMin = snap.FilesPerSec * 60.0;
+                            bytesPerSec = snap.BytesPerSec;
+                            windowSeconds = snap.WindowSeconds;
+                        }
+
                         try
                         {
                             await _stateDb.RecordMetricAsync("rate_limit_pct", pct, itemCt).ConfigureAwait(false);
                             await _stateDb.RecordMetricAsync("throughput_files_per_min", filesPerMin, itemCt).ConfigureAwait(false);
                             await _stateDb.RecordMetricAsync("throughput_bytes_per_sec", bytesPerSec, itemCt).ConfigureAwait(false);
+                            if (windowSeconds.HasValue)
+                                await _stateDb.RecordMetricAsync("throughput_window_sec", windowSeconds.Value, itemCt).ConfigureAwait(false);
                             await _stateDb.RecordMetricAsync(
                                 "current_parallelism",
                                 (double)(int)Math.Round(controller?.CurrentRateLimit ?? _options.MaxParallelTransfers),

@@ -21,7 +21,11 @@ public interface ITransferRateController
 
     /// <summary>転送成功時に呼び出す。</summary>
     /// <param name="latency">実際の転送レイテンシ。</param>
-    void NotifySuccess(TimeSpan latency);
+    /// <param name="bytes">
+    /// 転送バイト数（#159 ウィンドウスループット表示用）。
+    /// バイト数が無いケース（フォルダ作成等）は 0 を渡す。
+    /// </param>
+    void NotifySuccess(TimeSpan latency, long bytes = 0);
 
     /// <summary>
     /// キャンセル・非レート制限エラーなど、成功以外の完了時に呼び出す。

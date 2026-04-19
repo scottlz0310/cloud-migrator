@@ -30,7 +30,8 @@ public sealed class AimdFeedbackControllerTests
         double successRate = 1.0,
         double avgLatencyMs = 100.0,
         double p95LatencyMs = 100.0) =>
-        new(sampleCount, hasMinSamples, rate429, successRate, avgLatencyMs, p95LatencyMs, DateTimeOffset.UtcNow);
+        new(sampleCount, hasMinSamples, rate429, successRate, avgLatencyMs, p95LatencyMs,
+            FilesPerSec: 0.0, BytesPerSec: 0.0, WindowSeconds: 30.0, Timestamp: DateTimeOffset.UtcNow);
 
     private static AimdFeedbackSettings MakeSettings(Action<AimdFeedbackSettings>? configure = null)
     {
@@ -445,7 +446,8 @@ public sealed class AimdFeedbackControllerTests
         var clock = new FakeClock();
         var sut = new AimdFeedbackController(MakeSettings(), clock.Now);
         var fixedAt = new DateTimeOffset(2026, 4, 18, 12, 0, 0, TimeSpan.Zero);
-        var snapshot = new SlidingWindowSnapshot(20, true, 0.0, 1.0, 100.0, 100.0, fixedAt);
+        var snapshot = new SlidingWindowSnapshot(20, true, 0.0, 1.0, 100.0, 100.0,
+            FilesPerSec: 0.0, BytesPerSec: 0.0, WindowSeconds: 30.0, Timestamp: fixedAt);
 
         var r = sut.Evaluate(snapshot);
 

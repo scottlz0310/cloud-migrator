@@ -104,8 +104,10 @@ public sealed class RateControlledTransferController : ITransferRateController, 
     }
 
     /// <inheritdoc/>
-    public void NotifySuccess(TimeSpan latency)
+    public void NotifySuccess(TimeSpan latency, long bytes = 0)
     {
+        // v0.5.0 の Aggregator はバイト数を扱わないため bytes は無視する。
+        // ウィンドウスループット表示は v0.6.0 ハイブリッド経路（HybridRateController）でのみ有効。
         DecrementIfPositive(ref _activeCount);
         _aggregator.NotifySuccess(latency);
     }

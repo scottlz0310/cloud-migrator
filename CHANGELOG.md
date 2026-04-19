@@ -9,6 +9,14 @@
 
 ### Added
 
+- **ウィンドウベースのスループット表示**（レート制御 ON 時）(#159)
+  - `ISlidingWindowMetrics.NotifySuccess(latency, bytes=0)` overload と `SlidingWindowSnapshot` 拡張（`FilesPerSec` / `BytesPerSec` / `WindowSeconds`）
+  - `HybridRateController` に `GetCurrentSnapshot()` を追加し、`NotifySuccess` でバイト数を内部メトリクスへ透過
+  - Dropbox / SharePoint パイプライン: `controller is HybridRateController` の場合、`throughput_files_per_min` / `throughput_bytes_per_sec` をウィンドウ集計値で上書きし、`throughput_window_sec` を併記
+  - Dashboard: HybridRateController 経路かつウィンドウ幅メトリクスがある場合、スループットカードのタイトルに「（直近 N 秒）」を付記
+  - `ITransferRateController.NotifySuccess` も `(latency, bytes=0)` overload に拡張（`AdaptiveConcurrencyControllerAdapter` / `RateControlledTransferController` は bytes を無視して既存挙動を維持）
+  - ユニットテスト 5 件追加（`SlidingWindowMetricsTests` / `HybridRateControllerTests`）
+
 - **v0.6.0 ハイブリッドレート制御（スループット主制御 + 並列数補助制御）** (#163)
   - `HybridRateController`: `WeightedTokenBucket`（ゲート A）+ `SemaphoreSlim`（ゲート B、動的 `max_inflight`）+ `AimdFeedbackController` + `SlidingWindowMetrics` を統合する `ITransferRateController` 実装。設計書 v2 §7 制御ループ + §4.3 並列数補助制御に対応
   - `AcquireAsync`: ゲート B（並列数）→ ゲート A（トークン）の 2 段取得
