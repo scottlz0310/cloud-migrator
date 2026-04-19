@@ -92,6 +92,34 @@ else
                                              Variant="Variant.Outlined" />
                         </MudItem>
 
+                        @* ── グラフ表示設定（#156/#157） ─────────────────────── *@
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">グラフ表示設定</MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudSwitch @bind-Value="_editShowGraphs"
+                                       Label="メトリクスグラフを表示する"
+                                       Color="Color.Primary" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                OFF にするとダッシュボードのグラフエリアを非表示にします。ダッシュボードのアイコンボタンとも連動します。
+                            </MudText>
+                        </MudItem>
+                        @if (_editShowGraphs)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="int" @bind-Value="_editGraphColumns"
+                                           Label="グラフ列数"
+                                           Variant="Variant.Outlined"
+                                           HelperText="ダッシュボードのグラフを何列に並べるか設定します。デフォルト: 2">
+                                    <MudSelectItem Value="1">1 列</MudSelectItem>
+                                    <MudSelectItem Value="2">2 列（デフォルト）</MudSelectItem>
+                                    <MudSelectItem Value="3">3 列</MudSelectItem>
+                                    <MudSelectItem Value="4">4 列</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                        }
+
                         @* ── 動的並列制御 ────────────────────────────────── *@
                         <MudItem xs="12">
                             <MudDivider Class="my-2" />
@@ -316,6 +344,9 @@ else
     private double _editRcMaxDecayFactor;
     private int _editRcInFlightThreshold;
     private int _editRcMaxConcurrency;
+    // グラフ表示設定（#156/#157）
+    private bool _editShowGraphs;
+    private int _editGraphColumns;
 
     protected override async Task OnInitializedAsync()
     {
@@ -381,6 +412,8 @@ else
         _editRcMaxDecayFactor = cfg.RcMaxDecayFactor;
         _editRcInFlightThreshold = cfg.RcInFlightThreshold;
         _editRcMaxConcurrency = cfg.RcMaxConcurrency;
+        _editShowGraphs = cfg.ShowGraphs;
+        _editGraphColumns = cfg.GraphColumns;
     }
 
     private async Task SaveAsync()
@@ -429,7 +462,9 @@ else
                 RcMinDecayFactor: _editUseRateControl ? _editRcMinDecayFactor : null,
                 RcMaxDecayFactor: _editUseRateControl ? _editRcMaxDecayFactor : null,
                 RcInFlightThreshold: _editUseRateControl ? _editRcInFlightThreshold : null,
-                RcMaxConcurrency: _editUseRateControl ? _editRcMaxConcurrency : null);
+                RcMaxConcurrency: _editUseRateControl ? _editRcMaxConcurrency : null,
+                ShowGraphs: _editShowGraphs,
+                GraphColumns: _editGraphColumns);
             await ConfigService.UpdateConfigAsync(update);
             _config = await ConfigService.GetConfigAsync();
             CopyToEditFields(_config);

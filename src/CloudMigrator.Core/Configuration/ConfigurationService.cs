@@ -30,7 +30,10 @@ public sealed record ConfigDto(
     double RcMinDecayFactor = 0.3,
     double RcMaxDecayFactor = 0.9,
     int RcInFlightThreshold = 32,
-    int RcMaxConcurrency = 16);
+    int RcMaxConcurrency = 16,
+    // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
+    bool ShowGraphs = true,
+    int GraphColumns = 2);
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -58,7 +61,10 @@ public sealed record ConfigUpdateDto(
     double? RcMinDecayFactor = null,
     double? RcMaxDecayFactor = null,
     int? RcInFlightThreshold = null,
-    int? RcMaxConcurrency = null);
+    int? RcMaxConcurrency = null,
+    // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
+    bool? ShowGraphs = null,
+    int? GraphColumns = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -147,86 +153,105 @@ public sealed class ConfigurationService : IConfigurationService
     /// <inheritdoc />
     public async Task<ConfigDto> GetConfigAsync(CancellationToken ct = default)
     {
-        var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(json);
-        var m = doc.RootElement.GetProperty("migrator");
-
-        // adaptiveConcurrency.sharepoint セクションを読み取る（なければ default プロファイルにフォールバック）
-        var adaptiveEnabled = false;
-        var adaptiveInitialDegree = 0;
-        var adaptiveDecreasePercent = 50;
-        var adaptiveIncreaseIntervalSec = 60;
-        if (m.TryGetProperty("adaptiveConcurrency", out var acProp) && acProp.ValueKind == JsonValueKind.Object)
+        try
         {
-            // sharepoint キーがなければ default プロファイルを試みる
-            JsonElement acProfile;
-            var hasProfile = (acProp.TryGetProperty("sharepoint", out acProfile) && acProfile.ValueKind == JsonValueKind.Object)
-                          || (acProp.TryGetProperty("default", out acProfile) && acProfile.ValueKind == JsonValueKind.Object);
-            if (hasProfile)
+            var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("migrator", out var m))
+                return new ConfigDto(
+                    MaxParallelTransfers: 4, MaxParallelFolderCreations: 4,
+                    ChunkSizeMb: 5, LargeFileThresholdMb: 4,
+                    RetryCount: 3, TimeoutSec: 300,
+                    DestinationRoot: string.Empty, DestinationProvider: "sharepoint");
+
+            // adaptiveConcurrency.sharepoint セクションを読み取る（なければ default プロファイルにフォールバック）
+            var adaptiveEnabled = false;
+            var adaptiveInitialDegree = 0;
+            var adaptiveDecreasePercent = 50;
+            var adaptiveIncreaseIntervalSec = 60;
+            if (m.TryGetProperty("adaptiveConcurrency", out var acProp) && acProp.ValueKind == JsonValueKind.Object)
             {
-                adaptiveEnabled = acProfile.TryGetProperty("enabled", out var enProp) && enProp.ValueKind == JsonValueKind.True;
-                adaptiveInitialDegree = GetInt(acProfile, "initialDegree", 0);
-                // decreaseMultiplier (double) を % (int) に変換して返す
-                if (acProfile.TryGetProperty("decreaseMultiplier", out var dmProp) && dmProp.TryGetDouble(out var dm) && dm > 0 && dm < 1)
-                    adaptiveDecreasePercent = Math.Clamp((int)Math.Floor(dm * 100), 1, 99);
-                adaptiveIncreaseIntervalSec = GetInt(acProfile, "increaseIntervalSec", 60);
+                // sharepoint キーがなければ default プロファイルを試みる
+                JsonElement acProfile;
+                var hasProfile = (acProp.TryGetProperty("sharepoint", out acProfile) && acProfile.ValueKind == JsonValueKind.Object)
+                              || (acProp.TryGetProperty("default", out acProfile) && acProfile.ValueKind == JsonValueKind.Object);
+                if (hasProfile)
+                {
+                    adaptiveEnabled = acProfile.TryGetProperty("enabled", out var enProp) && enProp.ValueKind == JsonValueKind.True;
+                    adaptiveInitialDegree = GetInt(acProfile, "initialDegree", 0);
+                    // decreaseMultiplier (double) を % (int) に変換して返す
+                    if (acProfile.TryGetProperty("decreaseMultiplier", out var dmProp) && dmProp.TryGetDouble(out var dm) && dm > 0 && dm < 1)
+                        adaptiveDecreasePercent = Math.Clamp((int)Math.Floor(dm * 100), 1, 99);
+                    adaptiveIncreaseIntervalSec = GetInt(acProfile, "increaseIntervalSec", 60);
+                }
             }
-        }
 
-        // rateControl セクションを読み取る
-        var useRateControl = false;
-        var rcShortWindowSec = 5;
-        var rcLongWindowSec = 30;
-        var rcEmergencyThresholdPct = 10;
-        var rcSlowdownThresholdPct = 3;
-        var rcDecayK = 5.0;
-        var rcMinDecayFactor = 0.3;
-        var rcMaxDecayFactor = 0.9;
-        var rcInFlightThreshold = 32;
-        var rcMaxConcurrency = 16;
-        if (m.TryGetProperty("rateControl", out var rcProp) && rcProp.ValueKind == JsonValueKind.Object)
+            // rateControl セクションを読み取る
+            var useRateControl = false;
+            var rcShortWindowSec = 5;
+            var rcLongWindowSec = 30;
+            var rcEmergencyThresholdPct = 10;
+            var rcSlowdownThresholdPct = 3;
+            var rcDecayK = 5.0;
+            var rcMinDecayFactor = 0.3;
+            var rcMaxDecayFactor = 0.9;
+            var rcInFlightThreshold = 32;
+            var rcMaxConcurrency = 16;
+            if (m.TryGetProperty("rateControl", out var rcProp) && rcProp.ValueKind == JsonValueKind.Object)
+            {
+                useRateControl = rcProp.TryGetProperty("useRateControl", out var urProp) && urProp.ValueKind == JsonValueKind.True;
+                rcShortWindowSec = GetInt(rcProp, "shortWindowSec", 5);
+                rcLongWindowSec = GetInt(rcProp, "longWindowSec", 30);
+                // emergencyThreshold / slowdownThreshold は JSON に 0–1 で保存、UI では 0–100 (%) で表示
+                if (rcProp.TryGetProperty("emergencyThreshold", out var etProp) && etProp.TryGetDouble(out var et))
+                    rcEmergencyThresholdPct = Math.Clamp((int)Math.Round(et * 100), 0, 100);
+                if (rcProp.TryGetProperty("slowdownThreshold", out var stProp) && stProp.TryGetDouble(out var st))
+                    rcSlowdownThresholdPct = Math.Clamp((int)Math.Round(st * 100), 0, 100);
+                if (rcProp.TryGetProperty("decayK", out var dkProp) && dkProp.TryGetDouble(out var dk))
+                    rcDecayK = dk;
+                if (rcProp.TryGetProperty("minDecayFactor", out var minDfProp) && minDfProp.TryGetDouble(out var minDf))
+                    rcMinDecayFactor = minDf;
+                if (rcProp.TryGetProperty("maxDecayFactor", out var maxDfProp) && maxDfProp.TryGetDouble(out var maxDf))
+                    rcMaxDecayFactor = maxDf;
+                rcInFlightThreshold = GetInt(rcProp, "inFlightThreshold", 32);
+                rcMaxConcurrency = GetInt(rcProp, "maxConcurrency", 16);
+            }
+
+            return new ConfigDto(
+                MaxParallelTransfers: GetInt(m, "maxParallelTransfers", 4),
+                MaxParallelFolderCreations: GetInt(m, "maxParallelFolderCreations", 4),
+                ChunkSizeMb: GetInt(m, "chunkSizeMb", 5),
+                LargeFileThresholdMb: GetInt(m, "largeFileThresholdMb", 4),
+                RetryCount: GetInt(m, "retryCount", 3),
+                TimeoutSec: GetInt(m, "timeoutSec", 300),
+                DestinationRoot: GetString(m, "destinationRoot", string.Empty),
+                DestinationProvider: NormalizeProvider(GetString(m, "destinationProvider", "sharepoint")),
+                AdaptiveConcurrencyEnabled: adaptiveEnabled,
+                AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree,
+                AdaptiveConcurrencyDecreasePercent: adaptiveDecreasePercent,
+                AdaptiveConcurrencyIncreaseIntervalSec: adaptiveIncreaseIntervalSec,
+                UseRateControl: useRateControl,
+                RcShortWindowSec: rcShortWindowSec,
+                RcLongWindowSec: rcLongWindowSec,
+                RcEmergencyThresholdPct: rcEmergencyThresholdPct,
+                RcSlowdownThresholdPct: rcSlowdownThresholdPct,
+                RcDecayK: rcDecayK,
+                RcMinDecayFactor: rcMinDecayFactor,
+                RcMaxDecayFactor: rcMaxDecayFactor,
+                RcInFlightThreshold: rcInFlightThreshold,
+                RcMaxConcurrency: rcMaxConcurrency,
+                ShowGraphs: !(m.TryGetProperty("showGraphs", out var sgProp) && sgProp.ValueKind == JsonValueKind.False),
+                GraphColumns: Math.Clamp(GetInt(m, "graphColumns", 2), 1, 4));
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
         {
-            useRateControl = rcProp.TryGetProperty("useRateControl", out var urProp) && urProp.ValueKind == JsonValueKind.True;
-            rcShortWindowSec = GetInt(rcProp, "shortWindowSec", 5);
-            rcLongWindowSec = GetInt(rcProp, "longWindowSec", 30);
-            // emergencyThreshold / slowdownThreshold は JSON に 0–1 で保存、UI では 0–100 (%) で表示
-            if (rcProp.TryGetProperty("emergencyThreshold", out var etProp) && etProp.TryGetDouble(out var et))
-                rcEmergencyThresholdPct = Math.Clamp((int)Math.Round(et * 100), 0, 100);
-            if (rcProp.TryGetProperty("slowdownThreshold", out var stProp) && stProp.TryGetDouble(out var st))
-                rcSlowdownThresholdPct = Math.Clamp((int)Math.Round(st * 100), 0, 100);
-            if (rcProp.TryGetProperty("decayK", out var dkProp) && dkProp.TryGetDouble(out var dk))
-                rcDecayK = dk;
-            if (rcProp.TryGetProperty("minDecayFactor", out var minDfProp) && minDfProp.TryGetDouble(out var minDf))
-                rcMinDecayFactor = minDf;
-            if (rcProp.TryGetProperty("maxDecayFactor", out var maxDfProp) && maxDfProp.TryGetDouble(out var maxDf))
-                rcMaxDecayFactor = maxDf;
-            rcInFlightThreshold = GetInt(rcProp, "inFlightThreshold", 32);
-            rcMaxConcurrency = GetInt(rcProp, "maxConcurrency", 16);
+            // ファイル不在・アクセス拒否・競合・不正 JSON の場合はデフォルト値を返す
+            return new ConfigDto(
+                MaxParallelTransfers: 4, MaxParallelFolderCreations: 4,
+                ChunkSizeMb: 5, LargeFileThresholdMb: 4,
+                RetryCount: 3, TimeoutSec: 300,
+                DestinationRoot: string.Empty, DestinationProvider: "sharepoint");
         }
-
-        return new ConfigDto(
-            MaxParallelTransfers: GetInt(m, "maxParallelTransfers", 4),
-            MaxParallelFolderCreations: GetInt(m, "maxParallelFolderCreations", 4),
-            ChunkSizeMb: GetInt(m, "chunkSizeMb", 5),
-            LargeFileThresholdMb: GetInt(m, "largeFileThresholdMb", 4),
-            RetryCount: GetInt(m, "retryCount", 3),
-            TimeoutSec: GetInt(m, "timeoutSec", 300),
-            DestinationRoot: GetString(m, "destinationRoot", string.Empty),
-            DestinationProvider: NormalizeProvider(GetString(m, "destinationProvider", "sharepoint")),
-            AdaptiveConcurrencyEnabled: adaptiveEnabled,
-            AdaptiveConcurrencyInitialDegree: adaptiveInitialDegree,
-            AdaptiveConcurrencyDecreasePercent: adaptiveDecreasePercent,
-            AdaptiveConcurrencyIncreaseIntervalSec: adaptiveIncreaseIntervalSec,
-            UseRateControl: useRateControl,
-            RcShortWindowSec: rcShortWindowSec,
-            RcLongWindowSec: rcLongWindowSec,
-            RcEmergencyThresholdPct: rcEmergencyThresholdPct,
-            RcSlowdownThresholdPct: rcSlowdownThresholdPct,
-            RcDecayK: rcDecayK,
-            RcMinDecayFactor: rcMinDecayFactor,
-            RcMaxDecayFactor: rcMaxDecayFactor,
-            RcInFlightThreshold: rcInFlightThreshold,
-            RcMaxConcurrency: rcMaxConcurrency);
     }
 
     /// <inheritdoc />
@@ -253,11 +278,15 @@ public sealed class ConfigurationService : IConfigurationService
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var json = await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false);
-            var root = JsonNode.Parse(json)
-                ?? throw new InvalidOperationException("config.json のパースに失敗しました。");
-            var m = root["migrator"]?.AsObject()
-                ?? throw new InvalidOperationException("config.json に migrator セクションが存在しません。");
+            var json = File.Exists(_configFilePath)
+                ? await File.ReadAllTextAsync(_configFilePath, ct).ConfigureAwait(false)
+                : "{}";
+            var root = JsonNode.Parse(json) ?? new JsonObject();
+            if (root["migrator"] is not JsonObject m)
+            {
+                m = new JsonObject();
+                root["migrator"] = m;
+            }
 
             // クロスフィールドバリデーション: update と現在の config.json をマージした「実際に保存される値」で検証する
             // 片方だけ更新するケースでも既存値との組み合わせが不正にならないよう保護する
@@ -349,6 +378,10 @@ public sealed class ConfigurationService : IConfigurationService
                 if (update.RcInFlightThreshold.HasValue) rcObj["inFlightThreshold"] = update.RcInFlightThreshold.Value;
                 if (update.RcMaxConcurrency.HasValue) rcObj["maxConcurrency"] = update.RcMaxConcurrency.Value;
             }
+
+            // UI 表示設定
+            if (update.ShowGraphs.HasValue) m["showGraphs"] = update.ShowGraphs.Value;
+            if (update.GraphColumns.HasValue) m["graphColumns"] = Math.Clamp(update.GraphColumns.Value, 1, 4);
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム
             var tmpPath = _configFilePath + ".tmp";

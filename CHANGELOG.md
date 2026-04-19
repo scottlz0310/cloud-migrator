@@ -9,7 +9,32 @@
 
 ### Added
 
-- **ウィンドウベースのスループット表示**（レート制御 ON 時）(#159)
+- **ルート情報をダッシュボードに常時表示**（#154）
+  - `DashboardPage` に `DiscoveryConfigDto` の読み込みを追加（`IConfigurationService` inject）
+  - ページヘッダーにルート情報チップ（例: "OneDrive → SharePoint"）を常時表示
+  - チップホバーで転送元・転送先フォルダパスをツールチップ表示
+
+- **統計エリア統合**（#155）
+  - ダッシュボードの「2次ステータスエリア」（7指標）と「レートベース制御リアルタイムモニター」（4指標）を1枚のカードに統合
+  - `UseRateControl=true` 時のみ区切り線以下に RC メトリクスを追加表示、それ以外は基本7指標のみ表示
+
+- **グラフ表示オン/オフ切り替え**（#156）
+  - ダッシュボードヘッダーにグラフ切り替えアイコンボタンを追加
+  - 設定ページの「グラフ表示設定」セクションに `MudSwitch` を追加
+  - `ConfigDto.ShowGraphs` / `ConfigUpdateDto.ShowGraphs` を追加し、`config.json` の `showGraphs` フィールドで永続化
+  - アイコンとSettings の値は連動（どちらで変更しても即座に永続化）
+
+- **グラフ列数可変設定**（#157）
+  - 設定ページの「グラフ表示設定」セクションに 1〜4 列選択の `MudSelect` を追加
+  - `ConfigDto.GraphColumns` / `ConfigUpdateDto.GraphColumns` を追加し、`config.json` の `graphColumns` フィールドで永続化
+  - ダッシュボードのグラフ MudItem の `md` 幅を `GraphColumnSize` 計算プロパティで動的に変更
+
+- **フォルダ/ファイル進捗 Phase 連動切り替え表示**（#158）
+  - `folder_creation` フェーズ中は「フォルダ作成進捗 / ファイル転送前」キャプション＋WarningColor の進捗バーを表示
+  - `transferring` フェーズ（フォルダ作成完了済み）は「フォルダ作成完了 / ファイル転送進捗」キャプション＋SuccessColor の進捗バーに自動切り替え
+  - 従来の独立フォルダ進捗カードを廃止し、メイン進捗カードと統合してスペースを有効活用
+
+
   - `ISlidingWindowMetrics.NotifySuccess(latency, bytes=0)` overload と `SlidingWindowSnapshot` 拡張（`FilesPerSec` / `BytesPerSec` / `WindowSeconds`）
   - `HybridRateController` に `GetCurrentSnapshot()` を追加し、`NotifySuccess` でバイト数を内部メトリクスへ透過
   - Dropbox / SharePoint パイプライン: `controller is HybridRateController` の場合、`throughput_files_per_min` / `throughput_bytes_per_sec` をウィンドウ集計値で上書きし、`throughput_window_sec` を併記

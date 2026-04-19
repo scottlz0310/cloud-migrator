@@ -623,6 +623,134 @@ public sealed class ConfigurationServiceTests : IDisposable
         await act.Should().NotThrowAsync();
     }
 
+    // ── ShowGraphs / GraphColumns（UI 表示設定）────────────────────────
+
+    [Fact]
+    public async Task GetConfigAsync_WhenShowGraphsAbsent_ReturnsTrueByDefault()
+    {
+        // 検証対象: GetConfigAsync（showGraphs 未設定）  目的: デフォルト値 true を返すこと
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.ShowGraphs.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WhenShowGraphsIsFalse_ReturnsFalse()
+    {
+        // 検証対象: GetConfigAsync（showGraphs = false）  目的: false が正しく読み取られること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                showGraphs = false
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.ShowGraphs.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WhenGraphColumnsAbsent_ReturnsDefault2()
+    {
+        // 検証対象: GetConfigAsync（graphColumns 未設定）  目的: デフォルト値 2 を返すこと
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.GraphColumns.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(4, 4)]
+    [InlineData(0, 1)]  // クランプ: 下限
+    [InlineData(5, 4)]  // クランプ: 上限
+    public async Task GetConfigAsync_GraphColumnsIsClampedTo1To4(int jsonValue, int expected)
+    {
+        // 検証対象: GetConfigAsync（graphColumns クランプ）  目的: Clamp(x, 1, 4) が適用されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                graphColumns = jsonValue
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.GraphColumns.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_ShowGraphs_PersistsValue()
+    {
+        // 検証対象: UpdateConfigAsync（ShowGraphs 保存）  目的: false に変更して読み直すと false が返ること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(ShowGraphs: false));
+        var result = await svc.GetConfigAsync();
+
+        result.ShowGraphs.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_GraphColumns_PersistsClampedValue()
+    {
+        // 検証対象: UpdateConfigAsync（GraphColumns 保存 + クランプ）  目的: 有効値 3 が保存・読み取りで一致すること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(GraphColumns: 3));
+        var result = await svc.GetConfigAsync();
+
+        result.GraphColumns.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WhenFileNotFound_ReturnsDefaultDto()
+    {
+        // 検証対象: GetConfigAsync（ファイル不在）  目的: ファイルが存在しない場合デフォルト ConfigDto を返すこと
+        var missingPath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid()}.json");
+        var svc = new ConfigurationService(missingPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.MaxParallelTransfers.Should().Be(4);
+        result.DestinationProvider.Should().Be("sharepoint");
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WhenJsonIsInvalid_ReturnsDefaultDto()
+    {
+        // 検証対象: GetConfigAsync（不正 JSON）  目的: JSON パース失敗時にデフォルト ConfigDto を返すこと
+        File.WriteAllText(_configPath, "{ invalid json }");
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.MaxParallelTransfers.Should().Be(4);
+        result.DestinationProvider.Should().Be("sharepoint");
+    }
+
     // ── ヘルパー ────────────────────────────────────────────────────────
 
     private void WriteConfig(object data)
