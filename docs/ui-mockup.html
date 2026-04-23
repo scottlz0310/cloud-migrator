@@ -514,28 +514,28 @@ body { background: var(--bg0); color: var(--text1); font-family: var(--sans); fo
             <div class="card card-sm card-last">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <div class="section-label" style="margin:0">スループット (files/min)</div>
-                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+                <button type="button" class="switch on" role="switch" aria-checked="true" aria-label="スループット (files/min) グラフの表示切替" tabindex="0" onclick="toggleGraph(this)" title="表示 / 非表示" style="border:none;padding:0;background:none"></button>
               </div>
               <div class="graph-ph">📈 グラフ</div>
             </div>
             <div class="card card-sm card-last">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <div class="section-label" style="margin:0">スループット (bytes/sec)</div>
-                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+                <button type="button" class="switch on" role="switch" aria-checked="true" aria-label="スループット (bytes/sec) グラフの表示切替" tabindex="0" onclick="toggleGraph(this)" title="表示 / 非表示" style="border:none;padding:0;background:none"></button>
               </div>
               <div class="graph-ph">📈 グラフ</div>
             </div>
             <div class="card card-sm card-last">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <div class="section-label" style="margin:0">レートリミット率 (%)</div>
-                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+                <button type="button" class="switch on" role="switch" aria-checked="true" aria-label="レートリミット率 (%) グラフの表示切替" tabindex="0" onclick="toggleGraph(this)" title="表示 / 非表示" style="border:none;padding:0;background:none"></button>
               </div>
               <div class="graph-ph">📈 グラフ</div>
             </div>
             <div class="card card-sm card-last">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <div class="section-label" style="margin:0">並列実行数</div>
-                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+                <button type="button" class="switch on" role="switch" aria-checked="true" aria-label="並列実行数グラフの表示切替" tabindex="0" onclick="toggleGraph(this)" title="表示 / 非表示" style="border:none;padding:0;background:none"></button>
               </div>
               <div class="graph-ph">📈 グラフ</div>
             </div>
@@ -1086,9 +1086,14 @@ function showTab(scope, id, el) {
 // ─── Graph card toggle ───
 function toggleGraph(sw) {
   sw.classList.toggle('on');
+  const isOn = sw.classList.contains('on');
+  sw.setAttribute('aria-checked', String(isOn));
   const card = sw.closest('.card');
-  const ph = card.querySelector('.graph-ph');
-  if (ph) ph.style.display = sw.classList.contains('on') ? '' : 'none';
+  const ph = card ? card.querySelector('.graph-ph') : null;
+  if (ph) {
+    ph.style.display = isOn ? '' : 'none';
+    ph.setAttribute('aria-hidden', String(!isOn));
+  }
 }
 
 // ─── Collapse sections ───
