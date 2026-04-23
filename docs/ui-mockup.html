@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudMigrator — UI Mockup</title>
+<style>
+/* ─── ARBOR-inspired dark theme ─── */
+:root {
+  --bg0: #0c0e14;
+  --bg1: #0f1117;
+  --bg2: #141720;
+  --bg3: #1a1e2e;
+  --bg4: #1e2235;
+  --border: #1e2336;
+  --border2: #252c42;
+  --border3: #2d3554;
+  --text1: #e2e8f0;
+  --text2: #94a3b8;
+  --text3: #4a5568;
+  --indigo: #818cf8;
+  --indigo-d: #6366f1;
+  --indigo-l: #a5b4fc;
+  --indigo-bg: #818cf80e;
+  --indigo-bg2: #818cf818;
+  --green: #4ade80;
+  --green-bg: #4ade8012;
+  --amber: #fbbf24;
+  --amber-bg: #fbbf2415;
+  --red: #f87171;
+  --red-bg: #f8717112;
+  --purple: #c084fc;
+  --purple-bg: #c084fc10;
+  --sans: 'Segoe UI', -apple-system, sans-serif;
+  --mono: 'Consolas', 'JetBrains Mono', monospace;
+  --r: 6px;
+  --r2: 10px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg0); color: var(--text1); font-family: var(--sans); font-size: 14px; line-height: 1.6; }
+
+/* ─── APP SHELL ─── */
+.shell { display: flex; flex-direction: column; height: 100vh; }
+
+/* AppBar */
+.appbar {
+  height: 52px; flex-shrink: 0;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 20px; gap: 10px;
+  z-index: 100;
+}
+.appbar-logo { font-size: 20px; }
+.appbar-title { font-size: 15px; font-weight: 600; }
+.spacer { flex: 1; }
+.appbar-version { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+.warn-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--amber-bg); border: 1px solid #fbbf2430;
+  color: var(--amber); display: flex; align-items: center; justify-content: center;
+  font-size: 12px; cursor: pointer;
+}
+
+/* Layout */
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+/* Drawer */
+.drawer {
+  width: 196px; flex-shrink: 0;
+  background: #0a0c12;
+  border-right: 1px solid var(--border);
+  padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto;
+}
+.drawer-divider { height: 1px; background: var(--border); margin: 6px 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 10px; border-radius: var(--r);
+  font-size: 13px; color: var(--text3);
+  cursor: pointer; transition: .12s;
+}
+.nav-item:hover { background: var(--bg3); color: var(--text2); }
+.nav-item.active { background: var(--indigo-bg2); color: var(--indigo-l); }
+.nav-icon { width: 16px; text-align: center; font-size: 15px; flex-shrink: 0; }
+
+/* Main */
+.main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+.page { display: none; max-width: 900px; }
+.page.active { display: block; }
+
+/* ─── COMMON ─── */
+/* Cards */
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r2); padding: 16px 20px; margin-bottom: 12px;
+}
+.card-sm { padding: 12px 16px; }
+.card-last { margin-bottom: 0; }
+
+/* Typography */
+.page-title { font-size: 18px; font-weight: 700; }
+.section-label {
+  font-size: 10px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text3); margin-bottom: 12px;
+}
+.overline { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); margin-bottom: 3px; }
+.val-xl { font-size: 26px; font-weight: 700; line-height: 1.2; }
+.val-lg { font-size: 18px; font-weight: 600; }
+.val-md { font-size: 14px; }
+.muted { color: var(--text2); }
+.caption { font-size: 11px; color: var(--text3); margin-top: 3px; }
+
+/* Chips */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; border: 1px solid;
+}
+.chip-success { background: var(--green-bg); color: var(--green); border-color: #4ade8030; }
+.chip-warning { background: var(--amber-bg); color: var(--amber); border-color: #fbbf2430; }
+.chip-error   { background: var(--red-bg);   color: var(--red);   border-color: #f8717130; }
+.chip-info    { background: var(--indigo-bg); color: var(--indigo-l); border-color: #818cf830; }
+.chip-default { background: var(--bg3); color: var(--text2); border-color: var(--border2); }
+.chip-outline { background: none; color: var(--text2); border-color: var(--border2); }
+
+/* Buttons */
+.btn {
+  padding: 7px 16px; border-radius: var(--r);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  border: 1px solid; font-family: var(--sans);
+  transition: .12s; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-primary  { background: var(--indigo-d); color: #fff; border-color: var(--indigo-d); }
+.btn-primary:hover { background: var(--indigo); border-color: var(--indigo); }
+.btn-primary:disabled { opacity: .35; cursor: not-allowed; }
+.btn-danger   { background: none; color: var(--red); border-color: #f8717140; }
+.btn-danger:hover { background: var(--red-bg); }
+.btn-danger:disabled { opacity: .35; cursor: not-allowed; }
+.btn-outlined { background: none; color: var(--text2); border-color: var(--border2); }
+.btn-outlined:hover { border-color: var(--border3); color: var(--text1); }
+.btn-warning  { background: none; color: var(--amber); border-color: #fbbf2440; }
+.btn-warning:hover { background: var(--amber-bg); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* Progress */
+.progress-wrap { background: var(--bg3); border-radius: 4px; height: 8px; overflow: hidden; }
+.progress-bar  { height: 100%; border-radius: 4px; transition: width .4s; }
+.progress-success { background: var(--green); }
+.progress-warning { background: var(--amber); }
+
+/* Alert */
+.alert { padding: 10px 14px; border-radius: var(--r); font-size: 12px; border-left: 3px solid; margin-bottom: 12px; }
+.alert-warning { background: var(--amber-bg); border-left-color: var(--amber); }
+.alert-info    { background: var(--indigo-bg); border-left-color: var(--indigo); }
+
+/* Divider */
+.divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+/* Form controls */
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; display: block; }
+.input, .select {
+  width: 100%; padding: 7px 11px;
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--text1);
+  font-size: 13px; font-family: var(--sans); outline: none;
+}
+.input:focus, .select:focus { border-color: var(--indigo); }
+.helper { font-size: 11px; color: var(--text3); margin-top: 3px; }
+
+/* Switch */
+.switch-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.switch {
+  width: 36px; height: 20px; flex-shrink: 0; margin-top: 1px;
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: 10px; position: relative; cursor: pointer; transition: .2s;
+}
+.switch.on { background: var(--indigo-d); border-color: var(--indigo-d); }
+.switch::after {
+  content: ''; position: absolute;
+  width: 14px; height: 14px; background: var(--text3);
+  border-radius: 50%; top: 2px; left: 2px; transition: .2s;
+}
+.switch.on::after { left: 18px; background: #fff; }
+
+/* Collapse */
+.collapse-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; padding: 11px 0; font-size: 13px; font-weight: 500;
+  color: var(--text2); border-bottom: 1px solid var(--border);
+  user-select: none; transition: .12s;
+}
+.collapse-hd:hover { color: var(--text1); }
+.arrow { transition: transform .2s; font-size: 11px; color: var(--text3); }
+.arrow.open { transform: rotate(90deg); }
+.collapse-bd { padding-top: 16px; }
+.collapse-bd.hidden { display: none; }
+
+/* Tabs */
+.tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tab {
+  padding: 9px 18px; font-size: 13px; font-weight: 500;
+  color: var(--text3); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; transition: .12s;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--indigo-l); border-bottom-color: var(--indigo); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Page header */
+.page-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.page-hd-actions { display: flex; gap: 8px; align-items: center; }
+
+/* Grid */
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.g6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.g4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+/* Stat card */
+.stat-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r2); padding: 12px 14px; text-align: center;
+}
+
+/* One-line log */
+.oneline-log {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px; min-height: 42px;
+}
+.pulse-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .4; transform: scale(.75); }
+}
+.log-text {
+  font-size: 12px; color: var(--text2); font-family: var(--mono);
+  opacity: 1; transition: opacity .3s ease-in-out;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.log-text.fade { opacity: 0; }
+.log-label { font-size: 11px; color: var(--text3); flex-shrink: 0; }
+
+/* Rate badge */
+.rate-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.rate-badge {
+  padding: 4px 10px; background: var(--bg3);
+  border: 1px solid var(--border2); border-radius: var(--r);
+  font-size: 11px; color: var(--text2);
+}
+.rate-badge b { color: var(--indigo-l); font-family: var(--mono); }
+
+/* Graph placeholder */
+.graph-ph {
+  background: var(--bg3); border: 1px dashed var(--border2);
+  border-radius: var(--r); height: 150px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text3); font-size: 12px;
+}
+
+/* Route info */
+.route-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 16px; }
+.route-field .rf-label {
+  font-size: 10px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text3); margin-bottom: 3px;
+}
+.route-field .rf-val { font-size: 13px; color: var(--text1); word-break: break-all; }
+.rf-link { font-size: 11px; color: var(--indigo-l); text-decoration: underline; text-decoration-style: dotted; cursor: pointer; }
+
+/* DB card */
+.db-card {
+  background: var(--bg2); border: 1px solid #fbbf2430;
+  border-radius: var(--r2); padding: 16px 20px;
+}
+.db-card h3 { font-size: 13px; font-weight: 600; color: var(--text1); margin-bottom: 6px; }
+.db-card p  { font-size: 12px; color: var(--text2); line-height: 1.6; }
+
+/* Badge */
+.badge {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 4px;
+}
+.badge-exp  { background: var(--purple-bg); color: var(--purple); border: 1px solid #c084fc28; }
+.badge-new  { background: #67e8f910;        color: #67e8f9;       border: 1px solid #67e8f928; }
+
+/* ─── HELP PAGE SPECIFIC ─── */
+.stepper { display: flex; flex-direction: column; gap: 0; }
+.step { display: flex; gap: 16px; }
+.step-line-wrap { display: flex; flex-direction: column; align-items: center; }
+.step-circle {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--indigo-bg2); border: 2px solid var(--indigo);
+  color: var(--indigo-l); font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.step-line { width: 2px; flex: 1; background: var(--border2); margin: 3px 0; min-height: 20px; }
+.step:last-child .step-line { display: none; }
+.step-content { padding-bottom: 20px; padding-top: 3px; }
+.step-title { font-size: 13px; font-weight: 600; color: var(--text1); margin-bottom: 4px; }
+.step-desc  { font-size: 12px; color: var(--text2); line-height: 1.7; }
+.step-desc code { background: var(--bg3); padding: 1px 5px; border-radius: 3px; font-family: var(--mono); font-size: 11px; }
+
+.ref-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ref-table th { text-align: left; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); padding: 6px 10px; border-bottom: 1px solid var(--border2); }
+.ref-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text2); line-height: 1.6; }
+.ref-table td:first-child { color: var(--text1); font-weight: 500; white-space: nowrap; font-family: var(--mono); font-size: 11px; min-width: 180px; }
+.ref-table td:last-child  { color: var(--text3); white-space: nowrap; }
+.ref-table tr:last-child td { border-bottom: none; }
+
+.op-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.op-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text2); vertical-align: top; }
+.op-table td:first-child { color: var(--text1); font-weight: 500; width: 44%; }
+.op-table tr:last-child td { border-bottom: none; }
+
+.ver-num { font-size: 28px; font-weight: 700; font-family: var(--mono); color: var(--indigo-l); }
+.update-banner {
+  background: linear-gradient(135deg, #818cf810 0%, #67e8f908 100%);
+  border: 1px solid #818cf830; border-radius: var(--r2);
+  padding: 14px 18px; display: flex; align-items: center; gap: 14px; margin-bottom: 12px;
+}
+.update-icon { font-size: 24px; flex-shrink: 0; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--indigo); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.alert-success { background: var(--green-bg); border-left-color: var(--green); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg1); }
+::-webkit-scrollbar-thumb { background: var(--border3); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ══ AppBar ══ -->
+  <div class="appbar">
+    <span class="appbar-logo">☁</span>
+    <span class="appbar-title">CloudMigrator Dashboard</span>
+    <span class="spacer"></span>
+    <div class="warn-icon" title="クライアントシークレットの有効期限まで残り 25 日です">⚠</div>
+    <span class="appbar-version">v0.7.0</span>
+  </div>
+
+  <div class="layout">
+
+    <!-- ══ Drawer ══ -->
+    <nav class="drawer">
+      <div class="nav-item active" onclick="showPage('dashboard',0)">
+        <span class="nav-icon">📊</span>ダッシュボード
+      </div>
+      <div class="nav-item" onclick="showPage('settings',1)">
+        <span class="nav-icon">⚙️</span>設定
+      </div>
+      <div class="nav-item" onclick="showPage('doctor',2)">
+        <span class="nav-icon">🔌</span>接続テスト
+      </div>
+      <div class="nav-item" onclick="showPage('logs',3)">
+        <span class="nav-icon">📋</span>ログ
+      </div>
+      <div class="drawer-divider"></div>
+      <div class="nav-item" onclick="showPage('help',4)">
+        <span class="nav-icon">❓</span>ヘルプ
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon">🔄</span>セットアップをやり直す
+      </div>
+    </nav>
+
+    <!-- ══ Main ══ -->
+    <div class="main">
+
+      <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           DASHBOARD PAGE
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div id="page-dashboard" class="page active">
+
+        <!-- Page header + action buttons (常時表示) -->
+        <div class="page-hd">
+          <span class="page-title">転送ダッシュボード</span>
+          <span class="chip chip-success">● 安定転送中</span>
+          <span class="chip chip-outline" title="転送元: /Documents/移行対象  →  転送先: /移行先/2024">
+            ⇄ OneDrive → SharePoint
+          </span>
+          <span class="spacer"></span>
+          <div class="page-hd-actions">
+            <button class="btn btn-primary" disabled>▶ 転送開始</button>
+            <button class="btn btn-danger">■ 停止</button>
+          </div>
+        </div>
+
+        <!-- 進捗バー (常時表示) -->
+        <div class="card card-sm" style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;font-weight:600">ファイル転送進捗: 68.4%</span>
+            <span style="font-size:12px;color:var(--text3)">6,840 / 10,000 件</span>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-bar progress-success" style="width:68.4%"></div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tab-bar">
+          <div class="tab active" onclick="showTab('dash','overview',this)">概要</div>
+          <div class="tab" onclick="showTab('dash','detail',this)">詳細情報</div>
+          <div class="tab" onclick="showTab('dash','log',this)">ログ</div>
+        </div>
+
+        <!-- ── Tab: 概要 ── -->
+        <div id="dash-tab-overview" class="tab-panel active">
+
+          <!-- ステータスカード -->
+          <div class="g6" style="margin-bottom:12px">
+            <div class="stat-card">
+              <div class="overline">完了</div>
+              <div class="val-xl" style="color:var(--green)">6,840</div>
+            </div>
+            <div class="stat-card">
+              <div class="overline">処理中</div>
+              <div class="val-xl" style="color:var(--indigo-l)">16</div>
+            </div>
+            <div class="stat-card">
+              <div class="overline">待機中</div>
+              <div class="val-xl" style="color:var(--amber)">3,124</div>
+            </div>
+            <div class="stat-card">
+              <div class="overline">失敗</div>
+              <div class="val-xl" style="color:var(--red)">20</div>
+            </div>
+            <div class="stat-card">
+              <div class="overline">永久失敗</div>
+              <div class="val-xl" style="color:var(--red)">2</div>
+            </div>
+            <div class="stat-card">
+              <div class="overline">合計</div>
+              <div class="val-xl">10,000</div>
+            </div>
+          </div>
+
+          <!-- 時間行 -->
+          <div class="card card-sm" style="margin-bottom:12px">
+            <div class="g3">
+              <div>
+                <div class="overline">実稼働時間</div>
+                <div class="val-lg">2h 14m 33s</div>
+              </div>
+              <div>
+                <div class="overline">総経過時間</div>
+                <div class="val-lg muted">2h 31m 07s</div>
+              </div>
+              <div>
+                <div class="overline">残り予測 (ETA)</div>
+                <div class="val-lg">約 1h 03m</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 一行ログ（動いてる感） -->
+          <div class="oneline-log" style="margin-bottom:12px">
+            <div class="pulse-dot"></div>
+            <span class="log-label">転送中：</span>
+            <span class="log-text" id="log-text">Documents/2024/Q4/財務報告_最終版.xlsx</span>
+          </div>
+
+        </div>
+
+        <!-- ── Tab: 詳細情報 ── -->
+        <div id="dash-tab-detail" class="tab-panel">
+
+          <!-- レートモニター -->
+          <div class="card card-sm" style="margin-bottom:12px">
+            <div class="section-label">レートモニター</div>
+            <div class="rate-row">
+              <div class="rate-badge">制御状態 <b>STABLE</b></div>
+              <div class="rate-badge">レート上限 <b>12.4 req/s</b></div>
+              <div class="rate-badge">インフライト <b>16</b></div>
+              <div class="rate-badge">短期 429 率 <b style="color:var(--green)">0.8%</b></div>
+              <div class="rate-badge">中期 429 率 <b style="color:var(--green)">0.3%</b></div>
+            </div>
+          </div>
+
+          <!-- 実稼働統計 -->
+          <div class="card card-sm" style="margin-bottom:12px">
+            <div class="section-label">実稼働統計</div>
+            <div class="g4">
+              <div>
+                <div class="overline">現在並列数</div>
+                <div class="val-lg">16</div>
+              </div>
+              <div>
+                <div class="overline">リトライ総数</div>
+                <div class="val-lg">47</div>
+              </div>
+              <div>
+                <div class="overline">エラー率</div>
+                <div class="val-lg" style="color:var(--amber)">0.3%</div>
+              </div>
+              <div>
+                <div class="overline">転送済みデータ</div>
+                <div class="val-lg">24.7 GB</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- メトリクスグラフ（各カードに個別スイッチ） -->
+          <div class="g2" style="margin-bottom:12px">
+            <div class="card card-sm card-last">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div class="section-label" style="margin:0">スループット (files/min)</div>
+                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+              </div>
+              <div class="graph-ph">📈 グラフ</div>
+            </div>
+            <div class="card card-sm card-last">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div class="section-label" style="margin:0">スループット (bytes/sec)</div>
+                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+              </div>
+              <div class="graph-ph">📈 グラフ</div>
+            </div>
+            <div class="card card-sm card-last">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div class="section-label" style="margin:0">レートリミット率 (%)</div>
+                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+              </div>
+              <div class="graph-ph">📈 グラフ</div>
+            </div>
+            <div class="card card-sm card-last">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div class="section-label" style="margin:0">並列実行数</div>
+                <div class="switch on" onclick="toggleGraph(this)" title="表示 / 非表示"></div>
+              </div>
+              <div class="graph-ph">📈 グラフ</div>
+            </div>
+          </div>
+
+          <!-- 最近の失敗 -->
+          <div class="card card-sm">
+            <div class="section-label">最近の失敗（最大 5 件）</div>
+            <div style="font-size:12px;font-family:var(--mono);line-height:1.9">
+              <div style="border-bottom:1px solid var(--border);padding:4px 0;color:var(--text2)">
+                <span style="color:var(--red)">✕</span>
+                &nbsp;Documents/archive/古いファイル？.docx
+                <span style="font-size:10px;color:var(--text3);margin-left:8px">InvalidCharacters</span>
+              </div>
+              <div style="padding:4px 0;color:var(--text2)">
+                <span style="color:var(--red)">✕</span>
+                &nbsp;Documents/huge/大容量動画ファイル_4K.mp4
+                <span style="font-size:10px;color:var(--text3);margin-left:8px">RequestTimeout</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ── Tab: ログ ── -->
+        <div id="dash-tab-log" class="tab-panel">
+          <div class="card">
+            <div class="section-label">転送ログ（直近）</div>
+            <div style="font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--text2)">
+              <div>[14:23:01] <span style="color:var(--green)">INFO</span>  Documents/2024/Q4/財務報告_最終版.xlsx → 完了 (1.2 MB)</div>
+              <div>[14:23:01] <span style="color:var(--green)">INFO</span>  Documents/2024/Q4/予算計画書_v3.pptx → 完了 (4.8 MB)</div>
+              <div>[14:22:58] <span style="color:var(--amber)">WARN</span>  Documents/archive/古いファイル?.docx → リトライ (2/3)</div>
+              <div>[14:22:55] <span style="color:var(--green)">INFO</span>  Documents/2024/Q3/議事録_1012.docx → 完了 (0.3 MB)</div>
+              <div>[14:22:54] <span style="color:var(--green)">INFO</span>  Documents/2024/Q3/議事録_1005.docx → 完了 (0.2 MB)</div>
+              <div style="color:var(--text3);margin-top:8px;font-size:11px">（詳細ログは「ログ」ページで確認できます）</div>
+            </div>
+            <div style="margin-top:12px">
+              <button class="btn btn-outlined btn-sm" onclick="showPage('logs',3)">ログページを開く →</button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /page-dashboard -->
+
+
+      <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           SETTINGS PAGE
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div id="page-settings" class="page" style="max-width:660px">
+
+        <div class="page-hd" style="margin-bottom:20px">
+          <span class="page-title">設定</span>
+        </div>
+
+        <!-- [A] 転送ルート情報 -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="section-label">転送ルート情報</div>
+          <div class="route-grid">
+            <div class="route-field">
+              <div class="rf-label">移行ルート</div>
+              <div class="rf-val">OneDrive → SharePoint</div>
+            </div>
+            <div class="route-field">
+              <div class="rf-label">転送元ユーザー</div>
+              <div class="rf-val">user@contoso.com</div>
+              <div class="caption rf-link" title="OneDrive 表示名">田中 太郎 ℹ</div>
+            </div>
+            <div class="route-field">
+              <div class="rf-label">転送元フォルダ</div>
+              <div class="rf-val">/Documents/移行対象</div>
+            </div>
+            <div class="route-field" style="margin-top:12px">
+              <div class="rf-label">SharePoint サイト</div>
+              <div class="rf-val">営業部サイト</div>
+              <div class="caption rf-link" title="サイト URL を開く">🔗 https://contoso.sharepoint.com/sites/sales ℹ</div>
+            </div>
+            <div class="route-field" style="margin-top:12px">
+              <div class="rf-label">ドキュメントライブラリ</div>
+              <div class="rf-val">共有ドキュメント</div>
+            </div>
+            <div class="route-field" style="margin-top:12px">
+              <div class="rf-label">転送先フォルダ</div>
+              <div class="rf-val">/移行先/2024/OneDrive</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [B] 表示設定（折りたたみなし） -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="section-label">表示設定</div>
+
+          <div class="form-group">
+            <label class="form-label">テーマ</label>
+            <select class="select" style="max-width:260px">
+              <option selected>システムに従う（推奨）</option>
+              <option>ライト</option>
+              <option>ダーク</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-top:6px">
+            <label class="form-label">グラフ列数</label>
+            <select class="select" style="max-width:200px">
+              <option>1 列</option>
+              <option selected>2 列（デフォルト）</option>
+              <option>3 列</option>
+              <option>4 列</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- [C] 基本設定（折りたたみ） -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="collapse-hd" onclick="toggleCollapse('basic',this)">
+            <span>基本設定</span>
+            <span class="arrow">▶</span>
+          </div>
+          <div id="basic" class="collapse-bd hidden">
+            <div class="g2">
+              <div class="form-group">
+                <label class="form-label">最大並行転送数</label>
+                <input class="input" type="number" value="16" style="max-width:160px">
+                <div class="helper">ネットワーク環境に合わせて調整してください。</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">タイムアウト (秒)</label>
+                <input class="input" type="number" value="300" style="max-width:160px">
+                <div class="helper">1 リクエストあたりのタイムアウト時間。</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">リトライ回数</label>
+                <input class="input" type="number" value="3" style="max-width:160px">
+                <div class="helper">通常は変更不要です。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [D] 詳細設定（折りたたみ・上級者向け） -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="collapse-hd" onclick="toggleCollapse('advanced',this)">
+            <span>詳細設定 <span class="badge badge-exp">上級者向け</span></span>
+            <span class="arrow">▶</span>
+          </div>
+          <div id="advanced" class="collapse-bd hidden">
+
+            <div class="switch-row" style="margin-bottom:4px">
+              <div class="switch on"></div>
+              <div>
+                <div style="font-size:13px;font-weight:500">レートベース制御エンジンを使用する（推奨）</div>
+                <div class="helper">ON: req/s 主体の新エンジン。  OFF: 旧来の並列数ベースエンジン。</div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+            <div class="section-label">レートベース制御パラメーター</div>
+            <div class="g2" style="margin-bottom:12px">
+              <div class="form-group">
+                <label class="form-label">最大並行数 / レート上限（安全キャップ）</label>
+                <input class="input" type="number" value="16">
+              </div>
+              <div class="form-group">
+                <label class="form-label">インフライト閾値</label>
+                <input class="input" type="number" value="32">
+              </div>
+              <div class="form-group">
+                <label class="form-label">短期ウィンドウ (秒)</label>
+                <input class="input" type="number" value="5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">中期ウィンドウ (秒)</label>
+                <input class="input" type="number" value="30">
+              </div>
+              <div class="form-group">
+                <label class="form-label">緊急減速閾値 (429 率 %)</label>
+                <input class="input" type="number" value="10">
+              </div>
+              <div class="form-group">
+                <label class="form-label">緩減速閾値 (429 率 %)</label>
+                <input class="input" type="number" value="3">
+              </div>
+            </div>
+
+            <div class="divider"></div>
+            <div class="section-label">その他</div>
+            <div class="g2">
+              <div class="form-group">
+                <label class="form-label">チャンクサイズ (MB)</label>
+                <input class="input" type="number" value="10">
+              </div>
+              <div class="form-group">
+                <label class="form-label">大ファイル閾値 (MB)</label>
+                <input class="input" type="number" value="4">
+              </div>
+              <div class="form-group">
+                <label class="form-label">最大並行フォルダ作成数</label>
+                <input class="input" type="number" value="4">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [E] データ管理（折りたたみなし・常時表示） -->
+        <div class="db-card" style="margin-bottom:20px">
+          <h3>データベースを初期化</h3>
+          <p>
+            転送済みの記録がすべて削除され、次回実行時にすべてのファイルが再転送対象になります。<br>
+            <strong>転送先・転送元フォルダを変更した場合</strong>や、最初からやり直したい場合に使用してください。
+          </p>
+          <div class="alert alert-warning" style="margin-top:12px">
+            ⚠ 初期化後は元に戻せません。完了済みファイルも含めてすべて再転送されます。
+          </div>
+          <button class="btn btn-warning">🗑 データベースを初期化</button>
+        </div>
+
+        <!-- Save actions -->
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary">保存</button>
+          <button class="btn btn-outlined">リセット</button>
+        </div>
+
+      </div><!-- /page-settings -->
+
+
+      <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           DOCTOR PAGE
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div id="page-doctor" class="page">
+        <div class="page-hd"><span class="page-title">接続テスト</span></div>
+        <div class="card" style="max-width:500px">
+          <div class="section-label">接続テスト</div>
+          <p style="color:var(--text2);font-size:13px">接続テストの UI はこのフェーズで変更なし</p>
+        </div>
+      </div>
+
+      <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           LOGS PAGE
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div id="page-logs" class="page">
+        <div class="page-hd"><span class="page-title">ログ</span></div>
+        <div class="card">
+          <div class="section-label">転送ログビューアー</div>
+          <div style="font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--text2)">
+            <div>[14:23:01] <span style="color:var(--green)">INFO</span>  Documents/2024/Q4/財務報告_最終版.xlsx → 完了</div>
+            <div>[14:22:58] <span style="color:var(--amber)">WARN</span>  Documents/archive/古いファイル?.docx → リトライ (2/3)</div>
+            <div>[14:22:55] <span style="color:var(--green)">INFO</span>  Documents/2024/Q3/議事録_1012.docx → 完了</div>
+            <div>[14:22:50] <span style="color:var(--green)">INFO</span>  Documents/2024/Q3/議事録_1005.docx → 完了</div>
+            <div>[14:22:45] <span style="color:var(--red)">ERROR</span> Documents/huge/大容量動画ファイル_4K.mp4 → 失敗 (RequestTimeout)</div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           HELP PAGE
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div id="page-help" class="page" style="max-width:740px">
+
+        <div class="page-hd" style="margin-bottom:20px"><span class="page-title">ヘルプ</span></div>
+
+        <div class="tab-bar">
+          <div class="tab active" onclick="showTab('help','setup',this)">セットアップ</div>
+          <div class="tab" onclick="showTab('help','howto',this)">基本的な操作方法</div>
+          <div class="tab" onclick="showTab('help','ref',this)">設定リファレンス</div>
+          <div class="tab" onclick="showTab('help','version',this)">バージョン情報</div>
+        </div>
+
+        <!-- ── Tab A: セットアップ ── -->
+        <div id="help-tab-setup" class="tab-panel active">
+          <div class="card">
+            <div class="section-label">初期セットアップの手順</div>
+            <div class="stepper">
+
+              <div class="step">
+                <div class="step-line-wrap"><div class="step-circle">1</div><div class="step-line"></div></div>
+                <div class="step-content">
+                  <div class="step-title">Azure AD にアプリを登録する</div>
+                  <div class="step-desc">
+                    Azure Portal (portal.azure.com) → Microsoft Entra ID → アプリの登録 → 新規登録。<br>
+                    登録後、<strong>クライアント ID</strong>・<strong>テナント ID</strong> をメモする。<br>
+                    「証明書とシークレット」から新しいクライアントシークレットを作成し、値をメモする（作成直後のみ表示）。<br>
+                    「API のアクセス許可」に <code>Files.ReadWrite.All</code>、<code>Sites.ReadWrite.All</code> を追加して管理者の同意を付与する。
+                  </div>
+                </div>
+              </div>
+
+              <div class="step">
+                <div class="step-line-wrap"><div class="step-circle">2</div><div class="step-line"></div></div>
+                <div class="step-content">
+                  <div class="step-title">CloudMigrator を起動してウィザードを開く</div>
+                  <div class="step-desc">
+                    初回起動時はウィザードが自動表示されます。<br>
+                    再実行する場合はドロワー下部の「セットアップをやり直す」から起動できます。
+                  </div>
+                </div>
+              </div>
+
+              <div class="step">
+                <div class="step-line-wrap"><div class="step-circle">3</div><div class="step-line"></div></div>
+                <div class="step-content">
+                  <div class="step-title">Azure 認証情報を入力する</div>
+                  <div class="step-desc">
+                    手順 1 で取得した <strong>クライアント ID</strong>・<strong>クライアントシークレット</strong>・<strong>テナント ID</strong> を入力します。<br>
+                    シークレットの有効期限も入力しておくと、期限が近づいたときに AppBar に警告アイコンが表示されます。
+                  </div>
+                </div>
+              </div>
+
+              <div class="step">
+                <div class="step-line-wrap"><div class="step-circle">4</div><div class="step-line"></div></div>
+                <div class="step-content">
+                  <div class="step-title">移行元 OneDrive を選択する</div>
+                  <div class="step-desc">
+                    移行対象ユーザーの UPN（メールアドレス）を入力し、OneDrive ドライブ ID を取得します。<br>
+                    移行元フォルダパスも指定します（例: <code>/Documents/移行対象</code>）。
+                  </div>
+                </div>
+              </div>
+
+              <div class="step">
+                <div class="step-line-wrap"><div class="step-circle">5</div><div class="step-line"></div></div>
+                <div class="step-content">
+                  <div class="step-title">移行先 SharePoint を選択する</div>
+                  <div class="step-desc">
+                    テナント内の SharePoint サイト一覧からサイトを選択します。<br>
+                    次にドキュメントライブラリを選択し、移行先フォルダパスを指定します。
+                  </div>
+                </div>
+              </div>
+
+              <div class="step">
+                <div class="step-line-wrap"><div class="step-circle">6</div><div class="step-line"></div></div>
+                <div class="step-content">
+                  <div class="step-title">接続テストを実行して確認する</div>
+                  <div class="step-desc">
+                    ドロワーの「接続テスト」ページで Graph API への疎通と権限を確認します。<br>
+                    すべてのチェックが成功したら移行の準備が完了です。
+                  </div>
+                </div>
+              </div>
+
+              <div class="step">
+                <div class="step-line-wrap"><div class="step-circle">7</div></div>
+                <div class="step-content">
+                  <div class="step-title">ダッシュボードから転送を開始する</div>
+                  <div class="step-desc">
+                    ダッシュボードのヘッダー右端にある「▶ 転送開始」ボタンを押すと移行が始まります。
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /stepper -->
+          </div>
+        </div>
+
+        <!-- ── Tab B: 基本的な操作方法 ── -->
+        <div id="help-tab-howto" class="tab-panel">
+          <div class="card" style="margin-bottom:12px">
+            <div class="section-label">ダッシュボード</div>
+            <table class="op-table">
+              <tr><td>転送を開始する</td><td>ヘッダー右端の「▶ 転送開始」ボタンを押す</td></tr>
+              <tr><td>転送を停止する</td><td>ヘッダー右端の「■ 停止」ボタンを押す</td></tr>
+              <tr><td>進捗を確認する</td><td>「概要」タブのステータスカードと進捗バーを見る</td></tr>
+              <tr><td>失敗ファイルを確認する</td><td>「詳細情報」タブの「最近の失敗」セクションを参照</td></tr>
+              <tr><td>転送速度やレートを詳しく見る</td><td>「詳細情報」タブのレートモニターと統計を参照</td></tr>
+              <tr><td>ログを見る</td><td>「ログ」タブ、またはドロワーの「ログ」ページ</td></tr>
+            </table>
+          </div>
+          <div class="card" style="margin-bottom:12px">
+            <div class="section-label">設定</div>
+            <table class="op-table">
+              <tr><td>転送先 / 転送元の情報を確認する</td><td>設定 → 転送ルート情報セクションを参照</td></tr>
+              <tr><td>テーマを変更する</td><td>設定 → 表示設定 → テーマを選択 → 保存</td></tr>
+              <tr><td>設定を変更して適用する</td><td>値を変更後、ページ下部の「保存」ボタンを押す</td></tr>
+              <tr><td>最初から移行をやり直す</td><td>設定 →「データ管理」→「データベースを初期化」</td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <div class="section-label">フェーズの見かた（ダッシュボードのチップ表示）</div>
+            <table class="op-table">
+              <tr><td><span class="chip chip-info" style="font-size:11px">ファイルを確認中...</span></td><td>移行対象ファイルの一覧を取得しています。まだ転送は始まっていません。</td></tr>
+              <tr><td><span class="chip chip-warning" style="font-size:11px">フォルダを作成中...</span></td><td>移行先 SharePoint にフォルダ構造を作成しています。</td></tr>
+              <tr><td><span class="chip chip-success" style="font-size:11px">安定転送中</span></td><td>ファイルを正常に転送しています。</td></tr>
+              <tr><td><span class="chip chip-warning" style="font-size:11px">速度調整中</span></td><td>429 エラーを受けて速度を緩めています。しばらくすると自動回復します。</td></tr>
+              <tr><td><span class="chip chip-error" style="font-size:11px">流量制御中</span></td><td>429 エラーが多発しており大幅減速中です。しばらく待つと自動回復します。</td></tr>
+              <tr><td><span class="chip chip-success" style="font-size:11px">移行完了 ✓</span></td><td>すべての対象ファイルの転送が完了しました。</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Tab C: 設定リファレンス ── -->
+        <div id="help-tab-ref" class="tab-panel">
+          <div class="card" style="margin-bottom:12px">
+            <div class="section-label">基本設定</div>
+            <table class="ref-table">
+              <thead><tr><th>項目</th><th>説明</th><th>デフォルト</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>最大並行転送数</td>
+                  <td>同時に実行するファイル転送の上限数。大きくするほど速いが、429 が増えやすい。ネットワーク品質に応じて調整する。</td>
+                  <td>16</td>
+                </tr>
+                <tr>
+                  <td>タイムアウト (秒)</td>
+                  <td>1 リクエストあたりの上限時間。大容量ファイルのアップロード中に到達するとリトライになる。大ファイルが多い場合は大きめに設定する。</td>
+                  <td>300</td>
+                </tr>
+                <tr>
+                  <td>リトライ回数</td>
+                  <td>一時的なエラー（5xx / ネットワーク断）発生時の再試行上限。最大回数を超えると「失敗」ステータスになる。</td>
+                  <td>3</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="section-label">詳細設定 — レートベース制御エンジン <span class="badge badge-exp">上級者向け</span></div>
+            <div class="alert alert-info" style="margin-bottom:12px">
+              Graph API からの 429 応答をリアルタイム監視しながら転送レートを自動調整します。<br>
+              <strong>ON:</strong> req/s 主体の新エンジン（推奨）&nbsp;&nbsp;<strong>OFF:</strong> 旧来の並列数固定エンジン（シンプル・予測可能）
+            </div>
+            <table class="ref-table">
+              <thead><tr><th>項目</th><th>説明</th><th>デフォルト</th></tr></thead>
+              <tbody>
+                <tr><td>最大並行数 /<br>レート上限（キャップ）</td><td>エンジンが自動加速しても超えない上限。帯域の目安として設定する。大きすぎると 429 が頻発する。</td><td>16</td></tr>
+                <tr><td>インフライト閾値</td><td>同時処理中リクエスト数がこの値を超えると新規リクエストの発行を抑制する。並列数の上限バッファ的な役割。</td><td>32</td></tr>
+                <tr><td>短期ウィンドウ (秒)</td><td>直近 N 秒間の 429 率を計測するウィンドウ幅。小さいほど急変化に即反応するが不安定になりやすい。</td><td>5</td></tr>
+                <tr><td>中期ウィンドウ (秒)</td><td>中〜長期の 429 率を計測するウィンドウ幅。過去の傾向を加味した安定した判断に使う。</td><td>30</td></tr>
+                <tr><td>緊急減速閾値 (429 率 %)</td><td>短期 429 率がこの値を超えると即座に大幅減速する。急激なレートリミットへの緊急ブレーキ。</td><td>10</td></tr>
+                <tr><td>緩減速閾値 (429 率 %)</td><td>短期 429 率がこの値を超えると緩やかに減速する。この値より低い状態が続くとエンジンが自動加速する。</td><td>3</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="section-label">詳細設定 — ファイル転送 <span class="badge badge-exp">上級者向け</span></div>
+            <table class="ref-table">
+              <thead><tr><th>項目</th><th>説明</th><th>デフォルト</th></tr></thead>
+              <tbody>
+                <tr><td>チャンクサイズ (MB)</td><td>大容量ファイルを分割アップロードする際の 1 チャンクのサイズ（Graph API LargeFileUpload）。大きくすると 1 チャンクのタイムアウトリスクが上がる。</td><td>10</td></tr>
+                <tr><td>大ファイル閾値 (MB)</td><td>これより大きいファイルをチャンクアップロードに切り替える閾値。Graph API の制限（4 MB）以上を推奨。</td><td>4</td></tr>
+                <tr><td>最大並行フォルダ作成数</td><td>フォルダ構造の作成フェーズで同時に作成するフォルダ数の上限。</td><td>4</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Tab D: バージョン情報 ── -->
+        <div id="help-tab-version" class="tab-panel">
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="section-label">現在のバージョン</div>
+            <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+              <div>
+                <div class="ver-num">v0.7.0</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:4px">ビルド: 2026-04-10</div>
+              </div>
+              <div style="flex:1">
+                <div style="font-size:12px;color:var(--text2);line-height:1.9">
+                  .NET 10 / Blazor Hybrid (WPF)<br>
+                  Microsoft Graph SDK v5<br>
+                  MudBlazor v8
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 更新あり バナー (状態: 更新あり) -->
+          <div class="update-banner">
+            <div class="update-icon">🎉</div>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:600;color:var(--text1)">v0.8.0 が利用可能です</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:2px">
+                新しいバージョンがリリースされています。GitHub Releases からダウンロードしてください。
+              </div>
+              <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm"
+                  onclick="window.open('https://github.com/scottlz0310/cloud-migrator/releases/tag/v0.8.0','_blank')">
+                  ↑ リリースページを開く
+                </button>
+                <button class="btn btn-outlined btn-sm"
+                  onclick="this.closest('.update-banner').style.display='none'">後で</button>
+              </div>
+            </div>
+          </div>
+          <!-- 他の UI 状態（コメントで説明）:
+               チェック中  → <div class="card-sm"><span class="spinner"></span> 最新バージョンを確認しています...</div>
+               最新        → <div class="alert alert-success">✓ 最新バージョンを使用しています (v0.7.0)</div>
+               エラー      → <span style="color:var(--text3)">更新情報を取得できませんでした。</span> + 再試行ボタン
+          -->
+
+          <div class="card">
+            <div class="section-label">v0.8.0 — リリースノート（抜粋）</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.9">
+              <div style="margin-bottom:6px"><span style="color:var(--green);font-weight:600">新機能</span></div>
+              <ul style="padding-left:18px;margin-bottom:12px">
+                <li>ヘルプページを追加（セットアップ手順・設定リファレンス・バージョン情報）</li>
+                <li>システムテーマ追随（ダークモード対応）</li>
+                <li>転送ダッシュボードのタブ構造化</li>
+              </ul>
+              <div style="margin-bottom:6px"><span style="color:var(--amber);font-weight:600">改善</span></div>
+              <ul style="padding-left:18px;margin-bottom:12px">
+                <li>設定ページの構成を一般 / 上級者向けに分離</li>
+                <li>フェーズ表示を人間に読みやすい形式に変更</li>
+                <li>DB初期化の文言と警告レベルを改善</li>
+              </ul>
+              <a href="https://github.com/scottlz0310/cloud-migrator/releases" target="_blank"
+                 style="color:var(--indigo-l);font-size:11px;text-decoration:underline;text-decoration-style:dotted">
+                すべてのリリースを GitHub で見る →
+              </a>
+            </div>
+          </div>
+
+          <div style="margin-top:14px">
+            <button class="btn btn-outlined btn-sm">🔄 更新を手動で確認する</button>
+          </div>
+
+        </div><!-- /help-tab-version -->
+
+      </div><!-- /page-help -->
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+</div><!-- /shell -->
+
+<script>
+// ─── Page navigation ───
+const PAGES = ['dashboard','settings','doctor','logs','help'];
+function showPage(id, navIdx) {
+  PAGES.forEach(p => { const el = document.getElementById('page-' + p); if (el) el.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const target = document.getElementById('page-' + id);
+  if (target) target.classList.add('active');
+  const items = document.querySelectorAll('.nav-item');
+  if (items[navIdx]) items[navIdx].classList.add('active');
+}
+
+// ─── Tab switching ───
+function showTab(scope, id, el) {
+  const prefix = scope + '-tab-';
+  document.querySelectorAll(`[id^="${prefix}"]`).forEach(p => p.classList.remove('active'));
+  el.closest('.tab-bar').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(prefix + id).classList.add('active');
+  el.classList.add('active');
+}
+
+// ─── Graph card toggle ───
+function toggleGraph(sw) {
+  sw.classList.toggle('on');
+  const card = sw.closest('.card');
+  const ph = card.querySelector('.graph-ph');
+  if (ph) ph.style.display = sw.classList.contains('on') ? '' : 'none';
+}
+
+// ─── Collapse sections ───
+function toggleCollapse(id, hd) {
+  const body = document.getElementById(id);
+  const arrow = hd.querySelector('.arrow');
+  body.classList.toggle('hidden');
+  arrow.classList.toggle('open');
+}
+
+// ─── One-line log animation ───
+const FILES = [
+  'Documents/2024/Q4/財務報告_最終版.xlsx',
+  'Documents/2024/Q4/予算計画書_v3.pptx',
+  'Documents/2024/Q3/議事録_1012.docx',
+  'Documents/2024/Q3/プロジェクト計画書.pdf',
+  'Documents/2024/Q2/契約書_確定版.pdf',
+  'Documents/assets/画像素材/logo_final.png',
+  'Documents/HR/2024/採用要件定義書.docx',
+];
+let logIdx = 0;
+const logEl = document.getElementById('log-text');
+setInterval(() => {
+  logEl.classList.add('fade');
+  setTimeout(() => {
+    logIdx = (logIdx + 1) % FILES.length;
+    logEl.textContent = FILES[logIdx];
+    logEl.classList.remove('fade');
+  }, 300);
+}, 2500);
+</script>
+</body>
+</html>
