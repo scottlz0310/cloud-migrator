@@ -627,8 +627,13 @@ else
                 RcAddStep: (_editUseRateControl && _editUseHybridController) ? _editRcAddStep : null,
                 RcLatencyMode: (_editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null);
             await ConfigService.UpdateConfigAsync(update);
+            // 表示設定の編集中の値を保護してから転送設定のみ再反映する
+            var savedTheme = _editThemeMode;
+            var savedColumns = _editGraphColumns;
             _config = await ConfigService.GetConfigAsync();
             CopyToEditFields(_config);
+            _editThemeMode = savedTheme;
+            _editGraphColumns = savedColumns;
             Snackbar.Add("転送設定を保存しました。", Severity.Success);
         }
         catch (Exception ex)
@@ -659,7 +664,9 @@ else
                 ThemeMode: _editThemeMode,
                 GraphColumns: _editGraphColumns));
             _config = await ConfigService.GetConfigAsync();
-            CopyToEditFields(_config);
+            // 転送設定の編集中の値を保護するため、表示設定フィールドのみを再反映する
+            _editThemeMode = _config.ThemeMode;
+            _editGraphColumns = _config.GraphColumns;
             await OnThemeModeChanged.InvokeAsync(_editThemeMode);
             Snackbar.Add("表示設定を保存しました。", Severity.Success);
         }
