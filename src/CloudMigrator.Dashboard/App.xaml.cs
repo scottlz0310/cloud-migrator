@@ -266,25 +266,37 @@ public partial class App : Application
                         var normalizedTimeoutSec = Math.Max(1, opts.TimeoutSec);
                         var dropboxHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(normalizedTimeoutSec) };
                         var dropboxOAuthService = sp.GetRequiredService<IDropboxOAuthService>();
-                        using var dropboxProvider = new DropboxStorageProvider(
-                            loggerFactory2.CreateLogger<DropboxStorageProvider>(),
-                            credentialStore,
-                            dropboxOAuthService,
-                            dropboxOptions,
-                            httpClient: dropboxHttpClient,
-                            disposeHttpClient: true,
-                            maxRetry: opts.RetryCount,
-                            onRateLimit: onRateLimit);
-                        // dropboxStateDb は MigrationWork 冒頭で早期生成・初期化済み
-                        // hashChanged 時のリセットも effectiveStateDb.ResetAllAsync() により処理済み
-                        var dropboxPipeline = new DropboxMigrationPipeline(
-                            storageProvider,
-                            dropboxProvider,
-                            dropboxStateDb!,
-                            opts,
-                            loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
-                            concurrencyController);
-                        await dropboxPipeline.RunAsync(ct).ConfigureAwait(false);
+                        // コンストラクタで例外が発生した場合も dropboxHttpClient を確実に Dispose する
+                        DropboxStorageProvider? dropboxProvider = null;
+                        try
+                        {
+                            dropboxProvider = new DropboxStorageProvider(
+                                loggerFactory2.CreateLogger<DropboxStorageProvider>(),
+                                credentialStore,
+                                dropboxOAuthService,
+                                dropboxOptions,
+                                httpClient: dropboxHttpClient,
+                                disposeHttpClient: true,
+                                maxRetry: opts.RetryCount,
+                                onRateLimit: onRateLimit);
+                            // dropboxStateDb は MigrationWork 冒頭で早期生成・初期化済み
+                            // hashChanged 時のリセットも effectiveStateDb.ResetAllAsync() により処理済み
+                            var dropboxPipeline = new DropboxMigrationPipeline(
+                                storageProvider,
+                                dropboxProvider,
+                                dropboxStateDb!,
+                                opts,
+                                loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
+                                concurrencyController);
+                            await dropboxPipeline.RunAsync(ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            if (dropboxProvider is not null)
+                                dropboxProvider.Dispose();
+                            else
+                                dropboxHttpClient.Dispose();
+                        }
                     }
                     else
                     {
