@@ -3,6 +3,7 @@
 @inject Func<MigratorOptions> OptionsFactory
 @inject IConfigurationService ConfigService
 @inject ILogger<DashboardPage> Logger
+@inject ILogChannel LogChannel
 @using CloudMigrator.Core.Configuration
 @implements IDisposable
 
@@ -94,12 +95,22 @@ else
         </MudCardContent>
     </MudCard>
 
-    @* ── タブ構造 ─────────────────────────────────────────────────────────── *@
-    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true">
+    @* ── タブ構造（モックアップ準拠カスタムタブバー） ─────────────────────── *@
+    <div style="display:flex; border-bottom:1px solid var(--mud-palette-divider); margin-bottom:0;">
+        @foreach (var tab in new[] { ("概要","overview"), ("詳細情報","detail"), ("ログ","log") })
+        {
+            var isActive = _dashboardTab == tab.Item2;
+            <button type="button" @onclick="@(() => _dashboardTab = tab.Item2)"
+                    style="@($"padding:10px 20px; background:none; border:none; cursor:pointer; font-size:14px; font-weight:{(isActive ? 600 : 400)}; color:{(isActive ? "var(--mud-palette-primary)" : "var(--mud-palette-text-secondary)")}; border-bottom:2px solid {(isActive ? "var(--mud-palette-primary)" : "transparent")}; margin-bottom:-1px; transition:color .15s,border-color .15s;")">
+                @tab.Item1
+            </button>
+        }
+    </div>
 
-        @* ── Tab1: 概要 ──────────────────────────────────────────────────── *@
-        <MudTabPanel Text="概要">
-            <MudGrid>
+    @* ── Tab1: 概要 ──────────────────────────────────────────────────────── *@
+    @if (_dashboardTab == "overview")
+    {
+        <MudGrid Class="mt-4">
                 @* ステータスカード行 *@
                 <MudItem xs="6" sm="4" md="2">
                     <MudCard Elevation="2">
@@ -258,13 +269,14 @@ else
                         </MudCard>
                     </MudItem>
                 }
-            </MudGrid>
-        </MudTabPanel>
+        </MudGrid>
+    }
 
-        @* ── Tab2: 詳細情報 ───────────────────────────────────────────────── *@
-        <MudTabPanel Text="詳細情報">
-            <MudGrid>
-                @* レートモニター（_useRateControl 時のみ） *@
+    @* ── Tab2: 詳細情報 ──────────────────────────────────────────────────── *@
+    @if (_dashboardTab == "detail")
+    {
+        <MudGrid Class="mt-4">
+            @* レートモニター（_useRateControl 時のみ） *@
                 @if (_useRateControl)
                 {
                     <MudItem xs="12">
@@ -439,18 +451,51 @@ else
                         </MudCard>
                     </MudItem>
                 }
-            </MudGrid>
-        </MudTabPanel>
+        </MudGrid>
+    }
 
-        @* ── Tab3: ログ ───────────────────────────────────────────────────── *@
-        <MudTabPanel Text="ログ">
-            <LogsPage />
-        </MudTabPanel>
-
-    </MudTabs>
+    @* ── Tab3: ログ ──────────────────────────────────────────────────────── *@
+    @if (_dashboardTab == "log")
+    {
+        <MudCard Elevation="2" Class="mt-4">
+            <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.subtitle1">転送ログ（直近）</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_recentLogEntries.Length == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">ログエントリがありません。</MudText>
+                    }
+                    else
+                    {
+                        <div style="font-family: monospace; font-size: 12px; line-height: 1.9;">
+                            @foreach (var entry in _recentLogEntries.TakeLast(5))
+                            {
+                                <div>
+                                    <span style="color: var(--mud-palette-text-secondary);">@entry.Timestamp.LocalDateTime.ToString("HH:mm:ss")</span>
+                                    <span style="color: @LogLevelColor(entry.Level); margin: 0 6px;">@entry.Level</span>
+                                    <span>@entry.Message</span>
+                                </div>
+                            }
+                        </div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">（詳細ログは「ログ」ページで確認できます）</MudText>
+                    }
+                    <div class="mt-3">
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                   EndIcon="@Icons.Material.Filled.ArrowForward"
+                                   OnClick="@(() => NavigateToLogs.InvokeAsync())">ログページを開く</MudButton>
+                    </div>
+                </MudCardContent>
+        </MudCard>
+    }
 }
 
 @code {
+    // ── タブ ────────────────────────────────────────────────────────────────
+    private string _dashboardTab = "overview";
+
     // ── サマリー & ジョブ ──────────────────────────────────────────────────────
     private TransferDbSummary? _summary;
     private TransferJobInfo? _currentJob;
@@ -472,6 +517,10 @@ else
     // ── 一行ログ ────────────────────────────────────────────────────────────────
     private string? _latestProcessingName;
     private bool _logVisible = true;
+
+    // ── ログタブ（直近エントリ） ────────────────────────────────────────────────
+    [Parameter] public EventCallback NavigateToLogs { get; set; }
+    private LogEntry[] _recentLogEntries = [];
 
     private string RouteDisplayLabel => _discovery?.MigrationRoute switch
     {
@@ -716,6 +765,7 @@ else
         await UpdateElapsedAndEtaAsync(ct);
         await RefreshFolderProgressAsync(ct);
         if (_useRateControl) await RefreshRateControlMetricsAsync(ct);
+        _recentLogEntries = LogChannel.GetRecentEntries();
     }
 
     private async Task RefreshPhaseAsync(CancellationToken ct)
@@ -922,6 +972,15 @@ else
     private static string FormatDuration(double seconds)    => DashboardFormatHelper.FormatDuration(seconds);
     private static string FormatBytes(long bytes)           => DashboardFormatHelper.FormatBytes(bytes);
     private static string FormatBytesPerSec(double v)       => DashboardFormatHelper.FormatBytesPerSec(v);
+
+    private static string LogLevelColor(string level) => level switch
+    {
+        "Error" or "Fatal" => "#f44336",
+        "Warning"          => "#ff9800",
+        "Information"      => "#2196f3",
+        "Debug"            => "#9e9e9e",
+        _                  => "#9e9e9e",
+    };
 
     public void Dispose()
     {
