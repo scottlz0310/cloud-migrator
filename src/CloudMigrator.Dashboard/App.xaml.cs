@@ -112,7 +112,15 @@ public partial class App : Application
                 if (isDropbox)
                 {
                     dropboxStateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
-                    await dropboxStateDb.InitializeAsync(ct).ConfigureAwait(false);
+                    try
+                    {
+                        await dropboxStateDb.InitializeAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
+                        throw;
+                    }
                 }
                 ITransferStateDb effectiveStateDb = dropboxStateDb is not null ? dropboxStateDb : stateDb;
 
