@@ -8,6 +8,7 @@ using CloudMigrator.Core.State;
 using CloudMigrator.Core.Transfer;
 using CloudMigrator.Core.Wizard;
 using CloudMigrator.Observability;
+using CloudMigrator.Providers.Dropbox;
 using CloudMigrator.Providers.Dropbox.Auth;
 using CloudMigrator.Providers.Graph;
 using CloudMigrator.Providers.Graph.Auth;
@@ -101,7 +102,8 @@ public partial class App : Application
 
                 // AdaptiveConcurrencyController の初期化（config.json の AdaptiveConcurrency.sharepoint.Enabled = true で有効）
                 // UseRateControl=false 時のみ ACC を使用する
-                var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
+                var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+                var adaptiveOpts = opts.GetAdaptiveConcurrency(isDropbox ? "dropbox" : "sharepoint");
                 AdaptiveConcurrencyController? accMain = null;        // Dispose + onRateLimit 用に保持
                 AdaptiveConcurrencyController? accFolder = null;      // Dispose + onRateLimit 用に保持
                 ITransferRateController? concurrencyController = null;
@@ -233,17 +235,51 @@ public partial class App : Application
                         chunkSizeMb: opts.ChunkSizeMb,
                         sessionStore: sessionStore);
 
-                    var pipeline = new SharePointMigrationPipeline(
-                        storageProvider,
-                        storageProvider,
-                        stateDb,
-                        opts,
-                        loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
-                        concurrencyController,
-                        folderCreationController,
-                        activateController);
-
-                    await pipeline.RunAsync(ct).ConfigureAwait(false);
+                    if (isDropbox)
+                    {
+                        var dropboxOptions = new DropboxStorageOptions
+                        {
+                            RootPath = opts.Dropbox.RootPath,
+                            SimpleUploadLimitMb = opts.Dropbox.SimpleUploadLimitMb,
+                            UploadChunkSizeMb = opts.Dropbox.UploadChunkSizeMb,
+                        };
+                        var dropboxAccessToken = await credentialStore.GetAsync(CredentialKeys.DropboxAccessToken).ConfigureAwait(false)
+                            ?? AppConfiguration.GetDropboxAccessToken();
+                        var dropboxRefreshToken = await credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken).ConfigureAwait(false)
+                            ?? AppConfiguration.GetDropboxRefreshToken();
+                        var dropboxAppKey = await credentialStore.GetAsync(CredentialKeys.DropboxAppKey).ConfigureAwait(false)
+                            ?? AppConfiguration.GetDropboxClientId();
+                        using var dropboxProvider = new DropboxStorageProvider(
+                            loggerFactory2.CreateLogger<DropboxStorageProvider>(),
+                            dropboxAccessToken,
+                            dropboxOptions,
+                            maxRetry: opts.RetryCount,
+                            refreshToken: dropboxRefreshToken,
+                            clientId: dropboxAppKey,
+                            clientSecret: AppConfiguration.GetDropboxClientSecret(),
+                            onRateLimit: onRateLimit);
+                        var dropboxPipeline = new DropboxMigrationPipeline(
+                            storageProvider,
+                            dropboxProvider,
+                            stateDb,
+                            opts,
+                            loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
+                            concurrencyController);
+                        await dropboxPipeline.RunAsync(ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var pipeline = new SharePointMigrationPipeline(
+                            storageProvider,
+                            storageProvider,
+                            stateDb,
+                            opts,
+                            loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
+                            concurrencyController,
+                            folderCreationController,
+                            activateController);
+                        await pipeline.RunAsync(ct).ConfigureAwait(false);
+                    }
                 }
                 finally
                 {
