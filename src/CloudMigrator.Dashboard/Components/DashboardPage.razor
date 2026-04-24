@@ -474,7 +474,7 @@ else
                             @foreach (var entry in _recentLogEntries.TakeLast(5))
                             {
                                 <div>
-                                    <span style="color: var(--mud-palette-text-secondary);">@entry.Timestamp.UtcDateTime.ToString("HH:mm:ss 'UTC'")</span>
+                                    <span style="color: var(--mud-palette-text-secondary);">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss (zzz)")</span>
                                     <span style="color: @LogLevelColor(entry.Level); margin: 0 6px;">@entry.Level</span>
                                     <span>@entry.Message</span>
                                 </div>
