@@ -747,6 +747,14 @@ else
             return;
         }
 
+        // Dropbox はフォルダ先行作成フェーズが存在しないため、クロール完了後は直接 transferring に遷移する
+        var isDropbox = OptionsFactory().DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+        if (isDropbox)
+        {
+            _phase = "transferring";
+            return;
+        }
+
         var folderCreationDone = await TransferStateDb.GetCheckpointAsync("folder_creation_complete", ct);
         _phase = folderCreationDone == "true" ? "transferring" : "folder_creation";
     }
