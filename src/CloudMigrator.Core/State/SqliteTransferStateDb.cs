@@ -225,6 +225,23 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
     }
 
     /// <inheritdoc/>
+    public async Task<string?> GetLatestProcessingNameAsync(CancellationToken ct)
+    {
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "SELECT name FROM transfer_records WHERE status = 'processing' ORDER BY updated_at DESC LIMIT 1";
+            var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            return result is null or DBNull ? null : (string)result;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task SaveCheckpointAsync(string key, string value, CancellationToken ct)
     {
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);

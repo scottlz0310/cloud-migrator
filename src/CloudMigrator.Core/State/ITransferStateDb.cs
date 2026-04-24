@@ -56,6 +56,12 @@ public interface ITransferStateDb : IAsyncDisposable
     /// <summary>チェックポイント値を取得する（例: Dropbox cursor）。存在しない場合は null。</summary>
     Task<string?> GetCheckpointAsync(string key, CancellationToken ct);
 
+    /// <summary>
+    /// 現在 processing 状態のレコードのうち最新の name を返す。
+    /// 一行ログ表示に使用する。存在しない場合は null。
+    /// </summary>
+    Task<string?> GetLatestProcessingNameAsync(CancellationToken ct);
+
     /// <summary>チェックポイント値を保存する（UPSERT）。</summary>
     Task SaveCheckpointAsync(string key, string value, CancellationToken ct);
 
