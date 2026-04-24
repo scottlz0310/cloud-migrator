@@ -17,7 +17,7 @@
   - `ITransferStateDb.GetLatestProcessingNameAsync` を追加（transferring フェーズの一行ログ用）
   - `SqliteTransferStateDb` に同メソッドを実装（`processing` 状態の最新 `name` を返す）
   - `CapturingDb`（テスト用フェイク）に `GetLatestProcessingNameAsync` を追加
-  - `app.css` に `.log-line-fade` CSS クラスを追加（opacity トランジション 300ms）
+  - `wwwroot/index.html` の `<style>` に `.log-line-fade` CSS クラスを追加（opacity トランジション 300ms）
 
 - **HybridRateController 設定メニュー対応**（SettingsPage）
   - 設定ページの「HybridRateController（AIMD）」セクションに以下6項目を追加:

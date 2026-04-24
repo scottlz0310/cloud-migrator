@@ -633,8 +633,8 @@ else
             {
                 while (await timer.WaitForNextTickAsync(token))
                 {
-                    await RefreshOneLineLogAsync(token);
-                    await InvokeAsync(StateHasChanged);
+                    if (await RefreshOneLineLogAsync(token))
+                        await InvokeAsync(StateHasChanged);
                 }
             }
             catch (OperationCanceledException) { }
@@ -642,18 +642,19 @@ else
     }
 
     // ── 一行ログ更新（フェードアニメーション付き） ─────────────────────────────
-    private async Task RefreshOneLineLogAsync(CancellationToken ct)
+    /// <returns>状態が変化した場合 true（呼び出し側が StateHasChanged を呼ぶ）</returns>
+    private async Task<bool> RefreshOneLineLogAsync(CancellationToken ct)
     {
         // アクティブ転送フェーズ以外は非表示
         if (!_isJobRunning || _phase is not ("transferring" or "crawling" or "folder_creation"))
         {
-            if (_latestProcessingName is null) return;
+            if (_latestProcessingName is null) return false;
             _logVisible = false;
             await InvokeAsync(StateHasChanged);
             try { await Task.Delay(350, ct); } catch (OperationCanceledException) { throw; }
             _latestProcessingName = null;
             _logVisible = true;
-            return;
+            return true;
         }
 
         // transferring フェーズのみ DB から最新処理中ファイル名を取得
@@ -665,7 +666,7 @@ else
             catch (Exception ex) { Logger.LogDebug(ex, "一行ログ取得失敗（スキップ）"); }
         }
 
-        if (newName == _latestProcessingName) return;
+        if (newName == _latestProcessingName) return false;
 
         // フェードアウト → 名前更新 → フェードイン
         _logVisible = false;
@@ -673,6 +674,7 @@ else
         try { await Task.Delay(350, ct); } catch (OperationCanceledException) { throw; }
         _latestProcessingName = newName;
         _logVisible = true;
+        return true;
     }
 
     private async Task RefreshAllAsync(CancellationToken ct)

@@ -73,6 +73,8 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 );
                 CREATE INDEX IF NOT EXISTS idx_metrics_name_ts
                     ON metrics(name, timestamp DESC);
+                CREATE INDEX IF NOT EXISTS idx_transfer_status_updated
+                    ON transfer_records(status, updated_at DESC);
                 """;
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }

@@ -621,4 +621,52 @@ public class SqliteTransferStateDbTests : IAsyncDisposable
         results[0].Timestamp.Should().BeOnOrAfter(before.AddSeconds(-1));
         results[0].Timestamp.Should().BeOnOrBefore(after.AddSeconds(1));
     }
+
+    // ── GetLatestProcessingNameAsync ─────────────────────────────────────────
+
+    [Fact]
+    public async Task GetLatestProcessingNameAsync_NoProcessingRecords_ReturnsNull()
+    {
+        // 検証対象: GetLatestProcessingNameAsync  目的: processing レコードが存在しない場合に null を返す
+        await _db.InitializeAsync(CancellationToken.None);
+        var item = MakeItem("docs", "file.txt");
+        await _db.UpsertPendingAsync(item, CancellationToken.None);
+
+        var result = await _db.GetLatestProcessingNameAsync(CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLatestProcessingNameAsync_SingleProcessingRecord_ReturnsThatName()
+    {
+        // 検証対象: GetLatestProcessingNameAsync  目的: processing レコードが 1 件のとき、その name を返す
+        await _db.InitializeAsync(CancellationToken.None);
+        var item = MakeItem("docs", "file.txt");
+        await _db.UpsertPendingAsync(item, CancellationToken.None);
+        await _db.MarkProcessingAsync("docs", "file.txt", CancellationToken.None);
+
+        var result = await _db.GetLatestProcessingNameAsync(CancellationToken.None);
+
+        result.Should().Be("file.txt");
+    }
+
+    [Fact]
+    public async Task GetLatestProcessingNameAsync_MultipleProcessingRecords_ReturnsLatestByUpdatedAt()
+    {
+        // 検証対象: GetLatestProcessingNameAsync  目的: processing レコードが複数ある場合、updated_at 最大の name を返す
+        await _db.InitializeAsync(CancellationToken.None);
+        var item1 = MakeItem("docs", "file_a.txt");
+        var item2 = MakeItem("docs", "file_b.txt");
+        await _db.UpsertPendingAsync(item1, CancellationToken.None);
+        await _db.UpsertPendingAsync(item2, CancellationToken.None);
+        // item1 を先に processing にすることで item2 の updated_at が後になる
+        await _db.MarkProcessingAsync("docs", "file_a.txt", CancellationToken.None);
+        await Task.Delay(10); // updated_at の差分を確保
+        await _db.MarkProcessingAsync("docs", "file_b.txt", CancellationToken.None);
+
+        var result = await _db.GetLatestProcessingNameAsync(CancellationToken.None);
+
+        result.Should().Be("file_b.txt");
+    }
 }
