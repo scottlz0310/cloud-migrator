@@ -105,6 +105,17 @@ public partial class App : Application
                 // 宛先 provider に応じて AdaptiveConcurrency.sharepoint / AdaptiveConcurrency.dropbox の
                 // プロファイルを参照し、対応する Enabled=true かつ UseRateControl=false 時のみ ACC を使用する
                 var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+
+                // Dropbox 路線では専用 stateDb を早期生成してメトリクスバッファ・ハッシュリセットを正しい DB に向ける
+                // （DI 解決の stateDb は ResolveDefaultDbPath() により SharePoint DB を指す場合がある）
+                SqliteTransferStateDb? dropboxStateDb = null;
+                if (isDropbox)
+                {
+                    dropboxStateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
+                    await dropboxStateDb.InitializeAsync(ct).ConfigureAwait(false);
+                }
+                ITransferStateDb effectiveStateDb = dropboxStateDb is not null ? dropboxStateDb : stateDb;
+
                 var adaptiveOpts = opts.GetAdaptiveConcurrency(isDropbox ? "dropbox" : "sharepoint");
                 AdaptiveConcurrencyController? accMain = null;        // Dispose + onRateLimit 用に保持
                 AdaptiveConcurrencyController? accFolder = null;      // Dispose + onRateLimit 用に保持
@@ -162,7 +173,7 @@ public partial class App : Application
                 if (opts.RateControl.UseRateControl)
                 {
                     rateMetricsBuffer = new MetricsBuffer(
-                        stateDb,
+                        effectiveStateDb,
                         opts.RateControl.MetricsFlushIntervalSec,
                         loggerFactory2.CreateLogger<MetricsBuffer>());
 
@@ -206,9 +217,8 @@ public partial class App : Application
                     hashLogger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
                     ConfigHashChecker.ClearAll(opts.Paths, hashLogger);
                     await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, configHash, ct).ConfigureAwait(false);
-                    // stateDb は DI シングルトンであり、以下のパイプラインにも同一インスタンスを渡す。
-                    // つまり「パイプラインが使う DB と同じ DB をリセットする」ため、誤ったDBへの操作は発生しない。
-                    await stateDb.ResetAllAsync(ct).ConfigureAwait(false);
+                    // effectiveStateDb: SharePoint 路線は DI stateDb、Dropbox 路線は専用 dropboxStateDb を指す
+                    await effectiveStateDb.ResetAllAsync(ct).ConfigureAwait(false);
                 }
 
                 try
@@ -263,14 +273,12 @@ public partial class App : Application
                             clientId: dropboxClientId,
                             clientSecret: AppConfiguration.GetDropboxClientSecret(),
                             onRateLimit: onRateLimit);
-                        await using var dropboxStateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
-                        await dropboxStateDb.InitializeAsync(ct).ConfigureAwait(false);
-                        if (hashChanged)
-                            await dropboxStateDb.ResetAllAsync(ct).ConfigureAwait(false);
+                        // dropboxStateDb は MigrationWork 冒頭で早期生成・初期化済み
+                        // hashChanged 時のリセットも effectiveStateDb.ResetAllAsync() により処理済み
                         var dropboxPipeline = new DropboxMigrationPipeline(
                             storageProvider,
                             dropboxProvider,
-                            dropboxStateDb,
+                            dropboxStateDb!,
                             opts,
                             loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
                             concurrencyController);
@@ -292,6 +300,9 @@ public partial class App : Application
                 }
                 finally
                 {
+                    // Dropbox 路線で早期生成した専用 stateDb を Dispose する
+                    if (dropboxStateDb is not null)
+                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
                     // AdaptiveConcurrencyControllerAdapter は内部 ACC を所有しないため ACC を直接 Dispose する
                     accMain?.Dispose();
                     accFolder?.Dispose();

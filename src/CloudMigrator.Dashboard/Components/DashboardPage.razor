@@ -711,14 +711,14 @@ else
         if (_currentJob is not null)
             _currentJob = JobService.GetJob(_currentJob.JobId) ?? _currentJob;
 
-        await RefreshPhaseAsync(ct);
+        await RefreshPhaseAsync(opts.DestinationProvider, ct);
         await RefreshMetricsAsync(ct);
         await UpdateElapsedAndEtaAsync(ct);
         await RefreshFolderProgressAsync(ct);
         if (_useRateControl) await RefreshRateControlMetricsAsync(ct);
     }
 
-    private async Task RefreshPhaseAsync(CancellationToken ct)
+    private async Task RefreshPhaseAsync(string destinationProvider, CancellationToken ct)
     {
         if (_summary is null) return;
 
@@ -748,7 +748,7 @@ else
         }
 
         // Dropbox はフォルダ先行作成フェーズが存在しないため、クロール完了後は直接 transferring に遷移する
-        var isDropbox = OptionsFactory().DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+        var isDropbox = destinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
         if (isDropbox)
         {
             _phase = "transferring";
