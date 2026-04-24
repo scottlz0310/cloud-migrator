@@ -5,7 +5,7 @@
 @inject ICredentialStore CredentialStore
 @inject IConfigurationService ConfigurationService
 
-<MudThemeProvider @ref="_themeProvider" Theme="_theme" @bind-IsDarkMode="_isDarkMode" DefaultScrollbar="true" />
+<MudThemeProvider @ref="_themeProvider" Theme="_theme" @bind-IsDarkMode="_isDarkMode" DefaultScrollbar="true" ObserveSystemDarkModeChange="false" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />

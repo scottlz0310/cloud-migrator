@@ -251,12 +251,15 @@ public sealed class ConfigurationService : IConfigurationService
                     rcLatencyMode = lmProp.GetString() ?? "None";
             }
 
-            // ui.themeMode を読み取る
+            // ui.themeMode を読み取る（大文字小文字を吸収・未知値は system にフォールバック）
             var themeMode = "system";
             if (m.TryGetProperty("ui", out var uiProp) && uiProp.ValueKind == JsonValueKind.Object)
             {
                 if (uiProp.TryGetProperty("themeMode", out var tmProp) && tmProp.ValueKind == JsonValueKind.String)
-                    themeMode = tmProp.GetString() ?? "system";
+                {
+                    var raw = tmProp.GetString()?.Trim().ToLowerInvariant() ?? "system";
+                    themeMode = raw is "light" or "dark" or "system" ? raw : "system";
+                }
             }
 
             return new ConfigDto(
@@ -457,12 +460,15 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.GraphColumns.HasValue) m["graphColumns"] = Math.Clamp(update.GraphColumns.Value, 1, 4);
             if (update.ThemeMode is not null)
             {
+                var normalizedThemeMode = update.ThemeMode.Trim().ToLowerInvariant();
+                if (normalizedThemeMode is not ("light" or "dark" or "system"))
+                    throw new ArgumentException("ThemeMode は light / dark / system のいずれかを指定してください。", nameof(update));
                 if (m["ui"] is not JsonObject uiObj)
                 {
                     uiObj = new JsonObject();
                     m["ui"] = uiObj;
                 }
-                uiObj["themeMode"] = update.ThemeMode;
+                uiObj["themeMode"] = normalizedThemeMode;
             }
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム
