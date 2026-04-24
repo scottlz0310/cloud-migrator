@@ -9,6 +9,11 @@
 
 ### Fixed
 
+- **Dashboard の転送処理が常に SharePoint パイプラインを使用するバグを修正**（App.xaml.cs）
+  - `MigrationWork` が `opts.DestinationProvider` を無視して常に `SharePointMigrationPipeline` を生成していた
+  - `isDropbox` フラグで分岐し、Dropbox 路線では `DropboxStorageProvider` + `DropboxMigrationPipeline` を使用するよう修正
+  - AdaptiveConcurrencyController のプロファイル名も `"sharepoint"` 固定から `isDropbox ? "dropbox" : "sharepoint"` に変更
+
 - **Dropbox 路線選択時に SharePoint 路線に固定されるバグを修正**（DropboxOAuthPage）
   - `DropboxOAuthPage.razor` の OAuth 認証成功後に `ConfigurationService.UpdateDiscoveryConfigAsync` を呼び出し、`config.json` の `migrationRoute` を `"OneDriveToDropbox"`、`destinationProvider` を `"dropbox"` に書き込むよう修正
   - `SharePointDiscoveryPage.razor` が `"sharepoint"` を書き込む一方、Dropbox 側で対称の書き込みが欠落していたことが原因

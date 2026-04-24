@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Credentials;
@@ -8,6 +9,7 @@ using CloudMigrator.Core.State;
 using CloudMigrator.Core.Transfer;
 using CloudMigrator.Core.Wizard;
 using CloudMigrator.Observability;
+using CloudMigrator.Providers.Dropbox;
 using CloudMigrator.Providers.Dropbox.Auth;
 using CloudMigrator.Providers.Graph;
 using CloudMigrator.Providers.Graph.Auth;
@@ -99,9 +101,30 @@ public partial class App : Application
 
                 var auth = new GraphAuthenticator(opts.Graph.ClientId, opts.Graph.TenantId, clientSecret);
 
-                // AdaptiveConcurrencyController の初期化（config.json の AdaptiveConcurrency.sharepoint.Enabled = true で有効）
-                // UseRateControl=false 時のみ ACC を使用する
-                var adaptiveOpts = opts.GetAdaptiveConcurrency("sharepoint");
+                // AdaptiveConcurrencyController の初期化
+                // 宛先 provider に応じて AdaptiveConcurrency.sharepoint / AdaptiveConcurrency.dropbox の
+                // プロファイルを参照し、対応する Enabled=true かつ UseRateControl=false 時のみ ACC を使用する
+                var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
+
+                // Dropbox 路線では専用 stateDb を早期生成してメトリクスバッファ・ハッシュリセットを正しい DB に向ける
+                // （DI 解決の stateDb は ResolveDefaultDbPath() により SharePoint DB を指す場合がある）
+                SqliteTransferStateDb? dropboxStateDb = null;
+                if (isDropbox)
+                {
+                    dropboxStateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
+                    try
+                    {
+                        await dropboxStateDb.InitializeAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
+                        throw;
+                    }
+                }
+                ITransferStateDb effectiveStateDb = dropboxStateDb is not null ? dropboxStateDb : stateDb;
+
+                var adaptiveOpts = opts.GetAdaptiveConcurrency(isDropbox ? "dropbox" : "sharepoint");
                 AdaptiveConcurrencyController? accMain = null;        // Dispose + onRateLimit 用に保持
                 AdaptiveConcurrencyController? accFolder = null;      // Dispose + onRateLimit 用に保持
                 ITransferRateController? concurrencyController = null;
@@ -158,7 +181,7 @@ public partial class App : Application
                 if (opts.RateControl.UseRateControl)
                 {
                     rateMetricsBuffer = new MetricsBuffer(
-                        stateDb,
+                        effectiveStateDb,
                         opts.RateControl.MetricsFlushIntervalSec,
                         loggerFactory2.CreateLogger<MetricsBuffer>());
 
@@ -202,9 +225,8 @@ public partial class App : Application
                     hashLogger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
                     ConfigHashChecker.ClearAll(opts.Paths, hashLogger);
                     await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, configHash, ct).ConfigureAwait(false);
-                    // stateDb は DI シングルトンであり、以下のパイプラインにも同一インスタンスを渡す。
-                    // つまり「パイプラインが使う DB と同じ DB をリセットする」ため、誤ったDBへの操作は発生しない。
-                    await stateDb.ResetAllAsync(ct).ConfigureAwait(false);
+                    // effectiveStateDb: SharePoint 路線は DI stateDb、Dropbox 路線は専用 dropboxStateDb を指す
+                    await effectiveStateDb.ResetAllAsync(ct).ConfigureAwait(false);
                 }
 
                 try
@@ -233,30 +255,79 @@ public partial class App : Application
                         chunkSizeMb: opts.ChunkSizeMb,
                         sessionStore: sessionStore);
 
-                    var pipeline = new SharePointMigrationPipeline(
-                        storageProvider,
-                        storageProvider,
-                        stateDb,
-                        opts,
-                        loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
-                        concurrencyController,
-                        folderCreationController,
-                        activateController);
-
-                    await pipeline.RunAsync(ct).ConfigureAwait(false);
+                    if (isDropbox)
+                    {
+                        var dropboxOptions = new DropboxStorageOptions
+                        {
+                            RootPath = opts.Dropbox.RootPath,
+                            SimpleUploadLimitMb = opts.Dropbox.SimpleUploadLimitMb,
+                            UploadChunkSizeMb = opts.Dropbox.UploadChunkSizeMb,
+                        };
+                        var normalizedTimeoutSec = Math.Max(1, opts.TimeoutSec);
+                        var dropboxHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(normalizedTimeoutSec) };
+                        var dropboxOAuthService = sp.GetRequiredService<IDropboxOAuthService>();
+                        // コンストラクタで例外が発生した場合も dropboxHttpClient を確実に Dispose する
+                        DropboxStorageProvider? dropboxProvider = null;
+                        try
+                        {
+                            dropboxProvider = new DropboxStorageProvider(
+                                loggerFactory2.CreateLogger<DropboxStorageProvider>(),
+                                credentialStore,
+                                dropboxOAuthService,
+                                dropboxOptions,
+                                httpClient: dropboxHttpClient,
+                                disposeHttpClient: true,
+                                maxRetry: opts.RetryCount,
+                                onRateLimit: onRateLimit);
+                            // dropboxStateDb は MigrationWork 冒頭で早期生成・初期化済み
+                            // hashChanged 時のリセットも effectiveStateDb.ResetAllAsync() により処理済み
+                            var dropboxPipeline = new DropboxMigrationPipeline(
+                                storageProvider,
+                                dropboxProvider,
+                                dropboxStateDb!,
+                                opts,
+                                loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
+                                concurrencyController);
+                            await dropboxPipeline.RunAsync(ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            if (dropboxProvider is not null)
+                                dropboxProvider.Dispose();
+                            else
+                                dropboxHttpClient.Dispose();
+                        }
+                    }
+                    else
+                    {
+                        var pipeline = new SharePointMigrationPipeline(
+                            storageProvider,
+                            storageProvider,
+                            stateDb,
+                            opts,
+                            loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
+                            concurrencyController,
+                            folderCreationController,
+                            activateController);
+                        await pipeline.RunAsync(ct).ConfigureAwait(false);
+                    }
                 }
                 finally
                 {
                     // AdaptiveConcurrencyControllerAdapter は内部 ACC を所有しないため ACC を直接 Dispose する
                     accMain?.Dispose();
                     accFolder?.Dispose();
-                    // HybridRateController / RateControlledTransferController と MetricsBuffer を Dispose
+                    // MetricsBuffer は effectiveStateDb（dropboxStateDb）への Flush を行うため
+                    // dropboxStateDb より先に Dispose して最終 Flush を完了させる
                     if (hybridController is not null)
                         await hybridController.DisposeAsync().ConfigureAwait(false);
                     if (rateController is not null)
                         await rateController.DisposeAsync().ConfigureAwait(false);
                     if (rateMetricsBuffer is not null)
                         await rateMetricsBuffer.DisposeAsync().ConfigureAwait(false);
+                    // Dropbox 路線で早期生成した専用 stateDb を最後に Dispose する
+                    if (dropboxStateDb is not null)
+                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
                 }
             }
 
