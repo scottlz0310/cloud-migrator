@@ -22,6 +22,7 @@ public sealed class NullTransferStateDb : ITransferStateDb
     public Task MarkDoneAsync(string path, string name, CancellationToken ct) => Task.CompletedTask;
     public Task MarkFailedAsync(string path, string name, string error, CancellationToken ct) => Task.CompletedTask;
     public Task<string?> GetCheckpointAsync(string key, CancellationToken ct) => Task.FromResult<string?>(null);
+    public Task<string?> GetLatestProcessingNameAsync(CancellationToken ct) => Task.FromResult<string?>(null);
     public Task SaveCheckpointAsync(string key, string value, CancellationToken ct) => Task.CompletedTask;
     public IAsyncEnumerable<TransferRecord> GetPendingStreamAsync(CancellationToken ct) => AsyncEnumerable.Empty<TransferRecord>();
     public Task<TransferDbSummary> GetSummaryAsync(CancellationToken ct) => Task.FromResult(new TransferDbSummary());

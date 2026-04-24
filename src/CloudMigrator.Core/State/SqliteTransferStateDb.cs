@@ -73,6 +73,8 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
                 );
                 CREATE INDEX IF NOT EXISTS idx_metrics_name_ts
                     ON metrics(name, timestamp DESC);
+                CREATE INDEX IF NOT EXISTS idx_transfer_status_updated
+                    ON transfer_records(status, updated_at DESC);
                 """;
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
@@ -215,6 +217,23 @@ public sealed class SqliteTransferStateDb : ITransferStateDb
             cmd.CommandText = "SELECT value FROM checkpoints WHERE key=@key";
             cmd.Parameters.AddWithValue("@key", key);
 
+            var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            return result is null or DBNull ? null : (string)result;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<string?> GetLatestProcessingNameAsync(CancellationToken ct)
+    {
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "SELECT name FROM transfer_records WHERE status = 'processing' ORDER BY updated_at DESC LIMIT 1";
             var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
             return result is null or DBNull ? null : (string)result;
         }

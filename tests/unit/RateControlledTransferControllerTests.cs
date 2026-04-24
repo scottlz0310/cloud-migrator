@@ -266,6 +266,7 @@ public class RateControlledTransferControllerTests : IAsyncDisposable
         public Task RecordMetricAsync(string name, double value, CancellationToken ct) => Task.CompletedTask;
         public Task<IReadOnlyList<MetricPoint>> GetMetricsAsync(string name, int recentMinutes, CancellationToken ct) => Task.FromResult<IReadOnlyList<MetricPoint>>([]);
         public Task<IReadOnlyDictionary<string, double>> GetLatestMetricsAsync(IEnumerable<string> names, int recentMinutes, CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<string, double>>(new Dictionary<string, double>());
+        public Task<string?> GetLatestProcessingNameAsync(CancellationToken ct) => Task.FromResult<string?>(null);
         public Task ResetAllAsync(CancellationToken ct) => Task.CompletedTask;
         public Task<bool> InsertPendingIfNewAsync(StorageItem item, CancellationToken ct) => Task.FromResult(false);
         public Task InsertDoneIfNotExistsAsync(string path, string name, CancellationToken ct) => Task.CompletedTask;

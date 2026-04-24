@@ -9,6 +9,16 @@
 
 ### Added
 
+- **ダッシュボードリデザイン（UI-03）**（DashboardPage）
+  - レイアウトを「ヘッダー行（フェーズ・ルートチップ・転送開始/停止ボタン） ＋ 常時進捗バー ＋ MudTabs 3タブ（概要 / 詳細情報 / ログ）」に再構成
+  - 概要タブ: ステータスカード 6 枚・経過時間行・一行ログ（フェードアニメーション）・移行完了サマリー
+  - 詳細情報タブ: レートモニター（_useRateControl 時）・実稼働統計・メトリクスグラフ 4 種・最近の失敗リスト
+  - ログタブ: LogsPage をそのまま埋め込み
+  - `ITransferStateDb.GetLatestProcessingNameAsync` を追加（transferring フェーズの一行ログ用）
+  - `SqliteTransferStateDb` に同メソッドを実装（`processing` 状態の最新 `name` を返す）
+  - `CapturingDb`（テスト用フェイク）に `GetLatestProcessingNameAsync` を追加
+  - `wwwroot/index.html` の `<style>` に `.log-line-fade` CSS クラスを追加（opacity トランジション 300ms）
+
 - **HybridRateController 設定メニュー対応**（SettingsPage）
   - 設定ページの「HybridRateController（AIMD）」セクションに以下6項目を追加:
     `UseHybridController`（スイッチ）/ `CooldownSec`（クールダウン秒）/ `EmergencyDecay`（緊急減速係数）/ `EmergencyInflightDecay`（緊急インフライト減速係数）/ `AddStep`（安定時増速ステップ）/ `LatencyEvaluationMode`（ドロップダウン: None / Baseline / Recent / Both、現在のデフォルトは `None`）
