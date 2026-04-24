@@ -261,7 +261,8 @@ public partial class App : Application
                             ?? AppConfiguration.GetDropboxRefreshToken();
                         var dropboxClientId = await credentialStore.GetAsync(CredentialKeys.DropboxAppKey).ConfigureAwait(false)
                             ?? AppConfiguration.GetDropboxClientId();
-                        var dropboxHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(opts.TimeoutSec) };
+                        var normalizedTimeoutSec = Math.Max(1, opts.TimeoutSec);
+                        var dropboxHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(normalizedTimeoutSec) };
                         using var dropboxProvider = new DropboxStorageProvider(
                             loggerFactory2.CreateLogger<DropboxStorageProvider>(),
                             dropboxAccessToken,
