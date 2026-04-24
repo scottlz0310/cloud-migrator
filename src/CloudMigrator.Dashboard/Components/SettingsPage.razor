@@ -58,12 +58,15 @@ else
                         <MudText Typo="Typo.overline" Color="Color.Secondary">転送先（SharePoint）</MudText>
                         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
                             <MudText Typo="Typo.body2">@SharePointSiteDisplay</MudText>
-                            @if (_discovery.SharePointSiteWebUrl is { Length: > 0 } url)
+                            @if (SharePointSiteWebUrlSafe is { } safeUrl)
                             {
-                                <MudTooltip Text="@url">
-                                    <MudLink Href="@url" Target="_blank">
+                                <MudTooltip Text="@safeUrl">
+                                    <a href="@safeUrl"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       aria-label="SharePoint サイトを新しいタブで開く">
                                         <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Color="Color.Secondary" />
-                                    </MudLink>
+                                    </a>
                                 </MudTooltip>
                             }
                         </MudStack>
@@ -489,6 +492,14 @@ else
         _discovery?.SharePointSiteId is { Length: > 0 } sid2 ? sid2 :
         "未設定";
 
+    // http/https のみ許可。それ以外（javascript: 等）は null を返してリンクを非表示にする
+    private string? SharePointSiteWebUrlSafe =>
+        _discovery?.SharePointSiteWebUrl is { Length: > 0 } url &&
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri.AbsoluteUri
+            : null;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadConfigAsync();
@@ -622,15 +633,22 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"設定の保存に失敗しました: {ex.Message}", Severity.Error);
+            Snackbar.Add($"転送設定の保存に失敗しました: {ex.Message}", Severity.Error);
         }
     }
 
-    private async Task ResetTransferSettingsAsync()
+    private Task ResetTransferSettingsAsync()
     {
         if (_config is not null)
+        {
+            // 表示設定の編集中の値を保護してから転送設定のみリセットする
+            var savedTheme = _editThemeMode;
+            var savedColumns = _editGraphColumns;
             CopyToEditFields(_config);
-        await Task.CompletedTask;
+            _editThemeMode = savedTheme;
+            _editGraphColumns = savedColumns;
+        }
+        return Task.CompletedTask;
     }
 
     private async Task SaveDisplaySettingsAsync()
