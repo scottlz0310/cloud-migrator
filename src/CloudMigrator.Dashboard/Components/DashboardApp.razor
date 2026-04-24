@@ -5,7 +5,7 @@
 @inject ICredentialStore CredentialStore
 @inject IConfigurationService ConfigurationService
 
-<MudThemeProvider Theme="_theme" />
+<MudThemeProvider @ref="_themeProvider" Theme="_theme" @bind-IsDarkMode="_isDarkMode" DefaultScrollbar="true" ObserveSystemDarkModeChange="false" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -75,7 +75,7 @@ else
                     <DashboardPage />
                     break;
                 case Page.Settings:
-                    <SettingsPage />
+                    <SettingsPage OnThemeModeChanged="OnThemeModeChangedAsync" />
                     break;
                 case Page.Doctor:
                     <DoctorPage />
@@ -94,6 +94,10 @@ else
     private bool _loading = true;
     private bool _showWizard;
     private string? _secretExpiryWarning;
+    private MudThemeProvider? _themeProvider;
+    private bool _isDarkMode;
+    private bool _systemIsDark;
+    private string _themeMode = "system";
 
     private static readonly MudTheme _theme = new()
     {
@@ -102,6 +106,26 @@ else
             Primary = "#1976D2",
             Secondary = "#424242",
             AppbarBackground = "#1976D2",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Background = "#141720",
+            BackgroundGray = "#0c0e14",
+            Surface = "#1a1e2e",
+            AppbarBackground = "#0f1117",
+            DrawerBackground = "#0a0c12",
+            Primary = "#818cf8",
+            PrimaryDarken = "#6366f1",
+            PrimaryLighten = "#a5b4fc",
+            Secondary = "#94a3b8",
+            Success = "#4ade80",
+            Warning = "#fbbf24",
+            Error = "#f87171",
+            Info = "#818cf8",
+            TextPrimary = "#e2e8f0",
+            TextSecondary = "#94a3b8",
+            Divider = "#252c42",
+            TableLines = "#1e2336",
         },
     };
 
@@ -112,6 +136,9 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var cfg = await ConfigurationService.GetConfigAsync();
+        _themeMode = cfg.ThemeMode;
+
         var state = await WizardStateService.LoadAsync();
         if (!state.IsCompleted)
         {
@@ -158,6 +185,46 @@ else
     {
         await WizardStateService.ResetAsync();
         _showWizard = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _themeProvider is not null)
+        {
+            _systemIsDark = await _themeProvider.GetSystemDarkModeAsync();
+            _isDarkMode = _themeMode switch
+            {
+                "dark" => true,
+                "light" => false,
+                _ => _systemIsDark,
+            };
+            StateHasChanged();
+            await _themeProvider.WatchSystemDarkModeAsync(OnSystemPreferenceChanged);
+        }
+    }
+
+    private async Task OnSystemPreferenceChanged(bool isDark)
+    {
+        _systemIsDark = isDark;
+        if (_themeMode == "system")
+        {
+            _isDarkMode = isDark;
+            StateHasChanged();
+        }
+        await Task.CompletedTask;
+    }
+
+    internal async Task OnThemeModeChangedAsync(string themeMode)
+    {
+        _themeMode = themeMode;
+        _isDarkMode = themeMode switch
+        {
+            "dark" => true,
+            "light" => false,
+            _ => _systemIsDark,
+        };
+        StateHasChanged();
+        await Task.CompletedTask;
     }
 
     private async Task CheckSecretExpiryAsync()

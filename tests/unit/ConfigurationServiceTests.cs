@@ -725,6 +725,95 @@ public sealed class ConfigurationServiceTests : IDisposable
         result.GraphColumns.Should().Be(3);
     }
 
+    // ── ThemeMode（UI テーマ設定 #177）────────────────────────────────
+
+    [Fact]
+    public async Task GetConfigAsync_WhenThemeModeAbsent_ReturnsSystemByDefault()
+    {
+        // 検証対象: GetConfigAsync（themeMode 未設定）  目的: デフォルト値 "system" を返すこと
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.ThemeMode.Should().Be("system");
+    }
+
+    [Theory]
+    [InlineData("light", "light")]
+    [InlineData("dark", "dark")]
+    [InlineData("system", "system")]
+    [InlineData("DARK", "dark")]       // 大文字を正規化
+    [InlineData("Light", "light")]     // 混在ケースを正規化
+    [InlineData("invalid", "system")]  // 未知値は system にフォールバック
+    [InlineData("", "system")]         // 空文字は system にフォールバック
+    public async Task GetConfigAsync_ThemeModeNormalization(string jsonValue, string expected)
+    {
+        // 検証対象: GetConfigAsync（themeMode 正規化）  目的: 大文字小文字吸収・未知値フォールバックが機能すること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                ui = new { themeMode = jsonValue }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.ThemeMode.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("light")]
+    [InlineData("dark")]
+    [InlineData("system")]
+    public async Task UpdateConfigAsync_ThemeMode_PersistsValue(string mode)
+    {
+        // 検証対象: UpdateConfigAsync（ThemeMode 保存）  目的: 保存した値が読み直しで正しく返ること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(ThemeMode: mode));
+        var result = await svc.GetConfigAsync();
+
+        result.ThemeMode.Should().Be(mode);
+    }
+
+    [Theory]
+    [InlineData("LIGHT", "light")]   // 大文字保存 → 小文字で正規化保存
+    [InlineData("  dark  ", "dark")] // 前後空白を除去して保存
+    public async Task UpdateConfigAsync_ThemeMode_NormalizesBeforePersisting(string input, string expected)
+    {
+        // 検証対象: UpdateConfigAsync（ThemeMode 正規化保存）  目的: 大文字・前後空白を除去して保存すること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(ThemeMode: input));
+        var result = await svc.GetConfigAsync();
+
+        result.ThemeMode.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("invalid")]
+    [InlineData("auto")]
+    [InlineData("")]
+    public async Task UpdateConfigAsync_ThemeMode_ThrowsForInvalidValue(string invalidMode)
+    {
+        // 検証対象: UpdateConfigAsync（ThemeMode 不正値）  目的: light/dark/system 以外は ArgumentException になること
+        var svc = new ConfigurationService(_configPath);
+
+        var act = async () => await svc.UpdateConfigAsync(new ConfigUpdateDto(ThemeMode: invalidMode));
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*ThemeMode*");
+    }
+
     [Fact]
     public async Task GetConfigAsync_WhenFileNotFound_ReturnsDefaultDto()
     {

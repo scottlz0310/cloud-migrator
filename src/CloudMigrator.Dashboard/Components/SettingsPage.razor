@@ -49,6 +49,37 @@ else
         </MudCardContent>
     </MudCard>
 
+    @* ── 表示設定（折りたたみなし） *@
+    <MudCard Elevation="2" Style="max-width: 600px;" Class="mb-4">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.subtitle1">表示設定</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            <MudSelect T="string" @bind-Value="_editThemeMode"
+                       Label="テーマ"
+                       Variant="Variant.Outlined"
+                       HelperText="アプリの配色テーマを選択します。デフォルト: システムに従う">
+                <MudSelectItem Value="@("light")">ライト</MudSelectItem>
+                <MudSelectItem Value="@("dark")">ダーク</MudSelectItem>
+                <MudSelectItem Value="@("system")">システムに従う</MudSelectItem>
+            </MudSelect>
+        </MudCardContent>
+        <MudCardActions>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="SaveThemeAsync">
+                保存
+            </MudButton>
+            <MudButton Variant="Variant.Text"
+                       OnClick="ResetThemeAsync">
+                リセット
+            </MudButton>
+        </MudCardActions>
+    </MudCard>
+
     <MudCard Elevation="2" Style="max-width: 600px;">
         <MudCardContent>
             @* ── 上級者向け設定（折りたたみ） ──────────────────────── *@
@@ -369,6 +400,8 @@ else
     </MessageContent>
 </MudMessageBox>
 @code {
+    [Parameter] public EventCallback<string> OnThemeModeChanged { get; set; }
+
     private ConfigDto? _config;
     private DiscoveryConfigDto? _discovery;
     private bool _isRebuilding;
@@ -406,6 +439,8 @@ else
     // グラフ表示設定（#156/#157）
     private bool _editShowGraphs;
     private int _editGraphColumns;
+    // UI テーマ設定（#177）
+    private string _editThemeMode = "system";
 
     protected override async Task OnInitializedAsync()
     {
@@ -479,6 +514,7 @@ else
         _editRcLatencyMode = cfg.RcLatencyMode;
         _editShowGraphs = cfg.ShowGraphs;
         _editGraphColumns = cfg.GraphColumns;
+        _editThemeMode = cfg.ThemeMode;
     }
 
     private async Task SaveAsync()
@@ -552,6 +588,29 @@ else
         if (_config is not null)
             CopyToEditFields(_config);
         await Task.CompletedTask;
+    }
+
+    private async Task SaveThemeAsync()
+    {
+        try
+        {
+            await ConfigService.UpdateConfigAsync(new ConfigUpdateDto(ThemeMode: _editThemeMode));
+            _config = await ConfigService.GetConfigAsync();
+            CopyToEditFields(_config);
+            await OnThemeModeChanged.InvokeAsync(_editThemeMode);
+            Snackbar.Add("表示設定を保存しました。", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"表示設定の保存に失敗しました: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Task ResetThemeAsync()
+    {
+        if (_config is not null)
+            _editThemeMode = _config.ThemeMode;
+        return Task.CompletedTask;
     }
 
     private async Task FullRebuildAsync()

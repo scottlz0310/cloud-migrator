@@ -40,7 +40,9 @@ public sealed record ConfigDto(
     string RcLatencyMode = "None",
     // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
     bool ShowGraphs = true,
-    int GraphColumns = 2);
+    int GraphColumns = 2,
+    // ── UI テーマ設定（#177）──
+    string ThemeMode = "system");
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -78,7 +80,9 @@ public sealed record ConfigUpdateDto(
     string? RcLatencyMode = null,
     // ── UI 表示設定（#156/#157: ダッシュボードグラフ表示制御）──
     bool? ShowGraphs = null,
-    int? GraphColumns = null);
+    int? GraphColumns = null,
+    // ── UI テーマ設定（#177）──
+    string? ThemeMode = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -247,6 +251,17 @@ public sealed class ConfigurationService : IConfigurationService
                     rcLatencyMode = lmProp.GetString() ?? "None";
             }
 
+            // migrator.ui.themeMode を読み取る（大文字小文字を吸収・未知値は system にフォールバック）
+            var themeMode = "system";
+            if (m.TryGetProperty("ui", out var uiProp) && uiProp.ValueKind == JsonValueKind.Object)
+            {
+                if (uiProp.TryGetProperty("themeMode", out var tmProp) && tmProp.ValueKind == JsonValueKind.String)
+                {
+                    var raw = tmProp.GetString()?.Trim().ToLowerInvariant() ?? "system";
+                    themeMode = raw is "light" or "dark" or "system" ? raw : "system";
+                }
+            }
+
             return new ConfigDto(
                 MaxParallelTransfers: GetInt(m, "maxParallelTransfers", 4),
                 MaxParallelFolderCreations: GetInt(m, "maxParallelFolderCreations", 4),
@@ -277,7 +292,8 @@ public sealed class ConfigurationService : IConfigurationService
                 RcAddStep: rcAddStep,
                 RcLatencyMode: rcLatencyMode,
                 ShowGraphs: !(m.TryGetProperty("showGraphs", out var sgProp) && sgProp.ValueKind == JsonValueKind.False),
-                GraphColumns: Math.Clamp(GetInt(m, "graphColumns", 2), 1, 4));
+                GraphColumns: Math.Clamp(GetInt(m, "graphColumns", 2), 1, 4),
+                ThemeMode: themeMode);
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -442,6 +458,18 @@ public sealed class ConfigurationService : IConfigurationService
             // UI 表示設定
             if (update.ShowGraphs.HasValue) m["showGraphs"] = update.ShowGraphs.Value;
             if (update.GraphColumns.HasValue) m["graphColumns"] = Math.Clamp(update.GraphColumns.Value, 1, 4);
+            if (update.ThemeMode is not null)
+            {
+                var normalizedThemeMode = update.ThemeMode.Trim().ToLowerInvariant();
+                if (normalizedThemeMode is not ("light" or "dark" or "system"))
+                    throw new ArgumentException("ThemeMode は light / dark / system のいずれかを指定してください。", nameof(update));
+                if (m["ui"] is not JsonObject uiObj)
+                {
+                    uiObj = new JsonObject();
+                    m["ui"] = uiObj;
+                }
+                uiObj["themeMode"] = normalizedThemeMode;
+            }
 
             // アトミック書き込み: 一時ファイルに書き込んでからリネーム
             var tmpPath = _configFilePath + ".tmp";
