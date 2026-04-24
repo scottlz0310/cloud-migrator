@@ -12,7 +12,7 @@
 }
 else
 {
-    @* ── 転送ルート情報（読み取り専用） *@
+    @* ── [A] 転送ルート情報（読み取り専用） *@
     <MudCard Elevation="2" Style="max-width: 600px;" Class="mb-4">
         <MudCardHeader>
             <CardHeaderContent>
@@ -26,30 +26,75 @@ else
             }
             else
             {
-                <MudGrid Spacing="1">
-                    <MudItem xs="12" sm="4">
+                <MudStack Spacing="3">
+                    <div>
                         <MudText Typo="Typo.overline" Color="Color.Secondary">移行ルート</MudText>
                         <MudText Typo="Typo.body2">@(_discovery.MigrationRoute switch
                         {
                             "OneDriveToSharePoint" => "OneDrive → SharePoint",
+                            "OneDriveToDropbox" => "OneDrive → Dropbox",
                             null or "" => "未設定",
                             _ => "未設定"
                         })</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送元フォルダ</MudText>
-                        <MudText Typo="Typo.body2" Style="word-break: break-all;">@(_discovery.OneDriveSourceFolderPath is { Length: > 0 } p ? p : "未設定")</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送先フォルダ</MudText>
-                        <MudText Typo="Typo.body2" Style="word-break: break-all;">@(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "未設定")</MudText>
-                    </MudItem>
-                </MudGrid>
+                    </div>
+                    <MudDivider />
+                    <div>
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送元（OneDrive）</MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
+                            <MudText Typo="Typo.body2">@(_discovery.OneDriveUserId is { Length: > 0 } uid ? uid : "未設定")</MudText>
+                            @if (_discovery.OneDriveDisplayName is { Length: > 0 } dn)
+                            {
+                                <MudTooltip Text="@($"表示名: {dn}")">
+                                    <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            }
+                        </MudStack>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="word-break: break-all;">
+                            @(_discovery.OneDriveSourceFolderPath is { Length: > 0 } p ? p : "（ドライブ全体）")
+                        </MudText>
+                    </div>
+                    <MudDivider />
+                    <div>
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送先</MudText>
+                        @switch (_discovery.MigrationRoute)
+                        {
+                            case "OneDriveToSharePoint":
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
+                                    <MudText Typo="Typo.body2">@SharePointSiteDisplay</MudText>
+                                    @if (SharePointSiteWebUrlSafe is { } safeUrl)
+                                    {
+                                        <MudTooltip Text="@safeUrl">
+                                            <a href="@safeUrl"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               aria-label="SharePoint サイトを新しいタブで開く">
+                                                <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Color="Color.Secondary" />
+                                            </a>
+                                        </MudTooltip>
+                                    }
+                                </MudStack>
+                                @if (_discovery.SharePointDriveDisplayName is { Length: > 0 } drv)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@drv</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="word-break: break-all;">
+                                    @(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "（ライブラリルート）")
+                                </MudText>
+                                break;
+                            case "OneDriveToDropbox":
+                                <MudText Typo="Typo.body2">Dropbox</MudText>
+                                break;
+                            default:
+                                <MudText Typo="Typo.body2">未設定</MudText>
+                                break;
+                        }
+                    </div>
+                </MudStack>
             }
         </MudCardContent>
     </MudCard>
 
-    @* ── 表示設定（折りたたみなし） *@
+    @* ── [B] 表示設定（折りたたみなし） *@
     <MudCard Elevation="2" Style="max-width: 600px;" Class="mb-4">
         <MudCardHeader>
             <CardHeaderContent>
@@ -57,104 +102,79 @@ else
             </CardHeaderContent>
         </MudCardHeader>
         <MudCardContent>
-            <MudSelect T="string" @bind-Value="_editThemeMode"
-                       Label="テーマ"
-                       Variant="Variant.Outlined"
-                       HelperText="アプリの配色テーマを選択します。デフォルト: システムに従う">
-                <MudSelectItem Value="@("light")">ライト</MudSelectItem>
-                <MudSelectItem Value="@("dark")">ダーク</MudSelectItem>
-                <MudSelectItem Value="@("system")">システムに従う</MudSelectItem>
-            </MudSelect>
+            <MudStack Spacing="3">
+                <MudSelect T="string" @bind-Value="_editThemeMode"
+                           Label="テーマ"
+                           Variant="Variant.Outlined"
+                           HelperText="アプリの配色テーマを選択します。デフォルト: システムに従う">
+                    <MudSelectItem Value="@("light")">ライト</MudSelectItem>
+                    <MudSelectItem Value="@("dark")">ダーク</MudSelectItem>
+                    <MudSelectItem Value="@("system")">システムに従う</MudSelectItem>
+                </MudSelect>
+                <MudSelect T="int" @bind-Value="_editGraphColumns"
+                           Label="グラフ列数"
+                           Variant="Variant.Outlined"
+                           HelperText="ダッシュボードのグラフを何列に並べるか設定します。デフォルト: 2">
+                    <MudSelectItem Value="1">1 列</MudSelectItem>
+                    <MudSelectItem Value="2">2 列（デフォルト）</MudSelectItem>
+                    <MudSelectItem Value="3">3 列</MudSelectItem>
+                    <MudSelectItem Value="4">4 列</MudSelectItem>
+                </MudSelect>
+            </MudStack>
         </MudCardContent>
         <MudCardActions>
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Save"
-                       OnClick="SaveThemeAsync">
+                       OnClick="SaveDisplaySettingsAsync">
                 保存
             </MudButton>
             <MudButton Variant="Variant.Text"
-                       OnClick="ResetThemeAsync">
+                       OnClick="ResetDisplaySettingsAsync">
                 リセット
             </MudButton>
         </MudCardActions>
     </MudCard>
 
-    <MudCard Elevation="2" Style="max-width: 600px;">
+    @* ── [C][D] 転送設定 *@
+    <MudCard Elevation="2" Style="max-width: 600px;" Class="mb-4">
         <MudCardContent>
-            @* ── 上級者向け設定（折りたたみ） ──────────────────────── *@
             <MudExpansionPanels Elevation="0" Class="mt-2">
-                <MudExpansionPanel Text="⚙️ 上級者向け設定（並列数・チャンク・タイムアウト）" Dense="true">
+
+                @* [C] 基本設定 *@
+                <MudExpansionPanel Text="基本設定" Dense="true">
                     <MudGrid Spacing="2" Class="pt-2">
                         <MudItem xs="12" sm="6">
                             <MudNumericField @bind-Value="_editMaxParallelTransfers"
                                              Label="最大並行転送数"
                                              Min="1" Max="256"
-                                             Variant="Variant.Outlined" />
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField @bind-Value="_editMaxParallelFolderCreations"
-                                             Label="最大並行フォルダ作成数"
-                                             Min="1" Max="32"
-                                             Variant="Variant.Outlined" />
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField @bind-Value="_editChunkSizeMb"
-                                             Label="チャンクサイズ (MB)"
-                                             Min="1" Max="100"
-                                             Variant="Variant.Outlined" />
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField @bind-Value="_editLargeFileThresholdMb"
-                                             Label="大ファイル閾値 (MB)"
-                                             Min="1" Max="100"
-                                             Variant="Variant.Outlined" />
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField @bind-Value="_editRetryCount"
-                                             Label="リトライ回数"
-                                             Min="0" Max="10"
-                                             Variant="Variant.Outlined" />
+                                             Variant="Variant.Outlined"
+                                             HelperText="同時に実行するファイル転送の上限数。デフォルト: 4" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
                             <MudNumericField @bind-Value="_editTimeoutSec"
                                              Label="タイムアウト (秒)"
                                              Min="30" Max="3600"
-                                             Variant="Variant.Outlined" />
+                                             Variant="Variant.Outlined"
+                                             HelperText="1 リクエストあたりの上限時間。デフォルト: 300" />
                         </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editRetryCount"
+                                             Label="リトライ回数"
+                                             Min="0" Max="10"
+                                             Variant="Variant.Outlined"
+                                             HelperText="一時的なエラー時の再試行回数。デフォルト: 3" />
+                        </MudItem>
+                    </MudGrid>
+                </MudExpansionPanel>
 
-                        @* ── グラフ表示設定（#156/#157） ─────────────────────── *@
-                        <MudItem xs="12">
-                            <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">グラフ表示設定</MudText>
-                        </MudItem>
-                        <MudItem xs="12">
-                            <MudSwitch @bind-Value="_editShowGraphs"
-                                       Label="メトリクスグラフを表示する"
-                                       Color="Color.Primary" />
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                OFF にするとダッシュボードのグラフエリアを非表示にします。ダッシュボードのアイコンボタンとも連動します。
-                            </MudText>
-                        </MudItem>
-                        @if (_editShowGraphs)
-                        {
-                            <MudItem xs="12" sm="6">
-                                <MudSelect T="int" @bind-Value="_editGraphColumns"
-                                           Label="グラフ列数"
-                                           Variant="Variant.Outlined"
-                                           HelperText="ダッシュボードのグラフを何列に並べるか設定します。デフォルト: 2">
-                                    <MudSelectItem Value="1">1 列</MudSelectItem>
-                                    <MudSelectItem Value="2">2 列（デフォルト）</MudSelectItem>
-                                    <MudSelectItem Value="3">3 列</MudSelectItem>
-                                    <MudSelectItem Value="4">4 列</MudSelectItem>
-                                </MudSelect>
-                            </MudItem>
-                        }
+                @* [D] 詳細設定 *@
+                <MudExpansionPanel Text="詳細設定（上級者向け）" Dense="true">
+                    <MudGrid Spacing="2" Class="pt-2">
 
-                        @* ── 動的並列制御 ────────────────────────────────── *@
+                        @* 転送制御エンジン *@
                         <MudItem xs="12">
-                            <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">転送制御エンジン</MudText>
+                            <MudText Typo="Typo.subtitle2" Class="mb-1">転送制御エンジン</MudText>
                         </MudItem>
                         <MudItem xs="12">
                             <MudSwitch @bind-Value="_editUseRateControl"
@@ -162,20 +182,30 @@ else
                                        Color="Color.Primary" />
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
                                 ON: レート（req/s）主体の新エンジン（RateControlledTransferController）を使用します。
-                                OFF: 旧来の並列数ベースエンジンを使用します。動的並列制御（ACC）の有効/無効は下の設定で切り替えられます。
-                                設定変更は次回ジョブ開始時に反映されます。
+                                OFF: 旧来の並列数ベースエンジンを使用します。設定変更は次回ジョブ開始時に反映されます。
                             </MudText>
                         </MudItem>
 
                         @if (_editUseRateControl)
                         {
-                            @* ── レートベース制御パラメーター ──────────────────── *@
+                            @* レートベース制御パラメーター *@
                             <MudItem xs="12">
                                 <MudDivider Class="my-2" />
                                 <MudText Typo="Typo.subtitle2" Class="mb-2">レートベース制御パラメーター</MudText>
-                                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
-                                    すべての値は UI から変更可能です。変更は次回ジョブ開始時に反映されます。
-                                </MudAlert>
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcMaxConcurrency"
+                                                 Label="最大並行数 / レート上限（安全キャップ）"
+                                                 Min="1" Max="256"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="並列数の上限かつ req/sec のレート上限。デフォルト: 16" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_editRcInFlightThreshold"
+                                                 Label="インフライト閾値"
+                                                 Min="1" Max="256"
+                                                 Variant="Variant.Outlined"
+                                                 HelperText="この値を超えると dispatch を一時停止（安全キャップ）。デフォルト: 32" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_editRcShortWindowSec"
@@ -196,14 +226,14 @@ else
                                                  Label="緊急減速閾値 (429 率 %)"
                                                  Min="0" Max="100"
                                                  Variant="Variant.Outlined"
-                                                 HelperText="短期窓 429 率がこの値を超えると緊急減速。0% = 429 が 1 件でも発生すると緊急減速（無効化には 100 を設定）。デフォルト: 10" />
+                                                 HelperText="短期窓 429 率がこの値を超えると緊急減速。デフォルト: 10" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_editRcSlowdownThresholdPct"
                                                  Label="緩減速閾値 (429 率 %)"
                                                  Min="0" Max="100"
                                                  Variant="Variant.Outlined"
-                                                 HelperText="中期窓 429 率がこの値を超えると緩やかに減速。0% = 429 が 1 件でも発生すると緩減速（無効化には 100 を設定）。デフォルト: 3" />
+                                                 HelperText="中期窓 429 率がこの値を超えると緩やかに減速。デフォルト: 3" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_editRcDecayK"
@@ -226,79 +256,77 @@ else
                                                  Variant="Variant.Outlined"
                                                  HelperText="減衰係数の上限（最小の減速）。デフォルト: 0.9" />
                             </MudItem>
-                            <MudItem xs="12" sm="6">
-                                <MudNumericField @bind-Value="_editRcInFlightThreshold"
-                                                 Label="インフライト閾値"
-                                                 Min="1" Max="256"
-                                                 Variant="Variant.Outlined"
-                                                 HelperText="この値を超えると dispatch を一時停止（安全キャップ）。デフォルト: 32" />
-                            </MudItem>
-                            <MudItem xs="12" sm="6">
-                                <MudNumericField @bind-Value="_editRcMaxConcurrency"
-                                                 Label="最大並行数 / レート上限（安全キャップ）"
-                                                 Min="1" Max="256"
-                                                 Variant="Variant.Outlined"
-                                                 HelperText="並列数の上限であると同時に、req/sec のレート上限としても使用されます。デフォルト: 16" />
-                            </MudItem>
 
-                            @* ── HybridRateController 専用パラメーター ──────── *@
+                            @* HybridRateController（ネスト展開） *@
                             <MudItem xs="12">
                                 <MudDivider Class="my-2" />
-                                <MudText Typo="Typo.subtitle2" Class="mb-2">HybridRateController（AIMD）</MudText>
                             </MudItem>
                             <MudItem xs="12">
-                                <MudSwitch @bind-Value="_editUseHybridController"
-                                           Label="HybridRateController を使用する（実験的）"
-                                           Color="Color.Secondary" />
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                    ON: AIMD ベースのスループット主制御 + max_inflight 補助制御（v0.6.0 設計書 §4.3/§7）を有効化します。
-                                    OFF: 通常の RateControlledTransferController を使用します。
-                                </MudText>
+                                <MudExpansionPanels Elevation="0">
+                                    <MudExpansionPanel Text="HybridRateController（AIMD）— 実験的" Dense="true">
+                                        <MudGrid Spacing="2" Class="pt-2">
+                                            <MudItem xs="12">
+                                                <MudSwitch @bind-Value="_editUseHybridController"
+                                                           Label="HybridRateController を使用する"
+                                                           Color="Color.Secondary" />
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    ON: AIMD ベースのスループット主制御 + max_inflight 補助制御（v0.6.0 設計書 §4.3/§7）を有効化します。
+                                                    OFF: 通常の RateControlledTransferController を使用します。
+                                                </MudText>
+                                            </MudItem>
+                                            @if (_editUseHybridController)
+                                            {
+                                                <MudItem xs="12" sm="6">
+                                                    <MudNumericField @bind-Value="_editRcCooldownSec"
+                                                                     Label="クールダウン秒数"
+                                                                     Min="0" Max="300"
+                                                                     Variant="Variant.Outlined"
+                                                                     HelperText="緊急減速後に増速を停止する時間（秒）。デフォルト: 20" />
+                                                </MudItem>
+                                                <MudItem xs="12" sm="6">
+                                                    <MudNumericField @bind-Value="_editRcAddStep"
+                                                                     Label="増速ステップ (tokens/sec)"
+                                                                     Min="0.1" Max="10.0" Step="0.1"
+                                                                     Variant="Variant.Outlined"
+                                                                     HelperText="安定期に 1 制御サイクルごとに加算するレート量。デフォルト: 1.0" />
+                                                </MudItem>
+                                                <MudItem xs="12" sm="6">
+                                                    <MudNumericField @bind-Value="_editRcEmergencyDecay"
+                                                                     Label="緊急減速係数"
+                                                                     Min="0.1" Max="0.99" Step="0.05"
+                                                                     Variant="Variant.Outlined"
+                                                                     HelperText="429 激増時にレートに乗じる係数。デフォルト: 0.9" />
+                                                </MudItem>
+                                                <MudItem xs="12" sm="6">
+                                                    <MudNumericField @bind-Value="_editRcEmergencyInflightDecay"
+                                                                     Label="max_inflight 緊急削減係数"
+                                                                     Min="0.1" Max="0.99" Step="0.05"
+                                                                     Variant="Variant.Outlined"
+                                                                     HelperText="緊急減速時に max_inflight に乗じる係数。デフォルト: 0.9" />
+                                                </MudItem>
+                                                <MudItem xs="12" sm="6">
+                                                    <MudSelect @bind-Value="_editRcLatencyMode"
+                                                               Label="レイテンシ判定モード"
+                                                               Variant="Variant.Outlined"
+                                                               HelperText="429 なしでの減速を許可するかどうか。通常は None。">
+                                                        <MudSelectItem Value="@("None")">None — レイテンシ判定なし（429専制御、推奨）</MudSelectItem>
+                                                        <MudSelectItem Value="@("Baseline")">Baseline — 安定期 P95 の長期 EMA 比で判定</MudSelectItem>
+                                                        <MudSelectItem Value="@("Recent")">Recent — 直近 vs 前区間 P95 平均比で判定</MudSelectItem>
+                                                        <MudSelectItem Value="@("Both")">Both — Baseline OR Recent（誤検知リスクあり）</MudSelectItem>
+                                                    </MudSelect>
+                                                </MudItem>
+                                            }
+                                        </MudGrid>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
                             </MudItem>
-                            @if (_editUseHybridController)
-                            {
-                                <MudItem xs="12" sm="6">
-                                    <MudNumericField @bind-Value="_editRcCooldownSec"
-                                                     Label="クールダウン秒数"
-                                                     Min="0" Max="300"
-                                                     Variant="Variant.Outlined"
-                                                     HelperText="緊急減速後に増速を停止する時間（秒）。デフォルト: 20" />
-                                </MudItem>
-                                <MudItem xs="12" sm="6">
-                                    <MudNumericField @bind-Value="_editRcAddStep"
-                                                     Label="増速ステップ (tokens/sec)"
-                                                     Min="0.1" Max="10.0" Step="0.1"
-                                                     Variant="Variant.Outlined"
-                                                     HelperText="安定期に 1 制御サイクルごとに加算するレート量。大きいほど素早く回復。デフォルト: 1.0" />
-                                </MudItem>
-                                <MudItem xs="12" sm="6">
-                                    <MudNumericField @bind-Value="_editRcEmergencyDecay"
-                                                     Label="緊急減速係数"
-                                                     Min="0.1" Max="0.99" Step="0.05"
-                                                     Variant="Variant.Outlined"
-                                                     HelperText="429 激増時にレートに乗じる係数。SharePoint は Retry-After 待機が主制御なので控えめに設定することを推奨。例: 0.9 = 10%削減。デフォルト: 0.9" />
-                                </MudItem>
-                                <MudItem xs="12" sm="6">
-                                    <MudNumericField @bind-Value="_editRcEmergencyInflightDecay"
-                                                     Label="max_inflight 緊急削減係数"
-                                                     Min="0.1" Max="0.99" Step="0.05"
-                                                     Variant="Variant.Outlined"
-                                                     HelperText="緊急減速時に max_inflight（並列数上限）に乗じる係数。Retry-After が主制御なので控えめに。例: 0.9 = 10%削減。デフォルト: 0.9" />
-                                </MudItem>                                <MudItem xs="12" sm="6">
-                                    <MudSelect @bind-Value="_editRcLatencyMode"
-                                               Label="レイテンシ判定モード"
-                                               Variant="Variant.Outlined"
-                                               HelperText="429 なしでの減速を許可するかどうか。通常は None。">
-                                        <MudSelectItem Value="@("None")">None — レイテンシ判定なし（429専制御、推奨）</MudSelectItem>
-                                        <MudSelectItem Value="@("Baseline")">Baseline — 安定期 P95 の長期 EMA 比で判定</MudSelectItem>
-                                        <MudSelectItem Value="@("Recent")">Recent — 直近 vs 前区間 P95 平均比で判定</MudSelectItem>
-                                        <MudSelectItem Value="@("Both")">Both — Baseline OR Recent（誤検知リスクあり）</MudSelectItem>
-                                    </MudSelect>
-                                </MudItem>                            }
                         }
+                        else
+                        {
+                            @* 動的並列制御（レートベース制御 OFF 時） *@
                             <MudItem xs="12">
                                 <MudDivider Class="my-2" />
-                                <MudText Typo="Typo.subtitle2" Class="mb-2">動的並列制御（レート制限対応）</MudText>
+                                <MudText Typo="Typo.subtitle2" Class="mb-1">動的並列制御（レート制限対応）</MudText>
                             </MudItem>
                             <MudItem xs="12">
                                 <MudSwitch @bind-Value="_editAdaptiveConcurrencyEnabled"
@@ -339,59 +367,88 @@ else
                                 </MudItem>
                             }
                         }
+
+                        @* ファイル転送詳細設定 *@
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-1">ファイル転送</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editChunkSizeMb"
+                                             Label="チャンクサイズ (MB)"
+                                             Min="1" Max="100"
+                                             Variant="Variant.Outlined"
+                                             HelperText="大容量ファイルを分割アップロードする際の 1 チャンクのサイズ。デフォルト: 5" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editLargeFileThresholdMb"
+                                             Label="大ファイル閾値 (MB)"
+                                             Min="1" Max="100"
+                                             Variant="Variant.Outlined"
+                                             HelperText="これより大きいファイルをチャンクアップロードに切り替える閾値。デフォルト: 4" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editMaxParallelFolderCreations"
+                                             Label="最大並行フォルダ作成数"
+                                             Min="1" Max="32"
+                                             Variant="Variant.Outlined"
+                                             HelperText="フォルダ構造の作成フェーズで同時に作成するフォルダ数の上限。デフォルト: 4" />
+                        </MudItem>
+
                     </MudGrid>
                 </MudExpansionPanel>
+
             </MudExpansionPanels>
         </MudCardContent>
         <MudCardActions>
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Save"
-                       OnClick="SaveAsync">
+                       OnClick="SaveTransferSettingsAsync">
                 保存
             </MudButton>
             <MudButton Variant="Variant.Text"
-                       OnClick="ResetAsync">
+                       OnClick="ResetTransferSettingsAsync">
                 リセット
             </MudButton>
         </MudCardActions>
     </MudCard>
 
-    <!-- 危険な操作 -->
-    <MudCard Elevation="2" Style="max-width: 600px;" Class="mt-6">
+    @* ── [E] データ管理 *@
+    <MudCard Elevation="2" Style="max-width: 600px;" Class="mt-4">
         <MudCardHeader>
             <CardHeaderContent>
-                <MudText Typo="Typo.h6" Color="Color.Error">危険な操作</MudText>
+                <MudText Typo="Typo.subtitle1">データ管理</MudText>
             </CardHeaderContent>
         </MudCardHeader>
         <MudCardContent>
             <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
-                以下の操作は転送状態・メトリクス・チェックポイントをすべて削除します。
-                元に戻すことはできません。転送をやり直したい場合にのみ使用してください。
+                転送済みの記録がすべて削除され、次回実行時にすべてのファイルが再転送対象になります。
+                完了済みファイルも含めて再転送したい場合にのみ実行してください。
             </MudAlert>
             <MudText Typo="Typo.body2" Class="mb-1">
-                <b>フルリビルド</b>とは以下を実行します:
+                <b>データベースを初期化</b>すると以下を実行します:
             </MudText>
             <MudList T="string" Dense="true" Class="mb-2">
-                <MudListItem Icon="@Icons.Material.Filled.DeleteForever" IconColor="Color.Error">SQLite DB の全データ削除（transfer_records / checkpoints / metrics）</MudListItem>
-                <MudListItem Icon="@Icons.Material.Filled.DeleteForever" IconColor="Color.Error">キャッシュファイル削除（OneDrive・SharePoint・Dropbox キャッシュ、skip_list）</MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.DeleteForever" IconColor="Color.Warning">SQLite DB の全データ削除（transfer_records / checkpoints / metrics）</MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.DeleteForever" IconColor="Color.Warning">キャッシュファイル削除（OneDrive・SharePoint・Dropbox キャッシュ、skip_list）</MudListItem>
                 <MudListItem Icon="@Icons.Material.Filled.Info" IconColor="Color.Info">次回の転送開始ボタン押下でクロールから全フェーズを再実行</MudListItem>
             </MudList>
         </MudCardContent>
         <MudCardActions>
             <MudButton Variant="Variant.Filled"
-                       Color="Color.Error"
+                       Color="Color.Warning"
                        StartIcon="@Icons.Material.Filled.RestartAlt"
                        Disabled="@_isRebuilding"
                        OnClick="FullRebuildAsync">
-                @(_isRebuilding ? "実行中..." : "フルリビルド")
+                @(_isRebuilding ? "実行中..." : "データベースを初期化")
             </MudButton>
         </MudCardActions>
     </MudCard>
 }
 
 <!-- 確認ダイアログ -->
-<MudMessageBox @ref="_confirmBox" Title="フルリビルドの確認" CancelText="キャンセル" YesText="実行する">
+<MudMessageBox @ref="_confirmBox" Title="データベース初期化の確認" CancelText="キャンセル" YesText="初期化する">
     <MessageContent>
         <MudText>
             転送状態・メトリクス・チェックポイント・キャッシュファイルをすべて削除します。<br />
@@ -407,7 +464,7 @@ else
     private bool _isRebuilding;
     private MudMessageBox? _confirmBox;
 
-    // 編集用フィールド
+    // 編集用フィールド（転送設定）
     private int _editMaxParallelTransfers;
     private int _editMaxParallelFolderCreations;
     private int _editChunkSizeMb;
@@ -436,11 +493,23 @@ else
     private double _editRcEmergencyInflightDecay;
     private double _editRcAddStep;
     private string _editRcLatencyMode = "None";
-    // グラフ表示設定（#156/#157）
-    private bool _editShowGraphs;
+    // 表示設定（#177/#178）
     private int _editGraphColumns;
-    // UI テーマ設定（#177）
     private string _editThemeMode = "system";
+
+    private string SharePointSiteDisplay =>
+        _discovery?.SharePointSiteDisplayName is { Length: > 0 } sn ? sn :
+        _discovery?.SharePointSiteId is { Length: > 8 } sid ? sid[..8] + "..." :
+        _discovery?.SharePointSiteId is { Length: > 0 } sid2 ? sid2 :
+        "未設定";
+
+    // http/https のみ許可。それ以外（javascript: 等）は null を返してリンクを非表示にする
+    private string? SharePointSiteWebUrlSafe =>
+        _discovery?.SharePointSiteWebUrl is { Length: > 0 } url &&
+        Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri.AbsoluteUri
+            : null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -512,14 +581,12 @@ else
         _editRcEmergencyInflightDecay = cfg.RcEmergencyInflightDecay;
         _editRcAddStep = cfg.RcAddStep;
         _editRcLatencyMode = cfg.RcLatencyMode;
-        _editShowGraphs = cfg.ShowGraphs;
         _editGraphColumns = cfg.GraphColumns;
         _editThemeMode = cfg.ThemeMode;
     }
 
-    private async Task SaveAsync()
+    private async Task SaveTransferSettingsAsync()
     {
-        // 保存前バリデーション（SettingsValidation に委譲）
         var err =
             SettingsValidation.ValidateMaxParallelTransfers(_editMaxParallelTransfers) ??
             SettingsValidation.ValidateMaxParallelFolderCreations(_editMaxParallelFolderCreations) ??
@@ -542,7 +609,7 @@ else
         {
             // 非表示セクションは null（UpdateConfigAsync が null フィールドをスキップするため現在値を維持）
             // UseRateControl=ON: ACC フィールドを null → バリデーションと保存対象を一致させる
-            // UseRateControl=OFF: RC フィールドを null  → 同上
+            // UseRateControl=OFF: RC フィールドを null → 同上
             var update = new ConfigUpdateDto(
                 MaxParallelTransfers: _editMaxParallelTransfers,
                 MaxParallelFolderCreations: _editMaxParallelFolderCreations,
@@ -569,34 +636,48 @@ else
                 RcEmergencyDecay: (_editUseRateControl && _editUseHybridController) ? _editRcEmergencyDecay : null,
                 RcEmergencyInflightDecay: (_editUseRateControl && _editUseHybridController) ? _editRcEmergencyInflightDecay : null,
                 RcAddStep: (_editUseRateControl && _editUseHybridController) ? _editRcAddStep : null,
-                RcLatencyMode: (_editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null,
-                ShowGraphs: _editShowGraphs,
-                GraphColumns: _editGraphColumns);
+                RcLatencyMode: (_editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null);
             await ConfigService.UpdateConfigAsync(update);
+            // 表示設定の編集中の値を保護してから転送設定のみ再反映する
+            var savedTheme = _editThemeMode;
+            var savedColumns = _editGraphColumns;
             _config = await ConfigService.GetConfigAsync();
             CopyToEditFields(_config);
-            Snackbar.Add("設定を保存しました。", Severity.Success);
+            _editThemeMode = savedTheme;
+            _editGraphColumns = savedColumns;
+            Snackbar.Add("転送設定を保存しました。", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"設定の保存に失敗しました: {ex.Message}", Severity.Error);
+            Snackbar.Add($"転送設定の保存に失敗しました: {ex.Message}", Severity.Error);
         }
     }
 
-    private async Task ResetAsync()
+    private Task ResetTransferSettingsAsync()
     {
         if (_config is not null)
+        {
+            // 表示設定の編集中の値を保護してから転送設定のみリセットする
+            var savedTheme = _editThemeMode;
+            var savedColumns = _editGraphColumns;
             CopyToEditFields(_config);
-        await Task.CompletedTask;
+            _editThemeMode = savedTheme;
+            _editGraphColumns = savedColumns;
+        }
+        return Task.CompletedTask;
     }
 
-    private async Task SaveThemeAsync()
+    private async Task SaveDisplaySettingsAsync()
     {
         try
         {
-            await ConfigService.UpdateConfigAsync(new ConfigUpdateDto(ThemeMode: _editThemeMode));
+            await ConfigService.UpdateConfigAsync(new ConfigUpdateDto(
+                ThemeMode: _editThemeMode,
+                GraphColumns: _editGraphColumns));
             _config = await ConfigService.GetConfigAsync();
-            CopyToEditFields(_config);
+            // 転送設定の編集中の値を保護するため、表示設定フィールドのみを再反映する
+            _editThemeMode = _config.ThemeMode;
+            _editGraphColumns = _config.GraphColumns;
             await OnThemeModeChanged.InvokeAsync(_editThemeMode);
             Snackbar.Add("表示設定を保存しました。", Severity.Success);
         }
@@ -606,10 +687,13 @@ else
         }
     }
 
-    private Task ResetThemeAsync()
+    private Task ResetDisplaySettingsAsync()
     {
         if (_config is not null)
+        {
             _editThemeMode = _config.ThemeMode;
+            _editGraphColumns = _config.GraphColumns;
+        }
         return Task.CompletedTask;
     }
 
@@ -636,14 +720,14 @@ else
             var opts = new MigratorOptions();
             ConfigHashChecker.ClearAll(opts.Paths, Logger);
 
-            Snackbar.Add("フルリビルドが完了しました。転送を再開するにはダッシュボードの「転送開始」ボタンを押してください。", Severity.Success, cfg =>
+            Snackbar.Add("データベースの初期化が完了しました。転送を再開するにはダッシュボードの「転送開始」ボタンを押してください。", Severity.Success, cfg =>
             {
                 cfg.VisibleStateDuration = 6000;
             });
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"フルリビルドに失敗しました: {ex.Message}", Severity.Error);
+            Snackbar.Add($"初期化に失敗しました: {ex.Message}", Severity.Error);
         }
         finally
         {

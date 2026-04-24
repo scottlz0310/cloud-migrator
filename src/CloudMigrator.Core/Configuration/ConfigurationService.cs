@@ -99,7 +99,7 @@ public sealed record GraphConfigUpdateDto(
     string? ClientSecretExpiry = null);
 
 /// <summary>
-/// Discovery 結果 DTO（OneDrive Drive ID / SharePoint Site ID / Drive ID）。
+/// Discovery 結果 DTO（OneDrive Drive ID・表示名 / SharePoint Site ID・Drive ID・表示名・URL）。
 /// </summary>
 public sealed record DiscoveryConfigDto(
     string OneDriveUserId,
@@ -111,7 +111,12 @@ public sealed record DiscoveryConfigDto(
     string SharePointDestFolderId,
     string SharePointDestFolderPath,
     string MigrationRoute,
-    string DestinationProvider);
+    string DestinationProvider,
+    // ── 表示名拡充（#178）──
+    string OneDriveDisplayName = "",
+    string SharePointSiteDisplayName = "",
+    string SharePointSiteWebUrl = "",
+    string SharePointDriveDisplayName = "");
 
 /// <summary>
 /// Discovery 結果マージ更新 DTO。null フィールドは上書きしない。
@@ -126,7 +131,12 @@ public sealed record DiscoveryConfigUpdateDto(
     string? SharePointDestFolderId = null,
     string? SharePointDestFolderPath = null,
     string? MigrationRoute = null,
-    string? DestinationProvider = null);
+    string? DestinationProvider = null,
+    // ── 表示名拡充（#178）──
+    string? OneDriveDisplayName = null,
+    string? SharePointSiteDisplayName = null,
+    string? SharePointSiteWebUrl = null,
+    string? SharePointDriveDisplayName = null);
 
 /// <summary>
 /// config.json の読み書きを担当するサービス契約。
@@ -602,11 +612,16 @@ public sealed class ConfigurationService : IConfigurationService
             var sharePointDestFolderPath = hasGraphObject ? GetString(gProp, "sharePointDestFolderPath", string.Empty) : string.Empty;
             var migrationRoute = GetString(m, "migrationRoute", string.Empty);
             var destinationProvider = GetString(m, "destinationProvider", "sharepoint");
+            var oneDriveDisplayName = hasGraphObject ? GetString(gProp, "oneDriveDisplayName", string.Empty) : string.Empty;
+            var sharePointSiteDisplayName = hasGraphObject ? GetString(gProp, "sharePointSiteDisplayName", string.Empty) : string.Empty;
+            var sharePointSiteWebUrl = hasGraphObject ? GetString(gProp, "sharePointSiteWebUrl", string.Empty) : string.Empty;
+            var sharePointDriveDisplayName = hasGraphObject ? GetString(gProp, "sharePointDriveDisplayName", string.Empty) : string.Empty;
 
             return new DiscoveryConfigDto(
                 oneDriveUserId, oneDriveDriveId, oneDriveSourceFolderId, oneDriveSourceFolderPath,
                 sharePointSiteId, sharePointDriveId, sharePointDestFolderId, sharePointDestFolderPath,
-                migrationRoute, destinationProvider);
+                migrationRoute, destinationProvider,
+                oneDriveDisplayName, sharePointSiteDisplayName, sharePointSiteWebUrl, sharePointDriveDisplayName);
         }
         catch (JsonException)
         {
@@ -677,6 +692,10 @@ public sealed class ConfigurationService : IConfigurationService
 
             if (update.MigrationRoute is not null) m["migrationRoute"] = update.MigrationRoute;
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
+            if (update.OneDriveDisplayName is not null) g["oneDriveDisplayName"] = update.OneDriveDisplayName;
+            if (update.SharePointSiteDisplayName is not null) g["sharePointSiteDisplayName"] = update.SharePointSiteDisplayName;
+            if (update.SharePointSiteWebUrl is not null) g["sharePointSiteWebUrl"] = update.SharePointSiteWebUrl;
+            if (update.SharePointDriveDisplayName is not null) g["sharePointDriveDisplayName"] = update.SharePointDriveDisplayName;
 
             var tmpPath = _configFilePath + ".tmp";
             await using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
