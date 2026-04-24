@@ -27,11 +27,9 @@
                             Personal OneDrive から Dropbox へファイルを移行します
                         </MudText>
                     </div>
-                    <MudChip T="string" Color="Color.Success" Size="Size.Small">v0.4.0 対応</MudChip>
                 </MudStack>
             </MudPaper>
 
-            @* OneDrive → SharePoint 路線（v0.5.0 予定） *@
             <MudPaper Elevation="@(_selected == WizardRoute.OneDriveToSharePoint ? 3 : 1)"
                       Class="pa-4 cursor-pointer"
                       Style="@RouteCardStyle(WizardRoute.OneDriveToSharePoint)"
@@ -47,7 +45,6 @@
                             Personal OneDrive から SharePoint Document Library へ移行します
                         </MudText>
                     </div>
-                    <MudChip T="string" Color="Color.Default" Size="Size.Small">v0.5.0 予定</MudChip>
                 </MudStack>
             </MudPaper>
         </MudStack>
