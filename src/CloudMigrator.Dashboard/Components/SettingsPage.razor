@@ -55,28 +55,39 @@ else
                     </div>
                     <MudDivider />
                     <div>
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送先（SharePoint）</MudText>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
-                            <MudText Typo="Typo.body2">@SharePointSiteDisplay</MudText>
-                            @if (SharePointSiteWebUrlSafe is { } safeUrl)
-                            {
-                                <MudTooltip Text="@safeUrl">
-                                    <a href="@safeUrl"
-                                       target="_blank"
-                                       rel="noopener noreferrer"
-                                       aria-label="SharePoint サイトを新しいタブで開く">
-                                        <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Color="Color.Secondary" />
-                                    </a>
-                                </MudTooltip>
-                            }
-                        </MudStack>
-                        @if (_discovery.SharePointDriveDisplayName is { Length: > 0 } drv)
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">転送先</MudText>
+                        @switch (_discovery.MigrationRoute)
                         {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@drv</MudText>
+                            case "OneDriveToSharePoint":
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
+                                    <MudText Typo="Typo.body2">@SharePointSiteDisplay</MudText>
+                                    @if (SharePointSiteWebUrlSafe is { } safeUrl)
+                                    {
+                                        <MudTooltip Text="@safeUrl">
+                                            <a href="@safeUrl"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               aria-label="SharePoint サイトを新しいタブで開く">
+                                                <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Color="Color.Secondary" />
+                                            </a>
+                                        </MudTooltip>
+                                    }
+                                </MudStack>
+                                @if (_discovery.SharePointDriveDisplayName is { Length: > 0 } drv)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@drv</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="word-break: break-all;">
+                                    @(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "（ライブラリルート）")
+                                </MudText>
+                                break;
+                            case "OneDriveToDropbox":
+                                <MudText Typo="Typo.body2">Dropbox</MudText>
+                                break;
+                            default:
+                                <MudText Typo="Typo.body2">未設定</MudText>
+                                break;
                         }
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="word-break: break-all;">
-                            @(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "（ライブラリルート）")
-                        </MudText>
                     </div>
                 </MudStack>
             }
@@ -495,7 +506,7 @@ else
     // http/https のみ許可。それ以外（javascript: 等）は null を返してリンクを非表示にする
     private string? SharePointSiteWebUrlSafe =>
         _discovery?.SharePointSiteWebUrl is { Length: > 0 } url &&
-        Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) &&
         (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
             ? uri.AbsoluteUri
             : null;
