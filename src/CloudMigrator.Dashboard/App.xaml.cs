@@ -263,24 +263,17 @@ public partial class App : Application
                             SimpleUploadLimitMb = opts.Dropbox.SimpleUploadLimitMb,
                             UploadChunkSizeMb = opts.Dropbox.UploadChunkSizeMb,
                         };
-                        var dropboxAccessToken = await credentialStore.GetAsync(CredentialKeys.DropboxAccessToken).ConfigureAwait(false)
-                            ?? AppConfiguration.GetDropboxAccessToken();
-                        var dropboxRefreshToken = await credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken).ConfigureAwait(false)
-                            ?? AppConfiguration.GetDropboxRefreshToken();
-                        var dropboxClientId = await credentialStore.GetAsync(CredentialKeys.DropboxAppKey).ConfigureAwait(false)
-                            ?? AppConfiguration.GetDropboxClientId();
                         var normalizedTimeoutSec = Math.Max(1, opts.TimeoutSec);
                         var dropboxHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(normalizedTimeoutSec) };
+                        var dropboxOAuthService = sp.GetRequiredService<IDropboxOAuthService>();
                         using var dropboxProvider = new DropboxStorageProvider(
                             loggerFactory2.CreateLogger<DropboxStorageProvider>(),
-                            dropboxAccessToken,
+                            credentialStore,
+                            dropboxOAuthService,
                             dropboxOptions,
                             httpClient: dropboxHttpClient,
                             disposeHttpClient: true,
                             maxRetry: opts.RetryCount,
-                            refreshToken: dropboxRefreshToken,
-                            clientId: dropboxClientId,
-                            clientSecret: AppConfiguration.GetDropboxClientSecret(),
                             onRateLimit: onRateLimit);
                         // dropboxStateDb は MigrationWork 冒頭で早期生成・初期化済み
                         // hashChanged 時のリセットも effectiveStateDb.ResetAllAsync() により処理済み
@@ -309,19 +302,20 @@ public partial class App : Application
                 }
                 finally
                 {
-                    // Dropbox 路線で早期生成した専用 stateDb を Dispose する
-                    if (dropboxStateDb is not null)
-                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
                     // AdaptiveConcurrencyControllerAdapter は内部 ACC を所有しないため ACC を直接 Dispose する
                     accMain?.Dispose();
                     accFolder?.Dispose();
-                    // HybridRateController / RateControlledTransferController と MetricsBuffer を Dispose
+                    // MetricsBuffer は effectiveStateDb（dropboxStateDb）への Flush を行うため
+                    // dropboxStateDb より先に Dispose して最終 Flush を完了させる
                     if (hybridController is not null)
                         await hybridController.DisposeAsync().ConfigureAwait(false);
                     if (rateController is not null)
                         await rateController.DisposeAsync().ConfigureAwait(false);
                     if (rateMetricsBuffer is not null)
                         await rateMetricsBuffer.DisposeAsync().ConfigureAwait(false);
+                    // Dropbox 路線で早期生成した専用 stateDb を最後に Dispose する
+                    if (dropboxStateDb is not null)
+                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
                 }
             }
 
