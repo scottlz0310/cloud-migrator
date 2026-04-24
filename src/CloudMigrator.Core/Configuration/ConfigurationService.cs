@@ -99,7 +99,7 @@ public sealed record GraphConfigUpdateDto(
     string? ClientSecretExpiry = null);
 
 /// <summary>
-/// Discovery 結果 DTO（OneDrive Drive ID / SharePoint Site ID / Drive ID）。
+/// Discovery 結果 DTO（OneDrive Drive ID・表示名 / SharePoint Site ID・Drive ID・表示名・URL）。
 /// </summary>
 public sealed record DiscoveryConfigDto(
     string OneDriveUserId,
