@@ -251,7 +251,7 @@ public sealed class ConfigurationService : IConfigurationService
                     rcLatencyMode = lmProp.GetString() ?? "None";
             }
 
-            // ui.themeMode を読み取る（大文字小文字を吸収・未知値は system にフォールバック）
+            // migrator.ui.themeMode を読み取る（大文字小文字を吸収・未知値は system にフォールバック）
             var themeMode = "system";
             if (m.TryGetProperty("ui", out var uiProp) && uiProp.ValueKind == JsonValueKind.Object)
             {
