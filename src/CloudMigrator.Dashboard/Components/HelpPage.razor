@@ -127,7 +127,7 @@
                     <tr>
                         <td style="white-space:nowrap;">最大並行転送数</td>
                         <td>同時に実行するファイル転送の上限数。大きくするほど速いが、429 が増えやすい。ネットワーク品質に応じて調整する。</td>
-                        <td>16</td>
+                        <td>4</td>
                     </tr>
                     <tr>
                         <td style="white-space:nowrap;">タイムアウト (秒)</td>
@@ -181,7 +181,7 @@
                     <tr><th>項目</th><th>説明</th><th style="white-space:nowrap;">デフォルト</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td>チャンクサイズ (MB)</td><td>大容量ファイルを分割アップロードする際の 1 チャンクのサイズ（Graph API LargeFileUpload）。大きくすると 1 チャンクのタイムアウトリスクが上がる。</td><td>10</td></tr>
+                    <tr><td>チャンクサイズ (MB)</td><td>大容量ファイルを分割アップロードする際の 1 チャンクのサイズ（Graph API LargeFileUpload）。大きくすると 1 チャンクのタイムアウトリスクが上がる。</td><td>5</td></tr>
                     <tr><td>大ファイル閾値 (MB)</td><td>これより大きいファイルをチャンクアップロードに切り替える閾値。Graph API の制限（4 MB）以上を推奨。</td><td>4</td></tr>
                     <tr><td>最大並行フォルダ作成数</td><td>フォルダ構造の作成フェーズで同時に作成するフォルダ数の上限。</td><td>4</td></tr>
                 </tbody>
@@ -205,7 +205,7 @@
                     <MudText Typo="Typo.body2" Style="opacity:.7; line-height:1.9;">
                         .NET 10 / Blazor Hybrid (WPF)<br />
                         Microsoft Graph SDK v5<br />
-                        MudBlazor v8
+                        MudBlazor v@(typeof(global::MudBlazor.MudThemeProvider).Assembly.GetName().Version?.ToString(3) ?? "不明")
                     </MudText>
                 </div>
             </div>
