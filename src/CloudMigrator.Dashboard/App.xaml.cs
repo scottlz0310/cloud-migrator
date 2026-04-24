@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Credentials;
@@ -100,8 +101,9 @@ public partial class App : Application
 
                 var auth = new GraphAuthenticator(opts.Graph.ClientId, opts.Graph.TenantId, clientSecret);
 
-                // AdaptiveConcurrencyController の初期化（config.json の AdaptiveConcurrency.sharepoint.Enabled = true で有効）
-                // UseRateControl=false 時のみ ACC を使用する
+                // AdaptiveConcurrencyController の初期化
+                // 宛先 provider に応じて AdaptiveConcurrency.sharepoint / AdaptiveConcurrency.dropbox の
+                // プロファイルを参照し、対応する Enabled=true かつ UseRateControl=false 時のみ ACC を使用する
                 var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
                 var adaptiveOpts = opts.GetAdaptiveConcurrency(isDropbox ? "dropbox" : "sharepoint");
                 AdaptiveConcurrencyController? accMain = null;        // Dispose + onRateLimit 用に保持
@@ -247,21 +249,28 @@ public partial class App : Application
                             ?? AppConfiguration.GetDropboxAccessToken();
                         var dropboxRefreshToken = await credentialStore.GetAsync(CredentialKeys.DropboxRefreshToken).ConfigureAwait(false)
                             ?? AppConfiguration.GetDropboxRefreshToken();
-                        var dropboxAppKey = await credentialStore.GetAsync(CredentialKeys.DropboxAppKey).ConfigureAwait(false)
+                        var dropboxClientId = await credentialStore.GetAsync(CredentialKeys.DropboxAppKey).ConfigureAwait(false)
                             ?? AppConfiguration.GetDropboxClientId();
+                        var dropboxHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(opts.TimeoutSec) };
                         using var dropboxProvider = new DropboxStorageProvider(
                             loggerFactory2.CreateLogger<DropboxStorageProvider>(),
                             dropboxAccessToken,
                             dropboxOptions,
+                            httpClient: dropboxHttpClient,
+                            disposeHttpClient: true,
                             maxRetry: opts.RetryCount,
                             refreshToken: dropboxRefreshToken,
-                            clientId: dropboxAppKey,
+                            clientId: dropboxClientId,
                             clientSecret: AppConfiguration.GetDropboxClientSecret(),
                             onRateLimit: onRateLimit);
+                        await using var dropboxStateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
+                        await dropboxStateDb.InitializeAsync(ct).ConfigureAwait(false);
+                        if (hashChanged)
+                            await dropboxStateDb.ResetAllAsync(ct).ConfigureAwait(false);
                         var dropboxPipeline = new DropboxMigrationPipeline(
                             storageProvider,
                             dropboxProvider,
-                            stateDb,
+                            dropboxStateDb,
                             opts,
                             loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
                             concurrencyController);
