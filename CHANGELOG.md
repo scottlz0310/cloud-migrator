@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dropbox 路線選択時に SharePoint 路線に固定されるバグを修正**（DropboxOAuthPage）
+  - `DropboxOAuthPage.razor` の OAuth 認証成功後に `ConfigurationService.UpdateDiscoveryConfigAsync` を呼び出し、`config.json` の `migrationRoute` を `"OneDriveToDropbox"`、`destinationProvider` を `"dropbox"` に書き込むよう修正
+  - `SharePointDiscoveryPage.razor` が `"sharepoint"` を書き込む一方、Dropbox 側で対称の書き込みが欠落していたことが原因
+
 ### Added
 
 - **ダッシュボードリデザイン（UI-03）**（DashboardPage）

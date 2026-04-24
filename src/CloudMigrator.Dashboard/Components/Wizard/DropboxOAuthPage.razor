@@ -1,6 +1,8 @@
+@using CloudMigrator.Core.Configuration
 @using CloudMigrator.Core.Credentials
 @using CloudMigrator.Core.Wizard
 @using CloudMigrator.Providers.Dropbox.Auth
+@inject IConfigurationService ConfigurationService
 @inject IDropboxOAuthService OAuthService
 @inject ICredentialStore CredentialStore
 @inject ISnackbar Snackbar
@@ -146,6 +148,13 @@
             await CredentialStore.SaveAsync(CredentialKeys.DropboxAccessToken, result.AccessToken, _cts.Token);
             if (!string.IsNullOrEmpty(result.RefreshToken))
                 await CredentialStore.SaveAsync(CredentialKeys.DropboxRefreshToken, result.RefreshToken, _cts.Token);
+
+            // config.json に路線情報を書き込む（SharePointDiscoveryPage と対称）
+            await ConfigurationService.UpdateDiscoveryConfigAsync(
+                new DiscoveryConfigUpdateDto(
+                    MigrationRoute: "OneDriveToDropbox",
+                    DestinationProvider: "dropbox"),
+                _cts.Token);
 
             _isVerified = true;
             Snackbar.Add("Dropbox 認証が完了しました", Severity.Success);
