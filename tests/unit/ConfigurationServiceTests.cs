@@ -840,6 +840,117 @@ public sealed class ConfigurationServiceTests : IDisposable
         result.DestinationProvider.Should().Be("sharepoint");
     }
 
+    // ── DiscoveryConfig 表示名拡充（#178）────────────────────────────────
+
+    [Fact]
+    public async Task GetDiscoveryConfigAsync_WhenDisplayNameFieldsAbsent_ReturnsEmptyStrings()
+    {
+        // 検証対象: GetDiscoveryConfigAsync  目的: 表示名フィールドが存在しない既存設定ではすべて空文字を返す
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                graph = new
+                {
+                    oneDriveUserId = "user@contoso.com",
+                    oneDriveDriveId = "drive-id",
+                    sharePointSiteId = "site-id",
+                    sharePointDriveId = "drive-id",
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetDiscoveryConfigAsync();
+
+        result.OneDriveDisplayName.Should().BeEmpty();
+        result.SharePointSiteDisplayName.Should().BeEmpty();
+        result.SharePointSiteWebUrl.Should().BeEmpty();
+        result.SharePointDriveDisplayName.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetDiscoveryConfigAsync_ReturnsDisplayNameFields()
+    {
+        // 検証対象: GetDiscoveryConfigAsync  目的: 表示名フィールドが正しく読み取れること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                graph = new
+                {
+                    oneDriveUserId = "user@contoso.com",
+                    oneDriveDriveId = "drive-id",
+                    oneDriveDisplayName = "田中 太郎",
+                    sharePointSiteId = "site-id",
+                    sharePointDriveId = "lib-drive-id",
+                    sharePointSiteDisplayName = "マーケティング部",
+                    sharePointSiteWebUrl = "https://contoso.sharepoint.com/sites/Marketing",
+                    sharePointDriveDisplayName = "Documents",
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetDiscoveryConfigAsync();
+
+        result.OneDriveDisplayName.Should().Be("田中 太郎");
+        result.SharePointSiteDisplayName.Should().Be("マーケティング部");
+        result.SharePointSiteWebUrl.Should().Be("https://contoso.sharepoint.com/sites/Marketing");
+        result.SharePointDriveDisplayName.Should().Be("Documents");
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_PersistsDisplayNameFields()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync  目的: 表示名フィールドが正しく保存されること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            OneDriveUserId: "user@contoso.com",
+            OneDriveDriveId: "drive-id",
+            OneDriveDisplayName: "山田 花子",
+            SharePointSiteId: "site-id",
+            SharePointDriveId: "lib-drive-id",
+            SharePointSiteDisplayName: "総務部",
+            SharePointSiteWebUrl: "https://contoso.sharepoint.com/sites/General",
+            SharePointDriveDisplayName: "共有ドキュメント",
+            MigrationRoute: "OneDriveToSharePoint",
+            DestinationProvider: "sharepoint"));
+
+        var result = await svc.GetDiscoveryConfigAsync();
+        result.OneDriveDisplayName.Should().Be("山田 花子");
+        result.SharePointSiteDisplayName.Should().Be("総務部");
+        result.SharePointSiteWebUrl.Should().Be("https://contoso.sharepoint.com/sites/General");
+        result.SharePointDriveDisplayName.Should().Be("共有ドキュメント");
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_NullDisplayNameFields_DoNotOverwrite()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync  目的: null フィールドは既存値を上書きしないこと
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                graph = new
+                {
+                    oneDriveUserId = "user@contoso.com",
+                    oneDriveDisplayName = "既存の表示名",
+                    sharePointSiteDisplayName = "既存サイト名",
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            OneDriveUserId: "updated@contoso.com"));
+
+        var result = await svc.GetDiscoveryConfigAsync();
+        result.OneDriveDisplayName.Should().Be("既存の表示名");
+        result.SharePointSiteDisplayName.Should().Be("既存サイト名");
+    }
+
     // ── ヘルパー ────────────────────────────────────────────────────────
 
     private void WriteConfig(object data)

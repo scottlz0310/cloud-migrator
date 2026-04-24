@@ -242,7 +242,8 @@
                 OneDriveUserId: _userId.Trim(),
                 OneDriveDriveId: driveId,
                 OneDriveSourceFolderId: folderId,
-                OneDriveSourceFolderPath: folderPath));
+                OneDriveSourceFolderPath: folderPath,
+                OneDriveDisplayName: _discoveryResult.DisplayName ?? string.Empty));
 
             Snackbar.Add("OneDrive の Drive ID を保存しました。", Severity.Success);
             await OnDiscoveryCompleted.InvokeAsync();
