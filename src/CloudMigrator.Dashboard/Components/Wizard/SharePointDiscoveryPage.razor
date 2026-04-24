@@ -452,7 +452,7 @@
                 MigrationRoute: "OneDriveToSharePoint",
                 DestinationProvider: "sharepoint",
                 SharePointSiteDisplayName: _selectedSite.DisplayName,
-                SharePointSiteWebUrl: _selectedSite.WebUrl,
+                SharePointSiteWebUrl: string.IsNullOrWhiteSpace(_selectedSite.WebUrl) ? null : _selectedSite.WebUrl,
                 SharePointDriveDisplayName: _selectedDrive.DisplayName));
 
             Snackbar.Add("SharePoint の接続先を保存しました。", Severity.Success);
