@@ -975,11 +975,11 @@ else
 
     private static string LogLevelColor(string level) => level switch
     {
-        "Error" or "Fatal" => "#f44336",
-        "Warning"          => "#ff9800",
-        "Information"      => "#2196f3",
-        "Debug"            => "#9e9e9e",
-        _                  => "#9e9e9e",
+        "Error" or "Fatal" => "var(--mud-palette-error)",
+        "Warning"          => "var(--mud-palette-warning)",
+        "Information"      => "var(--mud-palette-info)",
+        "Debug"            => "var(--mud-palette-text-secondary)",
+        _                  => "var(--mud-palette-text-secondary)",
     };
 
     public void Dispose()
