@@ -1,0 +1,279 @@
+<MudText Typo="Typo.h5" Class="mb-4">ヘルプ</MudText>
+
+@* ── カスタムタブバー ─────────────────────────────────────────────────────── *@
+<div style="display:flex; border-bottom:1px solid var(--mud-palette-divider); margin-bottom:0;">
+    @foreach (var tab in new[] { ("セットアップ","setup"), ("基本的な操作方法","howto"), ("設定リファレンス","ref"), ("バージョン情報","version") })
+    {
+        var isActive = _helpTab == tab.Item2;
+        <button type="button" @onclick="@(() => _helpTab = tab.Item2)"
+                style="@($"padding:10px 20px; background:none; border:none; cursor:pointer; font-size:14px; font-weight:{(isActive ? 600 : 400)}; color:{(isActive ? "var(--mud-palette-primary)" : "var(--mud-palette-text-secondary)")}; border-bottom:2px solid {(isActive ? "var(--mud-palette-primary)" : "transparent")}; margin-bottom:-1px; transition:color .15s,border-color .15s;")">
+            @tab.Item1
+        </button>
+    }
+</div>
+
+@* ── Tab A: セットアップ ─────────────────────────────────────────────────── *@
+@if (_helpTab == "setup")
+{
+    <MudCard Elevation="2" Class="mt-4" Style="max-width:740px;">
+        <MudCardContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-4" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">初期セットアップの手順</MudText>
+            @foreach (var step in _setupSteps)
+            {
+                var isLast = step.No == _setupSteps.Length;
+                <div style="display:flex; gap:12px; margin-bottom:@(isLast ? "0" : "20px");">
+                    <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0;">
+                        <div style="width:28px; height:28px; border-radius:50%; background:var(--mud-palette-primary); color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0;">
+                            @step.No
+                        </div>
+                        @if (!isLast)
+                        {
+                            <div style="width:2px; flex:1; background:var(--mud-palette-divider); margin:4px 0;"></div>
+                        }
+                    </div>
+                    <div style="padding-top:4px; padding-bottom:@(isLast ? "0" : "8px");">
+                        <MudText Typo="Typo.body1" Style="font-weight:600; margin-bottom:4px;">@step.Title</MudText>
+                        <MudText Typo="Typo.body2" Style="opacity:.8; line-height:1.7;">@((MarkupString)step.Desc)</MudText>
+                    </div>
+                </div>
+            }
+        </MudCardContent>
+    </MudCard>
+}
+
+@* ── Tab B: 基本的な操作方法 ────────────────────────────────────────────── *@
+@if (_helpTab == "howto")
+{
+    <MudCard Elevation="2" Class="mt-4 mb-3" Style="max-width:740px;">
+        <MudCardContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">ダッシュボード</MudText>
+            <MudSimpleTable Bordered="false" Striped="true" Dense="true" Style="font-size:13px;">
+                <tbody>
+                    <tr><td>転送を開始する</td><td>ヘッダー右端の「▶ 転送開始」ボタンを押す</td></tr>
+                    <tr><td>転送を停止する</td><td>ヘッダー右端の「■ 停止」ボタンを押す</td></tr>
+                    <tr><td>進捗を確認する</td><td>「概要」タブのステータスカードと進捗バーを見る</td></tr>
+                    <tr><td>失敗ファイルを確認する</td><td>「詳細情報」タブの「最近の失敗」セクションを参照</td></tr>
+                    <tr><td>転送速度やレートを詳しく見る</td><td>「詳細情報」タブのレートモニターと統計を参照</td></tr>
+                    <tr><td>ログを見る</td><td>「ログ」タブ、またはドロワーの「ログ」ページ</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Elevation="2" Class="mb-3" Style="max-width:740px;">
+        <MudCardContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">設定</MudText>
+            <MudSimpleTable Bordered="false" Striped="true" Dense="true" Style="font-size:13px;">
+                <tbody>
+                    <tr><td>転送先 / 転送元の情報を確認する</td><td>設定 → 転送ルート情報セクションを参照</td></tr>
+                    <tr><td>テーマを変更する</td><td>設定 → 表示設定 → テーマを選択 → 保存</td></tr>
+                    <tr><td>設定を変更して適用する</td><td>値を変更後、ページ下部の「保存」ボタンを押す</td></tr>
+                    <tr><td>最初から移行をやり直す</td><td>設定 → 「データ管理」 → 「データベースを初期化」</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Elevation="2" Style="max-width:740px;">
+        <MudCardContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">フェーズの見かた（ダッシュボードのチップ表示）</MudText>
+            <MudSimpleTable Bordered="false" Striped="true" Dense="true" Style="font-size:13px;">
+                <tbody>
+                    <tr>
+                        <td style="white-space:nowrap;"><MudChip T="string" Color="Color.Info" Size="Size.Small" Style="font-size:11px;">ファイルを確認中...</MudChip></td>
+                        <td>移行対象ファイルの一覧を取得しています。まだ転送は始まっていません。</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap;"><MudChip T="string" Color="Color.Warning" Size="Size.Small" Style="font-size:11px;">フォルダを作成中...</MudChip></td>
+                        <td>移行先 SharePoint にフォルダ構造を作成しています。</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap;"><MudChip T="string" Color="Color.Success" Size="Size.Small" Style="font-size:11px;">安定転送中</MudChip></td>
+                        <td>ファイルを正常に転送しています。</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap;"><MudChip T="string" Color="Color.Warning" Size="Size.Small" Style="font-size:11px;">速度調整中</MudChip></td>
+                        <td>429 エラーを受けて速度を緩めています。しばらくすると自動回復します。</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap;"><MudChip T="string" Color="Color.Error" Size="Size.Small" Style="font-size:11px;">流量制御中</MudChip></td>
+                        <td>429 エラーが多発しており大幅減速中です。しばらく待つと自動回復します。</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap;"><MudChip T="string" Color="Color.Success" Size="Size.Small" Style="font-size:11px;">移行完了 ✓</MudChip></td>
+                        <td>すべての対象ファイルの転送が完了しました。</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudCardContent>
+    </MudCard>
+}
+
+@* ── Tab C: 設定リファレンス ─────────────────────────────────────────────── *@
+@if (_helpTab == "ref")
+{
+    <MudCard Elevation="2" Class="mt-4 mb-3" Style="max-width:740px;">
+        <MudCardContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">基本設定</MudText>
+            <MudSimpleTable Bordered="false" Striped="true" Dense="true" Style="font-size:13px;">
+                <thead>
+                    <tr>
+                        <th>項目</th>
+                        <th>説明</th>
+                        <th style="white-space:nowrap;">デフォルト</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="white-space:nowrap;">最大並行転送数</td>
+                        <td>同時に実行するファイル転送の上限数。大きくするほど速いが、429 が増えやすい。ネットワーク品質に応じて調整する。</td>
+                        <td>4</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap;">タイムアウト (秒)</td>
+                        <td>1 リクエストあたりの上限時間。大容量ファイルのアップロード中に到達するとリトライになる。大ファイルが多い場合は大きめに設定する。</td>
+                        <td>300</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap;">リトライ回数</td>
+                        <td>一時的なエラー（5xx / ネットワーク断）発生時の再試行上限。最大回数を超えると「失敗」ステータスになる。</td>
+                        <td>3</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Elevation="2" Class="mb-3" Style="max-width:740px;">
+        <MudCardContent>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                <MudText Typo="Typo.subtitle2" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">詳細設定 — レートベース制御エンジン</MudText>
+                <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Style="font-size:10px; height:18px;">上級者向け</MudChip>
+            </div>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Graph API からの 429 応答をリアルタイム監視しながら転送レートを自動調整します。<br />
+                <strong>ON:</strong> req/s 主体の新エンジン（推奨）&nbsp;&nbsp;<strong>OFF:</strong> 旧来の並列数固定エンジン（シンプル・予測可能）
+            </MudAlert>
+            <MudSimpleTable Bordered="false" Striped="true" Dense="true" Style="font-size:13px;">
+                <thead>
+                    <tr><th>項目</th><th>説明</th><th style="white-space:nowrap;">デフォルト</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>最大並行数 / レート上限（キャップ）</td><td>エンジンが自動加速しても超えない上限。帯域の目安として設定する。大きすぎると 429 が頻発する。</td><td>16</td></tr>
+                    <tr><td>インフライト閾値</td><td>同時処理中リクエスト数がこの値を超えると新規リクエストの発行を抑制する。並列数の上限バッファ的な役割。</td><td>32</td></tr>
+                    <tr><td>短期ウィンドウ (秒)</td><td>直近 N 秒間の 429 率を計測するウィンドウ幅。小さいほど急変化に即反応するが不安定になりやすい。</td><td>5</td></tr>
+                    <tr><td>中期ウィンドウ (秒)</td><td>中〜長期の 429 率を計測するウィンドウ幅。過去の傾向を加味した安定した判断に使う。</td><td>30</td></tr>
+                    <tr><td>緊急減速閾値 (429 率 %)</td><td>短期 429 率がこの値を超えると即座に大幅減速する。急激なレートリミットへの緊急ブレーキ。</td><td>10</td></tr>
+                    <tr><td>緩減速閾値 (429 率 %)</td><td>短期 429 率がこの値を超えると緩やかに減速する。この値より低い状態が続くとエンジンが自動加速する。</td><td>3</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Elevation="2" Style="max-width:740px;">
+        <MudCardContent>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                <MudText Typo="Typo.subtitle2" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">詳細設定 — ファイル転送</MudText>
+                <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Style="font-size:10px; height:18px;">上級者向け</MudChip>
+            </div>
+            <MudSimpleTable Bordered="false" Striped="true" Dense="true" Style="font-size:13px;">
+                <thead>
+                    <tr><th>項目</th><th>説明</th><th style="white-space:nowrap;">デフォルト</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>チャンクサイズ (MB)</td><td>大容量ファイルを分割アップロードする際の 1 チャンクのサイズ（Graph API LargeFileUpload）。大きくすると 1 チャンクのタイムアウトリスクが上がる。</td><td>5</td></tr>
+                    <tr><td>大ファイル閾値 (MB)</td><td>これより大きいファイルをチャンクアップロードに切り替える閾値。Graph API の制限（4 MB）以上を推奨。</td><td>4</td></tr>
+                    <tr><td>最大並行フォルダ作成数</td><td>フォルダ構造の作成フェーズで同時に作成するフォルダ数の上限。</td><td>4</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudCardContent>
+    </MudCard>
+}
+
+@* ── Tab D: バージョン情報 ───────────────────────────────────────────────── *@
+@if (_helpTab == "version")
+{
+    <MudCard Elevation="2" Class="mt-4 mb-3" Style="max-width:740px;">
+        <MudCardContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">現在のバージョン</MudText>
+            <div style="display:flex; align-items:center; gap:24px; flex-wrap:wrap;">
+                <div>
+                    <MudText Style="font-size:28px; font-weight:700; letter-spacing:-.5px;">v@(_version)</MudText>
+                    <MudText Typo="Typo.caption" Style="opacity:.5; margin-top:2px;">ファイル更新日: @(_buildDate)</MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.body2" Style="opacity:.7; line-height:1.9;">
+                        .NET 10 / Blazor Hybrid (WPF)<br />
+                        Microsoft Graph SDK v5<br />
+                        MudBlazor v@(typeof(global::MudBlazor.MudThemeProvider).Assembly.GetName().Version?.ToString(3) ?? "不明")
+                    </MudText>
+                </div>
+            </div>
+        </MudCardContent>
+    </MudCard>
+
+    <MudCard Elevation="2" Class="mb-3" Style="max-width:740px;">
+        <MudCardContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-3" Style="text-transform:uppercase; letter-spacing:.08em; opacity:.6;">リリースノート（抜粋）</MudText>
+            <MudText Typo="Typo.body2" Style="font-weight:600; color:var(--mud-palette-success); margin-bottom:4px;">新機能</MudText>
+            <ul style="padding-left:18px; margin-bottom:12px; font-size:13px; opacity:.8; line-height:1.9;">
+                <li>ヘルプページを追加（セットアップ手順・設定リファレンス・バージョン情報）</li>
+                <li>システムテーマ追随（ダークモード対応）</li>
+                <li>転送ダッシュボードのタブ構造化</li>
+            </ul>
+            <MudText Typo="Typo.body2" Style="font-weight:600; color:var(--mud-palette-warning); margin-bottom:4px;">改善</MudText>
+            <ul style="padding-left:18px; margin-bottom:12px; font-size:13px; opacity:.8; line-height:1.9;">
+                <li>設定ページの構成を一般 / 上級者向けに分離</li>
+                <li>フェーズ表示を人間に読みやすい形式に変更</li>
+                <li>DB 初期化の文言と警告レベルを改善</li>
+            </ul>
+            <MudLink Href="https://github.com/scottlz0310/cloud-migrator/releases" Target="_blank" rel="noopener noreferrer"
+                     Typo="Typo.body2">
+                すべてのリリースを GitHub で見る →
+            </MudLink>
+        </MudCardContent>
+    </MudCard>
+
+    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.OpenInNew"
+               Href="https://github.com/scottlz0310/cloud-migrator/releases/latest" Target="_blank" rel="noopener noreferrer">
+        GitHub Releases を開く
+    </MudButton>
+}
+
+@code {
+    private string _helpTab = "setup";
+
+    private string _version =>
+        typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
+    private string _buildDate =>
+        System.IO.File.GetLastWriteTimeUtc(typeof(App).Assembly.Location).ToString("yyyy-MM-dd");
+
+    private record SetupStep(int No, string Title, string Desc);
+
+    private readonly SetupStep[] _setupSteps =
+    [
+        new(1, "Azure AD にアプリを登録する",
+            "Azure Portal (portal.azure.com) → Microsoft Entra ID → アプリの登録 → 新規登録。<br>" +
+            "登録後、<strong>クライアント ID</strong>・<strong>テナント ID</strong> をメモする。<br>" +
+            "「証明書とシークレット」から新しいクライアントシークレットを作成し、値をメモする（作成直後のみ表示）。<br>" +
+            "「API のアクセス許可」に <code>Files.ReadWrite.All</code>、<code>Sites.ReadWrite.All</code> を追加して管理者の同意を付与する。"),
+        new(2, "CloudMigrator を起動してウィザードを開く",
+            "初回起動時はウィザードが自動表示されます。<br>" +
+            "再実行する場合はドロワー下部の「セットアップをやり直す」から起動できます。"),
+        new(3, "Azure 認証情報を入力する",
+            "手順 1 で取得した <strong>クライアント ID</strong>・<strong>クライアントシークレット</strong>・<strong>テナント ID</strong> を入力します。<br>" +
+            "シークレットの有効期限も入力しておくと、期限が近づいたときに AppBar に警告アイコンが表示されます。"),
+        new(4, "移行元 OneDrive を選択する",
+            "移行対象ユーザーの UPN（メールアドレス）を入力し、OneDrive ドライブ ID を取得します。<br>" +
+            "移行元フォルダパスも指定します（例: <code>/Documents/移行対象</code>）。"),
+        new(5, "移行先 SharePoint を選択する",
+            "テナント内の SharePoint サイト一覧からサイトを選択します。<br>" +
+            "次にドキュメントライブラリを選択し、移行先フォルダパスを指定します。"),
+        new(6, "接続テストを実行して確認する",
+            "ドロワーの「接続テスト」ページで Graph API への疎通と権限を確認します。<br>" +
+            "すべてのチェックが成功したら移行の準備が完了です。"),
+        new(7, "ダッシュボードから転送を開始する",
+            "ダッシュボードのヘッダー右端にある「▶ 転送開始」ボタンを押すと移行が始まります。"),
+    ];
+}
