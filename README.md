@@ -136,6 +136,7 @@ dotnet test tests/integration/CloudMigrator.Tests.Integration.csproj
 
 - [usage.md](usage.md): コマンド詳細と運用フロー
 - [docs/architecture.md](docs/architecture.md): モジュール構成と実行時アーキテクチャ
+- [docs/architecture/ai-implementation-guardrails.md](docs/architecture/ai-implementation-guardrails.md): AI 実装時の MVVM / provider / route 境界ガードレール
 - [docs/dataflow.md](docs/dataflow.md): 設定、状態 DB、転送、可観測性のデータフロー
 - [docs/manual-test-runbook.md](docs/manual-test-runbook.md): 手動テスト手順
 - [docs/implementation-plan.md](docs/implementation-plan.md): 実装計画
