@@ -152,7 +152,140 @@ public sealed class ConfigurationServiceTests : IDisposable
         result.DestinationRoot.Should().Be("Documents/テスト");
     }
 
-    // ── NormalizeProvider: GetConfigAsync 経由での正規化検証 ─────────────
+    // ── UpdateConfigAsync / DestinationRoot 同期（provider 限定）────────────
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenSharePointProvider_UpdatesOnlySharePointDestFolderPath()
+    {
+        // 検証対象: UpdateConfigAsync（DestinationRoot 同期）
+        // 目的: destinationProvider=sharepoint のとき DestinationRoot 更新が
+        //       sharePointDestFolderPath のみ同期し dropboxDestFolderPath / dropbox.rootPath は変えないこと
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                graph = new { sharePointDestFolderPath = "OldSP", dropboxDestFolderPath = "OldDropbox" },
+                dropbox = new { rootPath = "OldRoot" }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(DestinationRoot: "NewSP"));
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(_configPath))!;
+        var m = json["migrator"]!.AsObject();
+        m["destinationRoot"]!.GetValue<string>().Should().Be("NewSP");
+        m["graph"]!["sharePointDestFolderPath"]!.GetValue<string>().Should().Be("NewSP");
+        m["graph"]!["dropboxDestFolderPath"]!.GetValue<string>().Should().Be("OldDropbox");  // 変わらない
+        m["dropbox"]!["rootPath"]!.GetValue<string>().Should().Be("OldRoot");                // 変わらない
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenDropboxProvider_UpdatesOnlyDropboxPaths()
+    {
+        // 検証対象: UpdateConfigAsync（DestinationRoot 同期）
+        // 目的: destinationProvider=dropbox のとき DestinationRoot 更新が
+        //       dropboxDestFolderPath / dropbox.rootPath のみ同期し sharePointDestFolderPath は変えないこと
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "dropbox",
+                graph = new { sharePointDestFolderPath = "OldSP", dropboxDestFolderPath = "OldDropbox" },
+                dropbox = new { rootPath = "OldRoot" }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(DestinationRoot: "/NewDropbox"));
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(_configPath))!;
+        var m = json["migrator"]!.AsObject();
+        m["destinationRoot"]!.GetValue<string>().Should().Be("/NewDropbox");
+        m["graph"]!["dropboxDestFolderPath"]!.GetValue<string>().Should().Be("/NewDropbox");
+        m["dropbox"]!["rootPath"]!.GetValue<string>().Should().Be("/NewDropbox");
+        m["graph"]!["sharePointDestFolderPath"]!.GetValue<string>().Should().Be("OldSP");   // 変わらない
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenProviderAndRootChangedSimultaneously_UsesNewProvider()
+    {
+        // 検証対象: UpdateConfigAsync（DestinationRoot + DestinationProvider 同時更新）
+        // 目的: DestinationProvider と DestinationRoot を同時に更新する場合、
+        //       新しい provider 側のパスのみ同期されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "sharepoint",
+                graph = new { sharePointDestFolderPath = "OldSP", dropboxDestFolderPath = "OldDropbox" },
+                dropbox = new { rootPath = "OldRoot" }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        // SharePoint → Dropbox に切り替えながら DestinationRoot も同時変更
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(
+            DestinationRoot: "/NewDropboxRoot",
+            DestinationProvider: "dropbox"));
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(_configPath))!;
+        var m = json["migrator"]!.AsObject();
+        m["destinationProvider"]!.GetValue<string>().Should().Be("dropbox");
+        m["graph"]!["dropboxDestFolderPath"]!.GetValue<string>().Should().Be("/NewDropboxRoot");
+        m["dropbox"]!["rootPath"]!.GetValue<string>().Should().Be("/NewDropboxRoot");
+        m["graph"]!["sharePointDestFolderPath"]!.GetValue<string>().Should().Be("OldSP");  // 変わらない
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_WhenGraphAliasProvider_TreatsAsSharePoint()
+    {
+        // 検証対象: UpdateConfigAsync（DestinationRoot 同期 / NormalizeProvider）
+        // 目的: destinationProvider="graph" の旧エイリアスでも sharePointDestFolderPath が更新されること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "graph",
+                graph = new { sharePointDestFolderPath = "OldSP", dropboxDestFolderPath = "OldDropbox" }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(DestinationRoot: "NewSP"));
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(_configPath))!;
+        var m = json["migrator"]!.AsObject();
+        m["graph"]!["sharePointDestFolderPath"]!.GetValue<string>().Should().Be("NewSP");
+        m["graph"]!["dropboxDestFolderPath"]!.GetValue<string>().Should().Be("OldDropbox");  // 変わらない
+    }
+
+
 
     [Theory]
     [InlineData("graph", "sharepoint")]

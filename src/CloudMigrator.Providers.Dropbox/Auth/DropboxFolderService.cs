@@ -40,11 +40,9 @@ public sealed class DropboxFolderService : IDropboxFolderService
 
             while (hasMore)
             {
-                HttpResponseMessage response;
-                if (cursor is null)
-                    response = await PostListFolderAsync(client, folderPath, ct).ConfigureAwait(false);
-                else
-                    response = await PostListFolderContinueAsync(client, cursor, ct).ConfigureAwait(false);
+                using var response = cursor is null
+                    ? await PostListFolderAsync(client, folderPath, ct).ConfigureAwait(false)
+                    : await PostListFolderContinueAsync(client, cursor, ct).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
                 {

@@ -406,15 +406,21 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.DestinationRoot is not null)
             {
                 m["destinationRoot"] = update.DestinationRoot;
-                // SharePoint 路線: sharePointDestFolderPath（Discovery 表示用）と同期する
+                var effectiveProvider = NormalizeProvider(
+                    update.DestinationProvider
+                    ?? m["destinationProvider"]?.GetValue<string>()
+                    ?? "sharepoint");
+                var isDropbox = string.Equals(effectiveProvider, "dropbox", StringComparison.OrdinalIgnoreCase);
+
                 if (m["graph"] is JsonObject gObj)
                 {
-                    gObj["sharePointDestFolderPath"] = update.DestinationRoot;
-                    // #197: Dropbox 路線: dropboxDestFolderPath（Discovery 表示用）も同期する
-                    gObj["dropboxDestFolderPath"] = update.DestinationRoot;
+                    if (isDropbox)
+                        gObj["dropboxDestFolderPath"] = update.DestinationRoot;
+                    else
+                        gObj["sharePointDestFolderPath"] = update.DestinationRoot;
                 }
-                // #197: Dropbox 路線: dropbox.rootPath（DropboxStorageProvider 用）も同期する
-                if (m["dropbox"] is JsonObject dropboxObjForSync)
+                // Dropbox 路線のみ dropbox.rootPath を同期する
+                if (isDropbox && m["dropbox"] is JsonObject dropboxObjForSync)
                     dropboxObjForSync["rootPath"] = update.DestinationRoot;
             }
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;

@@ -17,23 +17,11 @@
         </div>
 
         @* 前回確認済みの転送先がある場合の提案 *@
-        @if (_previouslyConfirmed && !string.IsNullOrEmpty(_savedFolderPath) && !_destFolderConfirmed)
+        @if (_previouslyConfirmed && !_destFolderConfirmed)
         {
             <MudAlert Severity="Severity.Info" Dense="true">
                 前回の転送先:
-                <strong>@(_savedFolderPath == "" ? "（ルート）" : _savedFolderPath)</strong>
-                <MudButton Variant="Variant.Text"
-                           Color="Color.Primary"
-                           Size="Size.Small"
-                           OnClick="UsePreviousFolder">
-                    この転送先を使用
-                </MudButton>
-            </MudAlert>
-        }
-        @if (_previouslyConfirmed && string.IsNullOrEmpty(_savedFolderPath) && !_destFolderConfirmed)
-        {
-            <MudAlert Severity="Severity.Info" Dense="true">
-                前回の転送先: <strong>（Dropbox ルート）</strong>
+                <strong>@(string.IsNullOrEmpty(_savedFolderPath) ? "（Dropbox ルート）" : _savedFolderPath)</strong>
                 <MudButton Variant="Variant.Text"
                            Color="Color.Primary"
                            Size="Size.Small"

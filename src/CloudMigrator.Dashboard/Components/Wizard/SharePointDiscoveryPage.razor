@@ -216,8 +216,6 @@
                     Library 内のどのフォルダに保存するか選択してください。ルートを選択するとライブラリ直下に転送されます。
                 </MudText>
 
-                @* TODO #197: 前回提案表示は後で復活させる（_showPreviousDestSuggestion で判定） *@
-
                 <DriveFolderPicker @ref="_destFolderPicker"
                                    DriveId="@(_selectedDrive!.DriveId)"
                                    ClientId="@_cachedClientId"
@@ -277,26 +275,12 @@
 
     // #197: 転送先フォルダ選択必須化
     private bool _destFolderConfirmed;
-    private string _savedSiteId = string.Empty;
-    private string _savedDriveId = string.Empty;
-    private bool _savedDestinationConfirmed;
-
-    private bool _showPreviousDestSuggestion =>
-        _savedDestinationConfirmed &&
-        _selectedSite?.SiteId == _savedSiteId &&
-        _selectedDrive?.DriveId == _savedDriveId &&
-        !_destFolderConfirmed;
 
     protected override async Task OnInitializedAsync()
     {
         var config = await ConfigurationService.GetDiscoveryConfigAsync();
         _initialDestFolderId = config.SharePointDestFolderId;
         _initialDestFolderPath = config.SharePointDestFolderPath;
-
-        // 保存済みの site/drive ID と DestinationConfirmed フラグを読み込む
-        _savedSiteId = config.SharePointSiteId;
-        _savedDriveId = config.SharePointDriveId;
-        _savedDestinationConfirmed = config.DestinationConfirmed;
 
         await LoadAllSitesAsync();
     }
