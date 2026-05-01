@@ -1027,8 +1027,19 @@ else
         var hashFilePath = opts.Paths.ConfigHash;
         var hashFileExists = File.Exists(hashFilePath);
         var hashChanged = await ConfigHashChecker.HasChangedAsync(hashFilePath, hash);
-        // ハッシュファイルが存在しない（初回）は DB も空のため確認不要
-        if (hashChanged && hashFileExists)
+
+        // ハッシュファイルが存在しても変更あり → リセット必要
+        // ハッシュファイルが存在しないが DB にデータあり（旧バージョンからのアップグレード／
+        // ハッシュファイルだけ削除された等） → 整合性保護のためリセット必要
+        var needsReset = hashChanged && hashFileExists;
+        if (!needsReset && !hashFileExists)
+        {
+            var stateDbForCheck = await StateDbAccessor.GetCurrentAsync(CancellationToken.None);
+            var summary = await stateDbForCheck.GetSummaryAsync(CancellationToken.None);
+            needsReset = summary.Total > 0;
+        }
+
+        if (needsReset)
         {
             var confirmed = await _configChangedDialogRef!.ShowAsync();
             if (confirmed is not true) return;
@@ -1037,17 +1048,19 @@ else
             var stateDb = await StateDbAccessor.GetCurrentAsync(CancellationToken.None);
             await stateDb.ResetAllAsync(CancellationToken.None);
 
-            // キャッシュファイル（ハッシュ含む）削除
+            // キャッシュファイル削除（OneDrive/SharePoint/Dropbox キャッシュ・skip_list）
             ConfigHashChecker.ClearAll(opts.Paths, Logger);
 
             Snackbar.Add("データベースを初期化しました。転送を開始します。", Severity.Info);
         }
 
-        // ハッシュを保存（初回または変更なしの場合も更新）
-        await ConfigHashChecker.SaveHashAsync(hashFilePath, hash);
-
+        // 転送開始成功後のみハッシュを保存（失敗時はハッシュを更新しない）
         _currentJob = await JobService.TryStartAsync();
         _isJobRunning = _currentJob?.Status is JobStatus.Pending or JobStatus.Running;
+        if (_currentJob is not null)
+        {
+            await ConfigHashChecker.SaveHashAsync(hashFilePath, hash);
+        }
     }
 
     private void StopJob() => JobService.Cancel();
