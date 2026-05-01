@@ -35,7 +35,14 @@ public static class ConfigHashChecker
                 .Replace('\\', '/')
                 .Trim('/')).Append('|');
         // DestinationProvider（#198）: sharepoint/dropbox のルート変更を検知する
-        sb.Append(options.DestinationProvider?.Trim().ToLowerInvariant() ?? string.Empty).Append('|');
+        // "graph" は "sharepoint" の旧エイリアス（ConfigurationService.NormalizeProvider と同じ規則）
+        var normalizedProvider = options.DestinationProvider?.Trim().ToLowerInvariant() switch
+        {
+            "sharepoint" or "graph" => "sharepoint",
+            "dropbox" => "dropbox",
+            var v => v ?? string.Empty
+        };
+        sb.Append(normalizedProvider).Append('|');
         // OneDriveSourceFolder（#198）: 転送元フォルダパス変更を検知する
         sb.Append(
             (options.Graph.OneDriveSourceFolder ?? string.Empty)

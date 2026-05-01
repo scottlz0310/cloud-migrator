@@ -1031,21 +1031,25 @@ else
         // ハッシュファイルが存在しても変更あり → リセット必要
         // ハッシュファイルが存在しないが DB にデータあり（旧バージョンからのアップグレード／
         // ハッシュファイルだけ削除された等） → 整合性保護のためリセット必要
+        // opts と同一の DB を参照するため GetForOptionsAsync(opts) を使用
         var needsReset = hashChanged && hashFileExists;
         if (!needsReset && !hashFileExists)
         {
-            var stateDbForCheck = await StateDbAccessor.GetCurrentAsync(CancellationToken.None);
+            var stateDbForCheck = await StateDbAccessor.GetForOptionsAsync(opts, CancellationToken.None);
             var summary = await stateDbForCheck.GetSummaryAsync(CancellationToken.None);
             needsReset = summary.Total > 0;
         }
 
         if (needsReset)
         {
+            // ジョブ実行中は DB 操作不可（_isJobRunning はキャッシュ値のため実体を再確認）
+            if (JobService.IsRunning) return;
+
             var confirmed = await _configChangedDialogRef!.ShowAsync();
             if (confirmed is not true) return;
 
-            // DB 全データ削除
-            var stateDb = await StateDbAccessor.GetCurrentAsync(CancellationToken.None);
+            // DB 全データ削除（opts に対応する DB を使用）
+            var stateDb = await StateDbAccessor.GetForOptionsAsync(opts, CancellationToken.None);
             await stateDb.ResetAllAsync(CancellationToken.None);
 
             // キャッシュファイル削除（OneDrive/SharePoint/Dropbox キャッシュ・skip_list）

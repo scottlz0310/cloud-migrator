@@ -246,6 +246,21 @@ public class ConfigHashCheckerTests : IDisposable
     }
 
     [Fact]
+    public void ComputeHash_GraphProviderEqualsSharePoint_ReturnsSameHash()
+    {
+        // 検証対象: ComputeHash（#198）  目的: "graph"（旧エイリアス）と "sharepoint" は同一ハッシュになること
+        var opts1 = CreateOptions();
+        opts1.DestinationProvider = "graph";
+        var opts2 = CreateOptions();
+        opts2.DestinationProvider = "sharepoint";
+
+        var h1 = ConfigHashChecker.ComputeHash(opts1);
+        var h2 = ConfigHashChecker.ComputeHash(opts2);
+
+        h1.Should().Be(h2);
+    }
+
+    [Fact]
     public void ComputeHash_DifferentOneDriveSourceFolder_ReturnsDifferentHash()
     {
         // 検証対象: ComputeHash（#198）  目的: OneDriveSourceFolder（転送元フォルダパス）が異なるとハッシュが変わること
