@@ -1,4 +1,4 @@
-@inject ITransferStateDb TransferStateDb
+@inject ITransferStateDbAccessor StateDbAccessor
 @inject ITransferJobService JobService
 @inject Func<MigratorOptions> OptionsFactory
 @inject IConfigurationService ConfigService
@@ -710,7 +710,11 @@ else
         string? newName = null;
         if (_phase == "transferring")
         {
-            try { newName = await TransferStateDb.GetLatestProcessingNameAsync(ct); }
+            try
+            {
+                var stateDb = await StateDbAccessor.GetCurrentAsync(ct);
+                newName = await stateDb.GetLatestProcessingNameAsync(ct);
+            }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex) { Logger.LogDebug(ex, "一行ログ取得失敗（スキップ）"); }
         }
@@ -749,7 +753,9 @@ else
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗しました。"); }
 
-        try { _summary = await TransferStateDb.GetSummaryAsync(ct); }
+        var stateDb = await StateDbAccessor.GetForOptionsAsync(opts, ct);
+
+        try { _summary = await stateDb.GetSummaryAsync(ct); }
         catch (Exception ex) { Logger.LogError(ex, "RefreshAllAsync: GetSummaryAsync 失敗"); _summary ??= new TransferDbSummary(); }
         if (_summary is null) return;
 
@@ -760,15 +766,15 @@ else
         if (_currentJob is not null)
             _currentJob = JobService.GetJob(_currentJob.JobId) ?? _currentJob;
 
-        await RefreshPhaseAsync(opts.DestinationProvider, ct);
-        await RefreshMetricsAsync(ct);
-        await UpdateElapsedAndEtaAsync(ct);
-        await RefreshFolderProgressAsync(ct);
-        if (_useRateControl) await RefreshRateControlMetricsAsync(ct);
+        await RefreshPhaseAsync(opts.DestinationProvider, stateDb, ct);
+        await RefreshMetricsAsync(stateDb, ct);
+        await UpdateElapsedAndEtaAsync(stateDb, ct);
+        await RefreshFolderProgressAsync(stateDb, ct);
+        if (_useRateControl) await RefreshRateControlMetricsAsync(stateDb, ct);
         _recentLogEntries = LogChannel.GetRecentEntries();
     }
 
-    private async Task RefreshPhaseAsync(string destinationProvider, CancellationToken ct)
+    private async Task RefreshPhaseAsync(string destinationProvider, ITransferStateDb stateDb, CancellationToken ct)
     {
         if (_summary is null) return;
 
@@ -805,11 +811,11 @@ else
             return;
         }
 
-        var folderCreationDone = await TransferStateDb.GetCheckpointAsync("folder_creation_complete", ct);
+        var folderCreationDone = await stateDb.GetCheckpointAsync("folder_creation_complete", ct);
         _phase = folderCreationDone == "true" ? "transferring" : "folder_creation";
     }
 
-    private async Task RefreshRateControlMetricsAsync(CancellationToken ct)
+    private async Task RefreshRateControlMetricsAsync(ITransferStateDb stateDb, CancellationToken ct)
     {
         // 直近 2 分間のメトリクスから最新値を 1 クエリで一括取得する
         // 例外発生時はログに残してスキップ（PeriodicTimer ループが停止しないよう保護）
@@ -819,7 +825,7 @@ else
             if (_useHybridController)
             {
                 // HybridRateController のメトリクスキー（AimdSignal ベース）
-                var latest = await TransferStateDb.GetLatestMetricsAsync(
+                var latest = await stateDb.GetLatestMetricsAsync(
                     [HybridRateController.MetricRateTokensPerSec, HybridRateController.MetricMaxInflight,
                      HybridRateController.MetricRate429, HybridRateController.MetricSignal],
                     windowMinutes, ct);
@@ -832,7 +838,7 @@ else
             else
             {
                 // RateControlledTransferController のメトリクスキー（ヒステリシスコード）
-                var latest = await TransferStateDb.GetLatestMetricsAsync(
+                var latest = await stateDb.GetLatestMetricsAsync(
                     ["current_rate_limit", "current_in_flight", "rate_429_short", "rate_429_long", "hysteresis_state_code"],
                     windowMinutes, ct);
 
@@ -853,25 +859,25 @@ else
         }
     }
 
-    private async Task RefreshFolderProgressAsync(CancellationToken ct)
+    private async Task RefreshFolderProgressAsync(ITransferStateDb stateDb, CancellationToken ct)
     {
-        var totalStr = await TransferStateDb.GetCheckpointAsync("folder_total", ct);
+        var totalStr = await stateDb.GetCheckpointAsync("folder_total", ct);
         if (int.TryParse(totalStr, out var total)) _folderTotal = total;
         else { _folderTotal = 0; _folderDone = 0; }
 
         if (_folderTotal > 0)
         {
-            var metrics = await TransferStateDb.GetMetricsAsync("sp_folder_done", 120, ct);
+            var metrics = await stateDb.GetMetricsAsync("sp_folder_done", 120, ct);
             if (metrics.Count > 0) _folderDone = (int)metrics[^1].Value;
         }
     }
 
-    private async Task UpdateElapsedAndEtaAsync(CancellationToken ct)
+    private async Task UpdateElapsedAndEtaAsync(ITransferStateDb stateDb, CancellationToken ct)
     {
         if (_summary is null) return;
 
         // 実稼働時間: DBに累積保存された秒数（停止中の時間を含まない）
-        var workingSecondsStr = await TransferStateDb.GetCheckpointAsync("pipeline_working_seconds", ct);
+        var workingSecondsStr = await stateDb.GetCheckpointAsync("pipeline_working_seconds", ct);
         if (double.TryParse(workingSecondsStr, out var workingSeconds) && workingSeconds > 0)
         {
             // ジョブ実行中は現在のセッション分も加算する
@@ -895,7 +901,7 @@ else
             : (remaining == 0 ? "完了" : "—");
     }
 
-    private async Task RefreshMetricsAsync(CancellationToken ct)
+    private async Task RefreshMetricsAsync(ITransferStateDb stateDb, CancellationToken ct)
     {
         if (_summary is null) return;
         var startedAt = _summary.PipelineStartedAt ?? _summary.FirstUpdatedAt;
@@ -903,13 +909,13 @@ else
             ? Math.Clamp((int)(DateTimeOffset.UtcNow - startedAt.Value).TotalMinutes + 10, 60, 120)
             : 60;
 
-        var filesData = await TransferStateDb.GetMetricsAsync("throughput_files_per_min", minutes, ct);
-        var bytesData = await TransferStateDb.GetMetricsAsync("throughput_bytes_per_sec", minutes, ct);
-        var rlData    = await TransferStateDb.GetMetricsAsync("rate_limit_pct",            minutes, ct);
-        var parData   = await TransferStateDb.GetMetricsAsync("current_parallelism",       minutes, ct);
+        var filesData = await stateDb.GetMetricsAsync("throughput_files_per_min", minutes, ct);
+        var bytesData = await stateDb.GetMetricsAsync("throughput_bytes_per_sec", minutes, ct);
+        var rlData    = await stateDb.GetMetricsAsync("rate_limit_pct",            minutes, ct);
+        var parData   = await stateDb.GetMetricsAsync("current_parallelism",       minutes, ct);
         // #159: HybridRateController 経路でのみ書き込まれるウィンドウ幅。
         // 値が無いときは累積平均表示のままにする。
-        var winData   = await TransferStateDb.GetMetricsAsync("throughput_window_sec",     minutes, ct);
+        var winData   = await stateDb.GetMetricsAsync("throughput_window_sec",     minutes, ct);
         _throughputWindowSec = winData.Count > 0 ? winData[^1].Value : 0;
 
         if (filesData.Count > 0)

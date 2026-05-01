@@ -85,10 +85,15 @@ public partial class App : Application
                 .Get<MigratorOptions>() ?? new MigratorOptions());
 
         services.AddSingleton<IConfigurationService, ConfigurationService>();
+        services.AddSingleton<ITransferStateDbAccessor>(sp =>
+            new TransferStateDbAccessor(
+                sp.GetRequiredService<Func<MigratorOptions>>(),
+                dbPath,
+                sp.GetRequiredService<ILogger<TransferStateDbAccessor>>()));
         services.AddSingleton<ITransferJobService>(sp =>
         {
             var loggerFactory2 = sp.GetRequiredService<ILoggerFactory>();
-            var stateDb = sp.GetRequiredService<ITransferStateDb>();
+            var stateDbAccessor = sp.GetRequiredService<ITransferStateDbAccessor>();
 
             async Task MigrationWork(CancellationToken ct)
             {
@@ -106,23 +111,9 @@ public partial class App : Application
                 // プロファイルを参照し、対応する Enabled=true かつ UseRateControl=false 時のみ ACC を使用する
                 var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
 
-                // Dropbox 路線では専用 stateDb を早期生成してメトリクスバッファ・ハッシュリセットを正しい DB に向ける
-                // （DI 解決の stateDb は ResolveDefaultDbPath() により SharePoint DB を指す場合がある）
-                SqliteTransferStateDb? dropboxStateDb = null;
-                if (isDropbox)
-                {
-                    dropboxStateDb = new SqliteTransferStateDb(opts.Paths.DropboxStateDb);
-                    try
-                    {
-                        await dropboxStateDb.InitializeAsync(ct).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
-                        throw;
-                    }
-                }
-                ITransferStateDb effectiveStateDb = dropboxStateDb is not null ? dropboxStateDb : stateDb;
+                // UI とジョブが同じ route-aware な DB 解決を使うことで、Dropbox 実行時も
+                // Dashboard が書き込み先と同じ state DB を参照できるようにする。
+                var effectiveStateDb = await stateDbAccessor.GetForOptionsAsync(opts, ct).ConfigureAwait(false);
 
                 var adaptiveOpts = opts.GetAdaptiveConcurrency(isDropbox ? "dropbox" : "sharepoint");
                 AdaptiveConcurrencyController? accMain = null;        // Dispose + onRateLimit 用に保持
@@ -279,12 +270,10 @@ public partial class App : Application
                                 disposeHttpClient: true,
                                 maxRetry: opts.RetryCount,
                                 onRateLimit: onRateLimit);
-                            // dropboxStateDb は MigrationWork 冒頭で早期生成・初期化済み
-                            // hashChanged 時のリセットも effectiveStateDb.ResetAllAsync() により処理済み
                             var dropboxPipeline = new DropboxMigrationPipeline(
                                 storageProvider,
                                 dropboxProvider,
-                                dropboxStateDb!,
+                                effectiveStateDb,
                                 opts,
                                 loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
                                 concurrencyController);
@@ -303,7 +292,7 @@ public partial class App : Application
                         var pipeline = new SharePointMigrationPipeline(
                             storageProvider,
                             storageProvider,
-                            stateDb,
+                            effectiveStateDb,
                             opts,
                             loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
                             concurrencyController,
@@ -325,9 +314,6 @@ public partial class App : Application
                         await rateController.DisposeAsync().ConfigureAwait(false);
                     if (rateMetricsBuffer is not null)
                         await rateMetricsBuffer.DisposeAsync().ConfigureAwait(false);
-                    // Dropbox 路線で早期生成した専用 stateDb を最後に Dispose する
-                    if (dropboxStateDb is not null)
-                        await dropboxStateDb.DisposeAsync().ConfigureAwait(false);
                 }
             }
 
@@ -348,29 +334,6 @@ public partial class App : Application
                 DriveId: configuration["Migrator:Graph:SharePointDriveId"] ?? string.Empty,
                 DestinationRoot: configuration["Migrator:DestinationRoot"] ?? string.Empty);
             return new SetupDoctorService(opts, sp.GetRequiredService<System.Net.Http.IHttpClientFactory>());
-        });
-
-        // ITransferStateDb: --db-path 引数 > 選択済み DB > SharePoint デフォルト（初回実行時は DB を新規作成）
-        services.AddSingleton<ITransferStateDb>(sp =>
-        {
-            var resolvedPath = dbPath ?? ResolveDefaultDbPath();
-            var db = new SqliteTransferStateDb(resolvedPath);
-            try
-            {
-                db.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                // 初期化失敗: db を確実に破棄してからフォールバック（ファイルハンドルのリーク防止）
-                db.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                MessageBox.Show(
-                    $"DB の初期化に失敗しました。DB なしモードで起動します。\n\n{ex.Message}",
-                    "警告",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return NullTransferStateDb.Instance;
-            }
-            return db;
         });
 
         // ── WPF Host サービス ──────────────────────────────────────────────
@@ -455,32 +418,4 @@ public partial class App : Application
         return controller;
     }
 
-    /// <summary>
-    /// デフォルトの DB パスを解決する。
-    /// 両方の DB が存在する場合はユーザーに選択させる。
-    /// </summary>
-    private static string ResolveDefaultDbPath()
-    {
-        var dropboxDb = AppDataPaths.LogFile("dropbox_transfer_state.db");
-        var sharePointDb = AppDataPaths.LogFile("sharepoint_transfer_state.db");
-        var hasDropbox = File.Exists(dropboxDb);
-        var hasSharePoint = File.Exists(sharePointDb);
-
-        if (hasDropbox && hasSharePoint)
-        {
-            var result = MessageBox.Show(
-                "Dropbox 用 DB と SharePoint 用 DB の両方が見つかりました。\n" +
-                "表示する DB を選択してください。\n\n" +
-                "はい: Dropbox\nいいえ: SharePoint",
-                "DB の選択",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            return result == MessageBoxResult.Yes ? dropboxDb : sharePointDb;
-        }
-
-        if (hasDropbox) return dropboxDb;
-        // SharePoint DB（既存または新規作成）をデフォルトとして返す
-        return sharePointDb;
-    }
 }
