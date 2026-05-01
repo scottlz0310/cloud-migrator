@@ -34,6 +34,10 @@ public sealed class WizardState
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public WizardStepState Step3DropboxOAuth { get; set; } = WizardStepState.NotStarted;
 
+    /// <summary>Step 3b: Dropbox 転送先フォルダ選択（OneDrive→Dropbox 路線）。</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public WizardStepState Step3bDropboxFolderPicker { get; set; } = WizardStepState.NotStarted;
+
     /// <summary>Step 4: 接続テスト &amp; 完了。</summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public WizardStepState Step4ConnectionTest { get; set; } = WizardStepState.NotStarted;
@@ -60,6 +64,7 @@ public sealed class WizardState
             Step2aOneDriveDiscovery = Safe(Step2aOneDriveDiscovery),
             Step2bSharePointDiscovery = Safe(Step2bSharePointDiscovery),
             Step3DropboxOAuth = Safe(Step3DropboxOAuth),
+            Step3bDropboxFolderPicker = Safe(Step3bDropboxFolderPicker),
             Step4ConnectionTest = Safe(Step4ConnectionTest),
             IsCompleted = IsCompleted,
         };

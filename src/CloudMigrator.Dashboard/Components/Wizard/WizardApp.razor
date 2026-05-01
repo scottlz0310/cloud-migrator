@@ -42,7 +42,12 @@
 
             case WizardStep.DropboxOAuth:
                 <DropboxOAuthPage OnBackClick="GoToAzureAuth"
-                                  OnAuthCompleted="GoToDropboxConnectionTest" />
+                                  OnAuthCompleted="GoToDropboxFolderPicker" />
+                break;
+
+            case WizardStep.DropboxFolderPicker:
+                <DropboxFolderPage OnBackClick="GoToDropboxOAuth"
+                                   OnFolderConfirmed="GoToDropboxConnectionTest" />
                 break;
 
             case WizardStep.ConnectionTest:
@@ -70,6 +75,7 @@
         DriveDiscovery,
         SharePointDiscovery,
         DropboxOAuth,
+        DropboxFolderPicker,
         ConnectionTest,
     }
 
@@ -156,9 +162,17 @@
         _currentStep = WizardStep.DropboxOAuth;
     }
 
-    private async Task GoToDropboxConnectionTest()
+    private async Task GoToDropboxFolderPicker()
     {
         _state.Step3DropboxOAuth = WizardStepState.Verified;
+        _state.Step3bDropboxFolderPicker = WizardStepState.InProgress;
+        await WizardStateService.SaveAsync(_state);
+        _currentStep = WizardStep.DropboxFolderPicker;
+    }
+
+    private async Task GoToDropboxConnectionTest()
+    {
+        _state.Step3bDropboxFolderPicker = WizardStepState.Verified;
         _state.Step4ConnectionTest = WizardStepState.InProgress;
         _currentStep = WizardStep.ConnectionTest;
         await WizardStateService.SaveAsync(_state);
@@ -169,7 +183,9 @@
         // 「戻る」ボタン: 路線に応じて direct back
         if (_state.SelectedRoute == WizardRoute.OneDriveToDropbox)
         {
-            GoToDropboxOAuth();
+            // #197: Dropbox 路線は DropboxFolderPicker へ戻る
+            _state.Step3bDropboxFolderPicker = WizardStepState.InProgress;
+            _currentStep = WizardStep.DropboxFolderPicker;
         }
         else
         {
@@ -239,6 +255,11 @@
             state.Step3DropboxOAuth != WizardStepState.Verified)
             return WizardStep.DropboxOAuth;
 
+        // Dropbox 路線: Step 3b（フォルダ選択）が未完了
+        if (state.SelectedRoute == WizardRoute.OneDriveToDropbox &&
+            state.Step3bDropboxFolderPicker != WizardStepState.Verified)
+            return WizardStep.DropboxFolderPicker;
+
         // Step 4 が未完了（両路線共通）
         if (state.Step4ConnectionTest != WizardStepState.Verified)
             return WizardStep.ConnectionTest;
@@ -254,6 +275,7 @@
         WizardStep.DriveDiscovery       => "Step 2a: OneDrive Drive ID 取得",
         WizardStep.SharePointDiscovery  => "Step 2b: SharePoint 接続先設定",
         WizardStep.DropboxOAuth         => "Step 3: Dropbox 連携",
+        WizardStep.DropboxFolderPicker  => "Step 3b: 転送先フォルダ選択",
         WizardStep.ConnectionTest       => "Step 4: 接続テスト",
         _                               => string.Empty,
     };

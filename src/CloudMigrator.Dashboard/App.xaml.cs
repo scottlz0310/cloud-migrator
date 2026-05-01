@@ -344,6 +344,7 @@ public partial class App : Application
         services.AddSingleton<ICredentialStore>(_ => CredentialStoreFactory.Create());
         services.AddSingleton<IDropboxOAuthService, DropboxOAuthService>();
         services.AddSingleton<IDropboxVerifyService, DropboxVerifyService>();
+        services.AddSingleton<IDropboxFolderService, DropboxFolderService>();
         services.AddSingleton<IAzureAuthVerifyService, AzureAuthVerifyService>();
         services.AddSingleton<IGraphDiscoveryService, GraphDiscoveryService>();
         services.AddSingleton<ISharePointVerifyService, SharePointVerifyService>();

@@ -20,6 +20,14 @@
 
 ### Added
 
+- **転送先フォルダ確認フラグの実装（#197）**（SharePointDiscoveryPage, ConfigurationService, WizardApp）
+  - `DriveFolderPicker` コンポーネントを `SharePointDiscoveryPage` に組み込み、Library 内フォルダを選択後に「次へ」ボタンが有効化される
+  - `_destFolderConfirmed` フラグで転送先フォルダの明示選択を必須化。サイト/ドライブ変更時に自動リセット
+  - `DiscoveryConfigDto` / `DiscoveryConfigUpdateDto` に `DestinationConfirmed` フィールドを追加し `config.json` に永続化
+  - `DashboardPage` で `DestinationConfirmed` 未設定時に転送開始をブロック（警告 Snackbar 表示）
+  - `WizardState` に `Step3bDropboxFolderPicker` を追加し、Dropbox 路線の転送先フォルダ選択ステップをウィザードに追加
+  - `DropboxFolderPicker` / `DropboxFolderPage` コンポーネントと `IDropboxFolderService` / `DropboxFolderService` を新規追加
+
 - **ダッシュボードリデザイン（UI-03）**（DashboardPage）
   - レイアウトを「ヘッダー行（フェーズ・ルートチップ・転送開始/停止ボタン） ＋ 常時進捗バー ＋ MudTabs 3タブ（概要 / 詳細情報 / ログ）」に再構成
   - 概要タブ: ステータスカード 6 枚・経過時間行・一行ログ（フェードアニメーション）・移行完了サマリー

@@ -84,6 +84,9 @@ else
                                 break;
                             case "OneDriveToDropbox":
                                 <MudText Typo="Typo.body2">Dropbox</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="word-break: break-all;">
+                                    @(_discovery.DropboxDestFolderPath is { Length: > 0 } dp ? dp : "（Dropbox ルート）")
+                                </MudText>
                                 break;
                             default:
                                 <MudText Typo="Typo.body2">未設定</MudText>

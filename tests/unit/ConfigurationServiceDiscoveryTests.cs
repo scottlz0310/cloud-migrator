@@ -229,4 +229,102 @@ public sealed class ConfigurationServiceDiscoveryTests : IDisposable
         g["oneDriveSourceFolderPath"]!.GetValue<string>().Should().Be("Documents/Projects");
         g["oneDriveSourceFolder"]!.GetValue<string>().Should().Be("Documents/Projects");
     }
+
+    // ── DestinationConfirmed / DropboxDestFolderPath (#197) ───────────────
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenDestinationConfirmedIsTrue_PersistsFlag()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync  目的: DestinationConfirmed=true が config.json に保存されること
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(DestinationConfirmed: true));
+
+        var result = await _sut.GetDiscoveryConfigAsync();
+        result.DestinationConfirmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenDestinationConfirmedIsFalse_PersistsFlag()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync  目的: DestinationConfirmed=false が保存・読み取れること
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(DestinationConfirmed: true));
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(DestinationConfirmed: false));
+
+        var result = await _sut.GetDiscoveryConfigAsync();
+        result.DestinationConfirmed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetDiscoveryConfigAsync_WhenDestinationConfirmedIsMissing_ReturnsFalse()
+    {
+        // 検証対象: GetDiscoveryConfigAsync  目的: destinationConfirmed 未設定時に false が返されること
+        var result = await _sut.GetDiscoveryConfigAsync();
+
+        result.DestinationConfirmed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenDropboxDestFolderPathSet_RoundTrips()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync  目的: DropboxDestFolderPath が保存・読み取れること
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            DropboxDestFolderPath: "/Photos",
+            DestinationConfirmed: true));
+
+        var result = await _sut.GetDiscoveryConfigAsync();
+        result.DropboxDestFolderPath.Should().Be("/Photos");
+        result.DestinationConfirmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenDropboxRootSelected_DestinationConfirmedCanBeTrue()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync
+        // 目的: Dropbox ルート（""）を選択しても DestinationConfirmed=true が保存できること
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            DropboxDestFolderPath: "",
+            DestinationConfirmed: true));
+
+        var result = await _sut.GetDiscoveryConfigAsync();
+        result.DropboxDestFolderPath.Should().BeEmpty();
+        result.DestinationConfirmed.Should().BeTrue();
+    }
+
+    // ── Dropbox 三点同期 (#197) ────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenDropboxDestFolderPathSet_SyncsAllThreeFields()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync
+        // 目的: DropboxDestFolderPath 設定時に dropboxDestFolderPath / destinationRoot / dropbox.rootPath
+        //       の 3 フィールドが同値に同期されること
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            DropboxDestFolderPath: "/Backup",
+            DestinationProvider: "dropbox"));
+
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(_configFile))!;
+        var m = json["migrator"]!.AsObject();
+        var g = m["graph"]!;
+
+        g["dropboxDestFolderPath"]!.GetValue<string>().Should().Be("/Backup");
+        m["destinationRoot"]!.GetValue<string>().Should().Be("/Backup");
+        m["dropbox"]!["rootPath"]!.GetValue<string>().Should().Be("/Backup");
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryConfigAsync_WhenDropboxRootPath_SyncsAllThreeFieldsAsEmpty()
+    {
+        // 検証対象: UpdateDiscoveryConfigAsync
+        // 目的: Dropbox ルート（""）でも 3 フィールドすべてが "" に同期されること
+        await _sut.UpdateDiscoveryConfigAsync(new DiscoveryConfigUpdateDto(
+            DropboxDestFolderPath: "",
+            DestinationProvider: "dropbox"));
+
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(_configFile))!;
+        var m = json["migrator"]!.AsObject();
+        var g = m["graph"]!;
+
+        g["dropboxDestFolderPath"]!.GetValue<string>().Should().BeEmpty();
+        m["destinationRoot"]!.GetValue<string>().Should().BeEmpty();
+        m["dropbox"]!["rootPath"]!.GetValue<string>().Should().BeEmpty();
+    }
 }
