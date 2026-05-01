@@ -116,7 +116,11 @@ public sealed record DiscoveryConfigDto(
     string OneDriveDisplayName = "",
     string SharePointSiteDisplayName = "",
     string SharePointSiteWebUrl = "",
-    string SharePointDriveDisplayName = "");
+    string SharePointDriveDisplayName = "",
+    // ── Dropbox 転送先（#197）──
+    string DropboxDestFolderPath = "",
+    // ── 転送先フォルダ明示確認フラグ（#197）: root(="") と未選択を区別する ──
+    bool DestinationConfirmed = false);
 
 /// <summary>
 /// Discovery 結果マージ更新 DTO。null フィールドは上書きしない。
@@ -136,7 +140,11 @@ public sealed record DiscoveryConfigUpdateDto(
     string? OneDriveDisplayName = null,
     string? SharePointSiteDisplayName = null,
     string? SharePointSiteWebUrl = null,
-    string? SharePointDriveDisplayName = null);
+    string? SharePointDriveDisplayName = null,
+    // ── Dropbox 転送先（#197）──
+    string? DropboxDestFolderPath = null,
+    // ── 転送先フォルダ明示確認フラグ（#197）──
+    bool? DestinationConfirmed = null);
 
 /// <summary>
 /// config.json の読み書きを担当するサービス契約。
@@ -398,9 +406,16 @@ public sealed class ConfigurationService : IConfigurationService
             if (update.DestinationRoot is not null)
             {
                 m["destinationRoot"] = update.DestinationRoot;
-                // sharePointDestFolderPath（Discovery 表示用）と同期する
+                // SharePoint 路線: sharePointDestFolderPath（Discovery 表示用）と同期する
                 if (m["graph"] is JsonObject gObj)
+                {
                     gObj["sharePointDestFolderPath"] = update.DestinationRoot;
+                    // #197: Dropbox 路線: dropboxDestFolderPath（Discovery 表示用）も同期する
+                    gObj["dropboxDestFolderPath"] = update.DestinationRoot;
+                }
+                // #197: Dropbox 路線: dropbox.rootPath（DropboxStorageProvider 用）も同期する
+                if (m["dropbox"] is JsonObject dropboxObjForSync)
+                    dropboxObjForSync["rootPath"] = update.DestinationRoot;
             }
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;
 
@@ -616,12 +631,17 @@ public sealed class ConfigurationService : IConfigurationService
             var sharePointSiteDisplayName = hasGraphObject ? GetString(gProp, "sharePointSiteDisplayName", string.Empty) : string.Empty;
             var sharePointSiteWebUrl = hasGraphObject ? GetString(gProp, "sharePointSiteWebUrl", string.Empty) : string.Empty;
             var sharePointDriveDisplayName = hasGraphObject ? GetString(gProp, "sharePointDriveDisplayName", string.Empty) : string.Empty;
+            // #197: Dropbox 転送先 / 明示確認フラグ
+            var dropboxDestFolderPath = hasGraphObject ? GetString(gProp, "dropboxDestFolderPath", string.Empty) : string.Empty;
+            var destinationConfirmed = m.TryGetProperty("destinationConfirmed", out var dcProp)
+                && dcProp.ValueKind == JsonValueKind.True;
 
             return new DiscoveryConfigDto(
                 oneDriveUserId, oneDriveDriveId, oneDriveSourceFolderId, oneDriveSourceFolderPath,
                 sharePointSiteId, sharePointDriveId, sharePointDestFolderId, sharePointDestFolderPath,
                 migrationRoute, destinationProvider,
-                oneDriveDisplayName, sharePointSiteDisplayName, sharePointSiteWebUrl, sharePointDriveDisplayName);
+                oneDriveDisplayName, sharePointSiteDisplayName, sharePointSiteWebUrl, sharePointDriveDisplayName,
+                dropboxDestFolderPath, destinationConfirmed);
         }
         catch (JsonException)
         {
@@ -689,6 +709,26 @@ public sealed class ConfigurationService : IConfigurationService
                 g["sharePointDestFolderPath"] = effectiveDestFolderPath;
                 m["destinationRoot"] = effectiveDestFolderPath;
             }
+
+            // #197: Dropbox 転送先 — graph.dropboxDestFolderPath / destinationRoot / dropbox.rootPath を三点同期する。
+            // Dropbox の「転送先フォルダ」は以下 3 フィールドで参照されるため全て同値に保つ。
+            //   - migrator.graph.dropboxDestFolderPath : Discovery 表示・ウィザード復元用
+            //   - migrator.destinationRoot             : skip-list 再構築・共通ランタイム用
+            //   - migrator.dropbox.rootPath            : DropboxStorageProvider（転送実行）用
+            if (update.DropboxDestFolderPath is not null)
+            {
+                g["dropboxDestFolderPath"] = update.DropboxDestFolderPath;
+                m["destinationRoot"] = update.DropboxDestFolderPath;
+
+                if (m["dropbox"] is not JsonObject dropboxObj)
+                {
+                    dropboxObj = new JsonObject();
+                    m["dropbox"] = dropboxObj;
+                }
+                dropboxObj["rootPath"] = update.DropboxDestFolderPath;
+            }
+
+            if (update.DestinationConfirmed.HasValue) m["destinationConfirmed"] = update.DestinationConfirmed.Value;
 
             if (update.MigrationRoute is not null) m["migrationRoute"] = update.MigrationRoute;
             if (update.DestinationProvider is not null) m["destinationProvider"] = update.DestinationProvider;

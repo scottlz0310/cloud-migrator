@@ -1,0 +1,210 @@
+@using CloudMigrator.Providers.Dropbox.Auth
+
+@* Dropbox フォルダを階層ナビゲーションで選択するインラインコンポーネント *@
+
+<MudStack Spacing="2">
+
+    @* ── 現在の選択表示 ── *@
+    @if (!_isOpen)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.CloudQueue" Size="Size.Small" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">
+                @(string.IsNullOrEmpty(SelectedFolderPath)
+                    ? "（ルート — Dropbox 全体）"
+                    : SelectedFolderPath)
+            </MudText>
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Primary"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Disabled="@Disabled"
+                       OnClick="OpenPicker">
+                変更
+            </MudButton>
+        </MudStack>
+    }
+
+    @* ── フォルダブラウザ（展開時） ── *@
+    @if (_isOpen)
+    {
+        <MudPaper Elevation="2" Class="pa-3">
+            <MudStack Spacing="2">
+
+                @* パンくずナビ *@
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
+                    @for (var i = 0; i < _breadcrumbs.Count; i++)
+                    {
+                        var depth = i;
+                        var label = _breadcrumbs[i];
+                        @if (i > 0)
+                        {
+                            <MudText Color="Color.Secondary"> › </MudText>
+                        }
+                        @if (i < _breadcrumbs.Count - 1)
+                        {
+                            <MudLink OnClick="@(() => NavigateToBreadcrumbDepth(depth))"
+                                     Style="cursor: pointer;">
+                                @label
+                            </MudLink>
+                        }
+                        else
+                        {
+                            <MudText>@label</MudText>
+                        }
+                    }
+                </MudStack>
+
+                @* フォルダ一覧 *@
+                @if (_isLoading)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                }
+                else if (_error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true">
+                        @foreach (var folder in _folders)
+                        {
+                            var entry = folder;
+                            <MudListItem Icon="@Icons.Material.Filled.Folder"
+                                         OnClick="@(() => NavigateIntoFolderAsync(entry))"
+                                         Style="cursor: pointer;">
+                                @entry.Name
+                            </MudListItem>
+                        }
+                        @if (_folders.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="px-2">
+                                （サブフォルダなし）
+                            </MudText>
+                        }
+                    </MudList>
+                }
+
+                @* アクションボタン *@
+                <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
+                    <MudButton Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               OnClick="ClosePicker">
+                        キャンセル
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               OnClick="ConfirmSelection">
+                        このフォルダを選択
+                    </MudButton>
+                </MudStack>
+
+            </MudStack>
+        </MudPaper>
+    }
+
+</MudStack>
+
+@code {
+    /// <summary>Dropbox アクセストークン。</summary>
+    [Parameter, EditorRequired] public string AccessToken { get; set; } = string.Empty;
+
+    /// <summary>初期フォルダパス（空 = ルート）。</summary>
+    [Parameter] public string InitialFolderPath { get; set; } = string.Empty;
+
+    /// <summary>フォルダが確定されたときに呼び出される。引数は Dropbox API パス（ルートは <c>""</c>）。</summary>
+    [Parameter] public EventCallback<string> OnFolderSelected { get; set; }
+
+    /// <summary>無効状態。</summary>
+    [Parameter] public bool Disabled { get; set; }
+
+    [Inject] private IDropboxFolderService FolderService { get; set; } = default!;
+
+    private bool _isOpen;
+    private bool _isLoading;
+    private string? _error;
+
+    // 現在のナビゲーション状態
+    private string _currentPath = string.Empty;
+    private List<string> _breadcrumbs = ["（ルート）"];
+    private List<DropboxFolderEntry> _folders = [];
+
+    // 確定済みの選択値
+    public string SelectedFolderPath { get; private set; } = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        // 初期選択値の反映
+        SelectedFolderPath = InitialFolderPath;
+    }
+
+    private async Task OpenPicker()
+    {
+        _currentPath = SelectedFolderPath;
+        _breadcrumbs = BuildBreadcrumbs(_currentPath);
+        _isOpen = true;
+        await LoadFoldersAsync();
+    }
+
+    private void ClosePicker()
+    {
+        _isOpen = false;
+    }
+
+    private async Task NavigateIntoFolderAsync(DropboxFolderEntry folder)
+    {
+        _currentPath = folder.PathDisplay;
+        _breadcrumbs = BuildBreadcrumbs(_currentPath);
+        await LoadFoldersAsync();
+    }
+
+    private async Task NavigateToBreadcrumbDepth(int depth)
+    {
+        if (depth == 0)
+        {
+            _currentPath = string.Empty;
+        }
+        else
+        {
+            // パスを depth 段目まで再構築
+            var parts = _currentPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            _currentPath = "/" + string.Join("/", parts.Take(depth));
+        }
+        _breadcrumbs = BuildBreadcrumbs(_currentPath);
+        await LoadFoldersAsync();
+    }
+
+    private async Task LoadFoldersAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        _folders = [];
+        StateHasChanged();
+
+        var result = await FolderService.ListFoldersAsync(AccessToken, _currentPath);
+        if (result.Success)
+            _folders = result.Folders?.ToList() ?? [];
+        else
+            _error = $"フォルダ一覧の取得に失敗しました: {result.ErrorMessage}";
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmSelection()
+    {
+        SelectedFolderPath = _currentPath;
+        _isOpen = false;
+        await OnFolderSelected.InvokeAsync(SelectedFolderPath);
+    }
+
+    private static List<string> BuildBreadcrumbs(string path)
+    {
+        var crumbs = new List<string> { "（ルート）" };
+        if (string.IsNullOrEmpty(path))
+            return crumbs;
+        crumbs.AddRange(path.Split('/', StringSplitOptions.RemoveEmptyEntries));
+        return crumbs;
+    }
+}

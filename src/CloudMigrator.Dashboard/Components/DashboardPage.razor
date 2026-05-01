@@ -4,6 +4,7 @@
 @inject IConfigurationService ConfigService
 @inject ILogger<DashboardPage> Logger
 @inject ILogChannel LogChannel
+@inject ISnackbar Snackbar
 @using CloudMigrator.Core.Configuration
 @implements IDisposable
 
@@ -24,7 +25,15 @@
                     {
                         <MudText Typo="Typo.caption">転送元: @_discovery.OneDriveSourceFolderPath</MudText>
                     }
-                    @if (!string.IsNullOrEmpty(_discovery?.SharePointDestFolderPath))
+                    @if (_discovery?.MigrationRoute == "OneDriveToDropbox")
+                    {
+                        <MudText Typo="Typo.caption">
+                            転送先: @(string.IsNullOrEmpty(_discovery.DropboxDestFolderPath)
+                                ? "（Dropbox ルート）"
+                                : _discovery.DropboxDestFolderPath)
+                        </MudText>
+                    }
+                    else if (!string.IsNullOrEmpty(_discovery?.SharePointDestFolderPath))
                     {
                         <MudText Typo="Typo.caption">転送先: @_discovery.SharePointDestFolderPath</MudText>
                     }
@@ -526,6 +535,7 @@ else
     private string RouteDisplayLabel => _discovery?.MigrationRoute switch
     {
         "OneDriveToSharePoint" => "OneDrive → SharePoint",
+        "OneDriveToDropbox"    => "OneDrive → Dropbox",
         { Length: > 0 } r => r,
         _ => ""
     };
@@ -980,6 +990,16 @@ else
     private async Task StartJobAsync()
     {
         if (_isJobRunning) return;
+
+        // #197: 転送先フォルダが未確認の場合は転送を開始しない
+        if (_discovery?.DestinationConfirmed != true)
+        {
+            Snackbar.Add(
+                "転送先フォルダが確認されていません。ウィザードで転送先フォルダを選択・確認してから転送を開始してください。",
+                Severity.Warning);
+            return;
+        }
+
         _currentJob = await JobService.TryStartAsync();
         _isJobRunning = _currentJob?.Status is JobStatus.Pending or JobStatus.Running;
     }

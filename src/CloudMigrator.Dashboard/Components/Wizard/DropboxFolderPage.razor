@@ -1,0 +1,175 @@
+@using CloudMigrator.Core.Configuration
+@using CloudMigrator.Core.Credentials
+@using CloudMigrator.Providers.Dropbox.Auth
+@inject IConfigurationService ConfigurationService
+@inject ICredentialStore CredentialStore
+@inject ISnackbar Snackbar
+
+@* Step 3b: Dropbox 転送先フォルダ選択 *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="py-8">
+    <MudStack Spacing="6">
+        <div>
+            <MudText Typo="Typo.h5">転送先フォルダを選択</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                OneDrive のファイルを移行する Dropbox 内のフォルダを選択してください。
+                ルートを選択するとすべてのファイルが Dropbox 直下に転送されます。
+            </MudText>
+        </div>
+
+        @* 前回確認済みの転送先がある場合の提案 *@
+        @if (_previouslyConfirmed && !string.IsNullOrEmpty(_savedFolderPath) && !_destFolderConfirmed)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                前回の転送先:
+                <strong>@(_savedFolderPath == "" ? "（ルート）" : _savedFolderPath)</strong>
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           OnClick="UsePreviousFolder">
+                    この転送先を使用
+                </MudButton>
+            </MudAlert>
+        }
+        @if (_previouslyConfirmed && string.IsNullOrEmpty(_savedFolderPath) && !_destFolderConfirmed)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                前回の転送先: <strong>（Dropbox ルート）</strong>
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           OnClick="UsePreviousFolder">
+                    この転送先を使用
+                </MudButton>
+            </MudAlert>
+        }
+
+        @* フォルダピッカー *@
+        @if (_accessToken is not null)
+        {
+            <MudPaper Elevation="1" Class="pa-3">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">転送先フォルダ</MudText>
+                <DropboxFolderPicker AccessToken="@_accessToken"
+                                     InitialFolderPath="@_selectedFolderPath"
+                                     OnFolderSelected="OnFolderSelected"
+                                     Disabled="@_isSaving" />
+            </MudPaper>
+        }
+        else if (_isLoadingToken)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Error">
+                Dropbox のアクセストークンを取得できません。前のステップで認証を完了してください。
+            </MudAlert>
+        }
+
+        @* 確認状態の表示 *@
+        @if (_destFolderConfirmed)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true">
+                転送先フォルダを確認済み:
+                <strong>@(_selectedFolderPath == "" ? "（Dropbox ルート）" : _selectedFolderPath)</strong>
+            </MudAlert>
+        }
+
+        @if (_saveError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">@_saveError</MudAlert>
+        }
+
+        @* ナビゲーションボタン *@
+        <MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.ArrowBack"
+                       Disabled="@_isSaving"
+                       OnClick="@(() => OnBackClick.InvokeAsync())">
+                戻る
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       EndIcon="@Icons.Material.Filled.ArrowForward"
+                       Disabled="@(!_destFolderConfirmed || _isSaving)"
+                       OnClick="SaveAndContinueAsync">
+                次へ
+            </MudButton>
+        </MudStack>
+
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Parameter] public EventCallback OnBackClick { get; set; }
+    [Parameter] public EventCallback OnFolderConfirmed { get; set; }
+
+    private string? _accessToken;
+    private bool _isLoadingToken = true;
+    private bool _isSaving;
+    private bool _destFolderConfirmed;
+    private string _selectedFolderPath = string.Empty;
+    private string? _saveError;
+
+    // 前回確認済み情報（復元提案用）
+    private bool _previouslyConfirmed;
+    private string _savedFolderPath = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Dropbox アクセストークン取得
+        _accessToken = await CredentialStore.GetAsync(CredentialKeys.DropboxAccessToken);
+        _isLoadingToken = false;
+
+        // 保存済み設定の読み込み
+        var config = await ConfigurationService.GetDiscoveryConfigAsync();
+        _savedFolderPath = config.DropboxDestFolderPath;
+        _previouslyConfirmed = config.DestinationConfirmed;
+
+        // 確認済み設定があれば初期選択に反映
+        if (_previouslyConfirmed)
+        {
+            _selectedFolderPath = _savedFolderPath;
+        }
+    }
+
+    private void OnFolderSelected(string folderPath)
+    {
+        _selectedFolderPath = folderPath;
+        _destFolderConfirmed = true;
+        StateHasChanged();
+    }
+
+    private void UsePreviousFolder()
+    {
+        _selectedFolderPath = _savedFolderPath;
+        _destFolderConfirmed = true;
+        StateHasChanged();
+    }
+
+    private async Task SaveAndContinueAsync()
+    {
+        if (!_destFolderConfirmed) return;
+
+        _isSaving = true;
+        _saveError = null;
+
+        try
+        {
+            // 三点同期: dropboxDestFolderPath / destinationRoot / dropbox.rootPath
+            await ConfigurationService.UpdateDiscoveryConfigAsync(
+                new DiscoveryConfigUpdateDto(
+                    DropboxDestFolderPath: _selectedFolderPath,
+                    DestinationConfirmed: true));
+
+            await OnFolderConfirmed.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _saveError = $"設定の保存に失敗しました: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

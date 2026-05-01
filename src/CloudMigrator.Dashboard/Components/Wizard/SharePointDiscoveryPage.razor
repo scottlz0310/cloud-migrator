@@ -152,7 +152,7 @@
                 <MudList T="SharePointDriveEntry" Dense="true">
                     @foreach (var drive in _driveListResult.Drives!)
                     {
-                        <MudListItem OnClick="@(() => _selectedDrive = drive)"
+                        <MudListItem OnClick="@(() => SelectDrive(drive))"
                                      Class="@(_selectedDrive?.DriveId == drive.DriveId ? "mud-selected-item" : "")">
                             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                                 <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" />
@@ -213,15 +213,19 @@
             <div>
                 <MudText Typo="Typo.subtitle2" Class="mb-1">移行先フォルダ</MudText>
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                    Library 内のどのフォルダに保存するか選択します。選択しない場合は Library ルートに保存します。
+                    Library 内のどのフォルダに保存するか選択してください。ルートを選択するとライブラリ直下に転送されます。
                 </MudText>
+
+                @* TODO #197: 前回提案表示は後で復活させる（_showPreviousDestSuggestion で判定） *@
+
                 <DriveFolderPicker @ref="_destFolderPicker"
-                                   DriveId="@_selectedDrive.DriveId"
+                                   DriveId="@(_selectedDrive!.DriveId)"
                                    ClientId="@_cachedClientId"
                                    TenantId="@_cachedTenantId"
                                    ClientSecret="@_cachedClientSecret"
                                    InitialFolderId="@_initialDestFolderId"
                                    InitialFolderPath="@_initialDestFolderPath"
+                                   OnFolderSelected="OnDestFolderSelected"
                                    Disabled="@_isBusy" />
             </div>
         }
@@ -238,7 +242,7 @@
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        EndIcon="@Icons.Material.Filled.ArrowForward"
-                       Disabled="@(_isBusy || _selectedSite is null || _selectedDrive is null)"
+                       Disabled="@(_isBusy || _selectedSite is null || _selectedDrive is null || !_destFolderConfirmed)"
                        OnClick="SaveAndContinueAsync">
                 次へ
             </MudButton>
@@ -271,11 +275,28 @@
     private string _initialDestFolderId = string.Empty;
     private string _initialDestFolderPath = string.Empty;
 
+    // #197: 転送先フォルダ選択必須化
+    private bool _destFolderConfirmed;
+    private string _savedSiteId = string.Empty;
+    private string _savedDriveId = string.Empty;
+    private bool _savedDestinationConfirmed;
+
+    private bool _showPreviousDestSuggestion =>
+        _savedDestinationConfirmed &&
+        _selectedSite?.SiteId == _savedSiteId &&
+        _selectedDrive?.DriveId == _savedDriveId &&
+        !_destFolderConfirmed;
+
     protected override async Task OnInitializedAsync()
     {
         var config = await ConfigurationService.GetDiscoveryConfigAsync();
         _initialDestFolderId = config.SharePointDestFolderId;
         _initialDestFolderPath = config.SharePointDestFolderPath;
+
+        // 保存済みの site/drive ID と DestinationConfirmed フラグを読み込む
+        _savedSiteId = config.SharePointSiteId;
+        _savedDriveId = config.SharePointDriveId;
+        _savedDestinationConfirmed = config.DestinationConfirmed;
 
         await LoadAllSitesAsync();
     }
@@ -402,6 +423,8 @@
         _selectedSite = site;
         _driveListResult = null;
         _selectedDrive = null;
+        // #197: site 変更時に転送先確認フラグをリセット
+        _destFolderConfirmed = false;
         await LoadDrivesAsync();
     }
 
@@ -416,6 +439,8 @@
         _phase = BusyPhase.DriveList;
         _driveListResult = null;
         _selectedDrive = null;
+        // #197: drive 変更時に転送先確認フラグをリセット
+        _destFolderConfirmed = false;
         StateHasChanged();
 
         try
@@ -437,6 +462,7 @@
     private async Task SaveAndContinueAsync()
     {
         if (_selectedSite is null || _selectedDrive is null) return;
+        if (!_destFolderConfirmed) return;
 
         _isBusy = true;
         try
@@ -453,7 +479,9 @@
                 DestinationProvider: "sharepoint",
                 SharePointSiteDisplayName: _selectedSite.DisplayName,
                 SharePointSiteWebUrl: string.IsNullOrWhiteSpace(_selectedSite.WebUrl) ? null : _selectedSite.WebUrl,
-                SharePointDriveDisplayName: _selectedDrive.DisplayName));
+                SharePointDriveDisplayName: _selectedDrive.DisplayName,
+                // #197: 転送先フォルダを明示選択済みとしてフラグを保存
+                DestinationConfirmed: true));
 
             Snackbar.Add("SharePoint の接続先を保存しました。", Severity.Success);
             await OnDiscoveryCompleted.InvokeAsync();
@@ -467,5 +495,23 @@
             _isBusy = false;
         }
     }
-}
 
+    // #197: DriveFolderPicker でフォルダが選択/確定されたときに呼ばれる
+    private void OnDestFolderSelected((string FolderId, string FolderPath) _)
+    {
+        _destFolderConfirmed = true;
+    }
+
+    // #197: 保存済み site/drive が一致する場合に前回の転送先を再利用する
+    private void UsePreviousDestFolder()
+    {
+        _destFolderConfirmed = true;
+    }
+
+    // ドライブ選択：転送先フォルダ確認フラグをリセット
+    private void SelectDrive(SharePointDriveEntry drive)
+    {
+        _selectedDrive = drive;
+        _destFolderConfirmed = false;
+    }
+}

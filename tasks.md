@@ -15,10 +15,11 @@
 
 | 順番 | Issue | 種別 | タイトル | 判断 |
 |------|-------|------|----------|------|
-| 1 | [#190](https://github.com/scottlz0310/cloud-migrator/issues/190) | bug | DashboardPage の ITransferStateDb が Dropbox 実行中も SharePoint DB を参照し続ける問題 | 実装済み（PR 対応中）。route-aware な state DB アクセサへ切り替え、Dashboard / Settings / MigrationWork が同じ DB 解決を使うようにした。 |
-| 2 | [#189](https://github.com/scottlz0310/cloud-migrator/issues/189) | enhancement / dashboard | 路線に応じて設定項目を排他表示する | 次の推奨着手。#190 で整えた route/provider と DB 参照の境界を前提に、SharePoint 専用設定と Dropbox 専用設定を分離する。 |
-| 3 | [#191](https://github.com/scottlz0310/cloud-migrator/issues/191) | refactor | DashboardPage タブバーを MudTabs（静的 MudTabPanel）に戻す | アクセシビリティと保守性改善。#190 と同じ DashboardPage に触れるため、bug 修正後に実施して差分衝突を避ける。 |
-| 4 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
+| 1 | [#197](https://github.com/scottlz0310/cloud-migrator/issues/197) | enhancement | 転送先フォルダ確認フラグ | 実装済み（PR 作成予定）。`DriveFolderPicker` 組み込み・`DestinationConfirmed` フラグ永続化・Dropbox フォルダ選択ウィザードステップ追加。 |
+| 2 | [#190](https://github.com/scottlz0310/cloud-migrator/issues/190) | bug | DashboardPage の ITransferStateDb が Dropbox 実行中も SharePoint DB を参照し続ける問題 | 実装済み（PR 対応中）。route-aware な state DB アクセサへ切り替え、Dashboard / Settings / MigrationWork が同じ DB 解決を使うようにした。 |
+| 3 | [#189](https://github.com/scottlz0310/cloud-migrator/issues/189) | enhancement / dashboard | 路線に応じて設定項目を排他表示する | 次の推奨着手。#190 で整えた route/provider と DB 参照の境界を前提に、SharePoint 専用設定と Dropbox 専用設定を分離する。 |
+| 4 | [#191](https://github.com/scottlz0310/cloud-migrator/issues/191) | refactor | DashboardPage タブバーを MudTabs（静的 MudTabPanel）に戻す | アクセシビリティと保守性改善。#190 と同じ DashboardPage に触れるため、bug 修正後に実施して差分衝突を避ける。 |
+| 5 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
 | 保留 | [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) | epic / installer | MSIX パッケージング・Microsoft Store 公開 | MSI 配布 #97 の運用実績、Partner Center、Store 提出素材が前提。現フェーズでは計画保持のみ。 |
 
 ---
