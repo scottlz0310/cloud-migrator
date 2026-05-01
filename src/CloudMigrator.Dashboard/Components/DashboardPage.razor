@@ -517,6 +517,7 @@ else
     // ── 一行ログ ────────────────────────────────────────────────────────────────
     private string? _latestProcessingName;
     private bool _logVisible = true;
+    private ITransferStateDb? _activeStateDb;
 
     // ── ログタブ（直近エントリ） ────────────────────────────────────────────────
     [Parameter] public EventCallback NavigateToLogs { get; set; }
@@ -712,8 +713,9 @@ else
         {
             try
             {
-                var stateDb = await StateDbAccessor.GetCurrentAsync(ct);
-                newName = await stateDb.GetLatestProcessingNameAsync(ct);
+                var stateDb = _activeStateDb;
+                if (stateDb is not null)
+                    newName = await stateDb.GetLatestProcessingNameAsync(ct);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex) { Logger.LogDebug(ex, "一行ログ取得失敗（スキップ）"); }
@@ -753,7 +755,20 @@ else
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗しました。"); }
 
-        var stateDb = await StateDbAccessor.GetForOptionsAsync(opts, ct);
+        ITransferStateDb stateDb;
+        try
+        {
+            stateDb = await StateDbAccessor.GetForOptionsAsync(opts, ct);
+            _activeStateDb = stateDb;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "RefreshAllAsync: 状態 DB の解決に失敗しました。今回の UI 更新をスキップします。");
+            _summary ??= new TransferDbSummary();
+            _recentLogEntries = LogChannel.GetRecentEntries();
+            return;
+        }
 
         try { _summary = await stateDb.GetSummaryAsync(ct); }
         catch (Exception ex) { Logger.LogError(ex, "RefreshAllAsync: GetSummaryAsync 失敗"); _summary ??= new TransferDbSummary(); }

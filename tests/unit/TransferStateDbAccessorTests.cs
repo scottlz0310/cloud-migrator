@@ -1,4 +1,5 @@
 using CloudMigrator.Core.Configuration;
+using CloudMigrator.Core.State;
 using CloudMigrator.Dashboard;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,7 +9,6 @@ namespace CloudMigrator.Tests.Unit;
 public sealed class TransferStateDbAccessorTests : IAsyncDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), $"cloud_migrator_state_accessor_{Guid.NewGuid():N}");
-    private readonly List<TransferStateDbAccessor> _accessors = [];
 
     public TransferStateDbAccessorTests()
     {
@@ -65,13 +65,24 @@ public sealed class TransferStateDbAccessorTests : IAsyncDisposable
         File.Exists(dropboxOpts.Paths.DropboxStateDb).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task GetForOptionsAsync_InvalidStateDbPath_ReturnsNullTransferStateDb()
+    {
+        var opts = CreateOptions("dropbox");
+        opts.Paths.DropboxStateDb = "";
+        await using var accessor = CreateAccessor(() => opts);
+
+        var db = await accessor.GetForOptionsAsync(opts, CancellationToken.None);
+
+        db.Should().BeSameAs(NullTransferStateDb.Instance);
+    }
+
     private TransferStateDbAccessor CreateAccessor(Func<MigratorOptions> optionsFactory, string? explicitDbPath = null)
     {
         var accessor = new TransferStateDbAccessor(
             optionsFactory,
             explicitDbPath,
             NullLogger<TransferStateDbAccessor>.Instance);
-        _accessors.Add(accessor);
         return accessor;
     }
 
@@ -86,12 +97,11 @@ public sealed class TransferStateDbAccessorTests : IAsyncDisposable
             },
         };
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        foreach (var accessor in _accessors)
-            await accessor.DisposeAsync();
-
         if (Directory.Exists(_tempDir))
             Directory.Delete(_tempDir, recursive: true);
+
+        return ValueTask.CompletedTask;
     }
 }

@@ -27,8 +27,21 @@ public sealed class TransferStateDbAccessor : ITransferStateDbAccessor
     public Task<ITransferStateDb> GetCurrentAsync(CancellationToken ct)
         => GetForOptionsAsync(_optionsFactory(), ct);
 
-    public Task<ITransferStateDb> GetForOptionsAsync(MigratorOptions options, CancellationToken ct)
-        => GetByPathAsync(ResolveDbPath(options, _explicitDbPath), ct);
+    public async Task<ITransferStateDb> GetForOptionsAsync(MigratorOptions options, CancellationToken ct)
+    {
+        string dbPath;
+        try
+        {
+            dbPath = ResolveDbPath(options, _explicitDbPath);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "転送状態 DB パスの解決に失敗しました。DB なしモードで続行します。");
+            return NullTransferStateDb.Instance;
+        }
+
+        return await GetByPathAsync(dbPath, ct).ConfigureAwait(false);
+    }
 
     internal static string ResolveDbPath(MigratorOptions options, string? explicitDbPath)
     {
@@ -76,25 +89,38 @@ public sealed class TransferStateDbAccessor : ITransferStateDbAccessor
             created = NullTransferStateDb.Instance;
         }
 
+        ITransferStateDb? disposeTarget = null;
+        ITransferStateDb? result = null;
+        var throwDisposed = false;
+
         lock (_gate)
         {
             if (_disposed)
             {
                 if (!ReferenceEquals(created, NullTransferStateDb.Instance))
-                    created.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                throw new ObjectDisposedException(nameof(TransferStateDbAccessor));
+                    disposeTarget = created;
+                throwDisposed = true;
             }
-
-            if (_dbByPath.TryGetValue(dbPath, out var existing))
+            else if (_dbByPath.TryGetValue(dbPath, out var existing))
             {
                 if (!ReferenceEquals(created, NullTransferStateDb.Instance))
-                    created.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                return existing;
+                    disposeTarget = created;
+                result = existing;
             }
-
-            _dbByPath[dbPath] = created;
-            return created;
+            else
+            {
+                _dbByPath[dbPath] = created;
+                result = created;
+            }
         }
+
+        if (disposeTarget is not null)
+            await disposeTarget.DisposeAsync().ConfigureAwait(false);
+
+        if (throwDisposed)
+            throw new ObjectDisposedException(nameof(TransferStateDbAccessor));
+
+        return result!;
     }
 
     private static bool IsDropbox(string destinationProvider)
