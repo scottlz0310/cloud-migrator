@@ -3,6 +3,15 @@
 ## 言語規約
 **すべてのコード、コメント、ドキュメント、AI との対話は日本語で行う。** 技術的固有名詞（クラス名・API 名等）は英語併記可。
 
+## AI 実装ガードレール
+Copilot CLI / Codex / Claude Code 共通の設計制約は [docs/architecture/ai-implementation-guardrails.md](../docs/architecture/ai-implementation-guardrails.md) を正とする。Codex は [AGENTS.md](../AGENTS.md)、Claude Code は [CLAUDE.md](../CLAUDE.md) から同じ文書へ誘導する。
+
+- Dashboard component は表示とイベント転送を主責務とし、実行制御・状態集約・provider 選択は ViewModel / Application Service / factory へ寄せる
+- SharePoint / Dropbox など provider 固有分岐を UI component や `Core` 層へ直接増やさない
+- route / provider 固有の state DB、metrics、phase、settings section は単一の route 定義から参照する方向を優先する
+- 寄せ先クラスが未実装でも、Target Boundary Design の境界名を基準に薄い service / factory / descriptor を作るか、tactical fix の理由を明記する
+- tactical fix で直接分岐を追加する場合は、理由、影響範囲、後続リファクタ issue を明記する
+
 ## プロジェクト概要
 OneDrive → SharePoint Online への大容量ファイル移行を自動化する C# / .NET 10 CLI ツール。  
 現行 Python 実装（[Bulk-Migrator](../Bulk-Migrator)）からのリライト。仕様は [docs/implementation-plan.md](../docs/implementation-plan.md) を参照。
