@@ -4,7 +4,7 @@
 
 この文書は、Copilot CLI、Codex、Claude Code などの AI coding agent が `cloud-migrator` を変更するときに守る設計制約を明文化する。目の前の issue を閉じるための局所的な分岐追加で、Dashboard、route、provider の境界が崩れることを防ぐ。
 
-この文書を正とし、各 agent 用の入口ファイルはここへ誘導する。
+この文書は、各入口ファイルから参照される正本である。各 agent 用の入口ファイルはここへ誘導する。
 
 | Agent / ツール | 入口 |
 |---|---|
