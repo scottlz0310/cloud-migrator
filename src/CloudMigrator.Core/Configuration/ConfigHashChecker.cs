@@ -33,6 +33,14 @@ public static class ConfigHashChecker
             (options.DestinationRoot ?? string.Empty)
                 .Trim()
                 .Replace('\\', '/')
+                .Trim('/')).Append('|');
+        // DestinationProvider（#198）: sharepoint/dropbox のルート変更を検知する
+        sb.Append(options.DestinationProvider?.Trim().ToLowerInvariant() ?? string.Empty).Append('|');
+        // OneDriveSourceFolder（#198）: 転送元フォルダパス変更を検知する
+        sb.Append(
+            (options.Graph.OneDriveSourceFolder ?? string.Empty)
+                .Trim()
+                .Replace('\\', '/')
                 .Trim('/'));
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

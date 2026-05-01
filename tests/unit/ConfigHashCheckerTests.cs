@@ -229,4 +229,34 @@ public class ConfigHashCheckerTests : IDisposable
 
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public void ComputeHash_DifferentDestinationProvider_ReturnsDifferentHash()
+    {
+        // 検証対象: ComputeHash（#198）  目的: DestinationProvider（sharepoint/dropbox）が異なるとハッシュが変わること
+        var opts1 = CreateOptions();
+        opts1.DestinationProvider = "sharepoint";
+        var opts2 = CreateOptions();
+        opts2.DestinationProvider = "dropbox";
+
+        var h1 = ConfigHashChecker.ComputeHash(opts1);
+        var h2 = ConfigHashChecker.ComputeHash(opts2);
+
+        h1.Should().NotBe(h2);
+    }
+
+    [Fact]
+    public void ComputeHash_DifferentOneDriveSourceFolder_ReturnsDifferentHash()
+    {
+        // 検証対象: ComputeHash（#198）  目的: OneDriveSourceFolder（転送元フォルダパス）が異なるとハッシュが変わること
+        var opts1 = CreateOptions();
+        opts1.Graph.OneDriveSourceFolder = "Documents/Work";
+        var opts2 = CreateOptions();
+        opts2.Graph.OneDriveSourceFolder = "Documents/Personal";
+
+        var h1 = ConfigHashChecker.ComputeHash(opts1);
+        var h2 = ConfigHashChecker.ComputeHash(opts2);
+
+        h1.Should().NotBe(h2);
+    }
 }

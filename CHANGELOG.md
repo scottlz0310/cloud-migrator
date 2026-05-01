@@ -9,6 +9,12 @@
 
 ### Fixed
 
+- **ルート・転送パス変更時の state DB 初期化を必須化（#198）**
+  - `ConfigHashChecker.ComputeHash` に `DestinationProvider`（"sharepoint"/"dropbox"）と `Graph.OneDriveSourceFolder`（転送元フォルダパス）を追加し、これらの変更をハッシュで検知できるようにした
+  - `DashboardPage` の転送開始前にハッシュ変更を検出し、前回ハッシュが存在する場合は確認ダイアログを表示して DB 強制リセット（`ResetAllAsync` + `ClearAll`）を実施するよう変更
+  - 初回起動（ハッシュファイル未作成）は DB が空のため確認ダイアログをスキップ
+  - `ConfigHashCheckerTests` に `ComputeHash_DifferentDestinationProvider_ReturnsDifferentHash` と `ComputeHash_DifferentOneDriveSourceFolder_ReturnsDifferentHash` の2件を追加
+
 - **Dashboard の転送処理が常に SharePoint パイプラインを使用するバグを修正**（App.xaml.cs）
   - `MigrationWork` が `opts.DestinationProvider` を無視して常に `SharePointMigrationPipeline` を生成していた
   - `isDropbox` フラグで分岐し、Dropbox 路線では `DropboxStorageProvider` + `DropboxMigrationPipeline` を使用するよう修正
