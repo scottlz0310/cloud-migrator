@@ -1,80 +1,153 @@
 # タスク管理
 
-詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
-前フェーズ履歴: [tasks-archive-20260414.md](docs/archive/tasks-archive-20260414.md)
+前フェーズ履歴: [docs/archive/tasks-archive-20260501.md](docs/archive/tasks-archive-20260501.md)
 
-## 現在の状態: v0.6.0 HybridRateController バグ修正・UI 改善 📋
+## 現在の状態: open issue 起点の v0.6.1 計画
 
----
-
-## ✅ 完了: Graph API レートベース転送制御エンジン実装（v0.5.0）
-
-**PR**: [#148](https://github.com/scottlz0310/cloud-migrator/pull/148)  
-**完了日**: 2026-04-16
-
-### 完了タスク
-
-- [x] `ITransferRateController` / `IMetricsAggregator` インターフェース定義
-- [x] `TransferMetricsAggregator` 実装（1 秒バケット固定リングバッファ）
-- [x] `MetricsBuffer` 実装（非同期 DB バッファ）
-- [x] `RateControlledTransferController` 実装（ヒステリシス 3 段階制御 + トークンバケット）
-- [x] `AdaptiveConcurrencyControllerAdapter` 実装（後方互換アダプター）
-- [x] `RateControlSettings` / `MigratorOptions.RateControl` 設定統合
-- [x] `TransferCommand` への `UseRateControl` フラグ統合
-- [x] `SharePointMigrationPipeline` Phase C インフライトカウンター回復修正
-- [x] `TransferMetricsAggregator.GetSnapshot()` Rate429 計算式修正
-- [x] `RateControlledTransferController.DisposeAsync()` べき等性保証
-- [x] `CliServices.cs` 不要フィールド整理
-- [x] ユニットテスト 627 件全合格
+- 確認日: 2026-05-01
+- 対象リポジトリ: `scottlz0310/cloud-migrator`
+- 確認方法: `gh issue list --state open --limit 200`
+- open issue 数: 5 件
 
 ---
 
-## 次フェーズ: v0.6.0 スループット主制御ハイブリッド方式
+## 推奨実装順
 
-> 設計書: [docs/transfer-control-design-v2.md](docs/transfer-control-design-v2.md)
-
-### 概要
-
-v0.5.0 のヒステリシス制御（requests/sec）から **トークンバケット × AIMD フィードバック × 並列数補助制御のハイブリッド方式**（tokens/sec）へ移行する。
-
-### 実装順序
-
-| 順番 | ISSUE | タイトル | 状態 | 備考 |
-|------|-------|---------|------|------|
-| 1（並行） | [#160](https://github.com/scottlz0310/cloud-migrator/issues/160) | トークンバケット + 重み付きコスト | ✅ 完了（PR #167） | `FileCostCalculator` / `WeightedTokenBucket` 追加・設定統合・テスト 53 件 |
-| 1（並行） | [#161](https://github.com/scottlz0310/cloud-migrator/issues/161) | スライディングウィンドウ指標収集 | ✅ 完了 | `SlidingWindowMetrics` 追加・P95/件数&時間切替・設定統合・テスト 24 件 |
-| 2 | [#162](https://github.com/scottlz0310/cloud-migrator/issues/162) | AIMD フィードバック制御 + クールダウン | ✅ 完了 | `AimdFeedbackController` 追加・4 信号判定・ベースライン EMA・クールダウン・テスト 24 件 |
-| 3 | [#163](https://github.com/scottlz0310/cloud-migrator/issues/163) | 並列数補助制御ハイブリッド移行 | 🟢 統合 PR 実装完了 | `HybridRateController` 追加・§7 制御ループ + §4.3 並列数補助制御・`RateStateStore` v2/v0.5.x 互換・CLI + Dashboard 統合・テスト 25 件。旧 `AdaptiveConcurrencyController` / `TokenBucketRateLimiter` は `[Obsolete]` 付与のみ（実削除は後続 PR） |
-| 4 | [#159](https://github.com/scottlz0310/cloud-migrator/issues/159) | スループット表示を制御窓ベースに変更（UI） | ✅ 完了 | HybridRateController 経路で `throughput_window_sec` 記録・Dashboard タイトルに「（直近 N 秒）」付記 |
-| 5 | [#155](https://github.com/scottlz0310/cloud-migrator/issues/155) | 統計エリア統合（UI） | ✅ 完了 | 統計7指標 + RCモニター4指標を1カードに統合 |
-| 自由 | [#154](https://github.com/scottlz0310/cloud-migrator/issues/154) | ルート情報をダッシュボードに移動（UI） | ✅ 完了 | ヘッダーにルートチップ＋ツールチップ追加 |
-| 自由 | [#156](https://github.com/scottlz0310/cloud-migrator/issues/156) | グラフ表示オン/オフ切り替え（UI） | ✅ 完了 | ShowGraphs 設定 + ヘッダーアイコンボタン |
-| 自由 | [#157](https://github.com/scottlz0310/cloud-migrator/issues/157) | グラフ列数可変設定（UI） | ✅ 完了 | GraphColumns 設定 + MudItem 幅動的制御 |
-| 自由 | [#158](https://github.com/scottlz0310/cloud-migrator/issues/158) | フォルダ/ファイル進捗 Phase 連動表示（UI） | ✅ 完了 | folder_creation/transferring フェーズ連動進捗バー統合 |
-
-### スコープ外（凍結・v0.6.0 効果確認後に判断）
-
-| ISSUE | 内容 | 判断タイミング |
-|-------|------|---------------|
-| [#136](https://github.com/scottlz0310/cloud-migrator/issues/136) §1 | パルス制御 | #162 完了後 |
-| [#136](https://github.com/scottlz0310/cloud-migrator/issues/136) §2 | ファイルサイズ別レーン分離 | #160 完了後 |
+| 順番 | Issue | 種別 | タイトル | 判断 |
+|------|-------|------|----------|------|
+| 1 | [#190](https://github.com/scottlz0310/cloud-migrator/issues/190) | bug | DashboardPage の ITransferStateDb が Dropbox 実行中も SharePoint DB を参照し続ける問題 | 実装済み（PR 対応中）。route-aware な state DB アクセサへ切り替え、Dashboard / Settings / MigrationWork が同じ DB 解決を使うようにした。 |
+| 2 | [#189](https://github.com/scottlz0310/cloud-migrator/issues/189) | enhancement / dashboard | 路線に応じて設定項目を排他表示する | 次の推奨着手。#190 で整えた route/provider と DB 参照の境界を前提に、SharePoint 専用設定と Dropbox 専用設定を分離する。 |
+| 3 | [#191](https://github.com/scottlz0310/cloud-migrator/issues/191) | refactor | DashboardPage タブバーを MudTabs（静的 MudTabPanel）に戻す | アクセシビリティと保守性改善。#190 と同じ DashboardPage に触れるため、bug 修正後に実施して差分衝突を避ける。 |
+| 4 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
+| 保留 | [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) | epic / installer | MSIX パッケージング・Microsoft Store 公開 | MSI 配布 #97 の運用実績、Partner Center、Store 提出素材が前提。現フェーズでは計画保持のみ。 |
 
 ---
 
-## 🔧 進行中: HybridRateController バグ修正・UI 改善
+## 1. #190: Dropbox 実行中の Dashboard state DB 参照修正
 
-### 完了タスク
+状態: 実装済み（PR 対応中）
 
-- [x] `AimdFeedbackController`: クールダウン中の429で `Hold` を返す修正（二重クールダウン防止）
-- [x] `LatencyEvaluationMode.None` 追加・デフォルト化（429専制御、SlowDecrease 無効化）
-- [x] `HybridRateController`: 制御ログ `LogDebug` → `LogInformation` 昇格（信号・レート・429率・P95 出力）
-- [x] `EmergencyDecay` / `EmergencyInflightDecay` デフォルト緩和: 0.7/0.75 → **0.9/0.9**（Retry-After主制御設計）
-- [x] 設定メニュー: `UseHybridController` / `CooldownSec` / `EmergencyDecay` / `EmergencyInflightDecay` / `AddStep` / `LatencyMode` の6項目追加（UI・API・バリデーション）
-- [x] Dashboard リアルタイムモニタ: HybridRateController のメトリクスキー不一致修正（`rate_tokens_per_sec` / `max_inflight` / `rate_429` / `signal` 対応）
-- [x] ユニットテスト 902 件全合格
-- [x] ダッシュボードリデザイン（UI-03、#179）: タブ構造 3 タブ（概要 / 詳細情報 / ログ）・`GetLatestProcessingNameAsync` 追加・一行ログフェードアニメーション
-- [x] ユニットテスト 922 件全合格
-- [x] Dropbox 路線選択時に SharePoint 路線に固定されるバグ修正: `DropboxOAuthPage` で `config.json` への `destinationProvider`/`migrationRoute` 書き込みを追加
-- [x] Dashboard の転送処理が常に SharePoint パイプラインを使用するバグ修正: `App.xaml.cs` の `MigrationWork` に `isDropbox` 分岐を追加し、Dropbox 路線では `DropboxMigrationPipeline` を使用するよう修正
+### 目的
+
+Dropbox 実行時に `MigrationWork` が Dropbox 専用 DB へ書き込む一方で、`DashboardPage` が DI singleton の SharePoint DB を読み続ける問題を解消する。
+
+### 実装メモ
+
+- `DashboardPage` の `GetLatestProcessingNameAsync` / `GetSummaryAsync` / `GetMetricsAsync` / `GetCheckpointAsync` が、実行中または選択中の provider に対応する DB を参照するようにする。
+- `SettingsPage` も `ITransferStateDb` を直接注入して `ResetAllAsync` しているため、同じ route-aware な DB 解決を共有できる形を優先する。
+- 候補:
+  - per-run `ITransferStateDb` factory
+  - route/provider に応じて DB を切り替える router 抽象
+  - 起動時 provider に基づく DI 登録
+- `MigrationWork` 側で使う DB と Dashboard 読み取り側の DB 選択規則を一致させる。
+- DB インスタンスの lifetime と `DisposeAsync` の責務を明確にする。
+
+### 受け入れ条件
+
+- [x] Dropbox 路線で実行中、Dashboard の進捗バー・サマリ・スループットグラフが Dropbox DB から更新される。
+- [x] SharePoint 路線の Dashboard 表示は従来どおり SharePoint DB を参照する。
+- [x] route 切り替え後に古い DB ハンドルへ読み書きし続けない。
+- [x] `NullTransferStateDb` フォールバック時の挙動が壊れない。
+- [x] 関連ユニットテストを追加または更新する。
 
 ---
+
+## 2. #189: 路線別 Settings 表示と Dropbox 専用設定追加
+
+### 目的
+
+SharePoint / Dropbox それぞれに関係する設定だけを表示し、Dropbox 専用設定を Dashboard 設定画面から編集できるようにする。
+
+### 実装メモ
+
+- `SettingsPage.razor` で `MigrationRoute` または `DestinationProvider` を基準に `IsSharePointRoute` / `IsDropboxRoute` を定義する。
+- SharePoint 専用設定:
+  - 転送制御エンジン
+  - レートベース制御パラメーター
+  - HybridRateController 実験的設定
+  - 動的並列制御
+  - 最大並行フォルダ作成数
+- Dropbox 専用設定:
+  - `SimpleUploadLimitMb`
+  - `UploadChunkSizeMb`
+  - `EnableEnsureFolder`
+- 共通設定:
+  - 最大並行転送数
+  - タイムアウト
+  - リトライ回数
+  - 大ファイル閾値
+- 非表示項目は保存時に値を消さず、既存設定を保持する。
+- `ConfigurationService` の read/write と validation が Dropbox 設定を扱えるか確認し、不足があれば拡張する。
+
+### 受け入れ条件
+
+- [ ] SharePoint 路線では Dropbox 専用設定が表示されない。
+- [ ] Dropbox 路線では SharePoint 専用設定が表示されない。
+- [ ] Dropbox 路線で `SimpleUploadLimitMb` / `UploadChunkSizeMb` / `EnableEnsureFolder` を設定・保存できる。
+- [ ] 共通設定は両路線で表示される。
+- [ ] 非表示項目の既存値が保存時に失われない。
+- [ ] 設定保存のユニットテストを追加または更新する。
+
+---
+
+## 3. #191: Dashboard タブバーを MudTabs に戻す
+
+### 目的
+
+PR #188 で導入したカスタム `<button>` タブバーを、MudBlazor 標準の `MudTabs` + 静的 `MudTabPanel` に戻し、保守性・キーボード操作・ARIA を回復する。
+
+### 実装メモ
+
+- `@foreach` による `MudTabPanel` 動的生成は避け、概要 / 詳細情報 / ログの 3 パネルを静的に配置する。
+- `_dashboardTab` string は `_dashboardTabIndex` int に置き換える。
+- 既存の概要・詳細情報・ログの中身は、対応する `MudTabPanel` 内へ移動する。
+- 見た目調整は inline style ではなく MudBlazor の `Class` / `TabPanelClass` / `ActiveTabClass` などで対応する。
+- MUD0002 が再発しないことを確認する。
+
+### 受け入れ条件
+
+- [ ] Dashboard タブが `MudTabs` + 静的 `MudTabPanel` 3 枚で構成される。
+- [ ] キーボード操作と ARIA 属性が MudBlazor 標準挙動に戻る。
+- [ ] 概要・詳細情報・ログの表示内容が既存実装から退化しない。
+- [ ] MUD0002 アナライザーエラーが発生しない。
+- [ ] Dashboard 関連テストまたはビルド確認を実施する。
+
+---
+
+## 4. #15: Dependency Dashboard 対応
+
+### 目的
+
+Renovate が検出した依存関係更新を、機能修正後の安定した状態で確認する。
+
+### 実装メモ
+
+- lock file maintenance は通常スケジュールに任せる。
+- `Microsoft.Graph` / `Microsoft.NET.Test.Sdk` などの minor update PR が作成されたら CI 結果を確認する。
+- `xunit` deprecation/replacement は影響範囲が大きいため、必要なら独立 issue 化して移行方針を決める。
+
+### 受け入れ条件
+
+- [ ] Renovate PR がある場合、CI 結果と差分を確認する。
+- [ ] 破壊的変更がある dependency update は機能修正 PR と混ぜない。
+- [ ] 必要に応じて追加 issue を起票する。
+
+---
+
+## 保留: #101 MSIX パッケージング・Microsoft Store 公開
+
+### 保留理由
+
+MSI 配布 #97 の安定運用、Microsoft Partner Center、Store 提出素材、プライバシーポリシー URL などが前提条件のため、現フェーズでは着手しない。
+
+### 再開条件
+
+- [ ] MSI 配布 #97 の運用実績が十分に積まれている。
+- [ ] Partner Center アカウントと Store 提出要件が準備済み。
+- [ ] MSIX / Store 配布の目的と対象ユーザーが明確になっている。
+
+---
+
+## 次の推奨着手
+
+[#189](https://github.com/scottlz0310/cloud-migrator/issues/189) から開始する。

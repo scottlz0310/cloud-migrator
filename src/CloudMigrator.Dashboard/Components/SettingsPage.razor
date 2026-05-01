@@ -1,6 +1,7 @@
 @inject IConfigurationService ConfigService
-@inject ITransferStateDb TransferStateDb
+@inject ITransferStateDbAccessor StateDbAccessor
 @inject ITransferJobService JobService
+@inject Func<MigratorOptions> OptionsFactory
 @inject ISnackbar Snackbar
 @inject ILogger<SettingsPage> Logger
 
@@ -714,10 +715,11 @@ else
         try
         {
             // 3. DB 全データ削除
-            await TransferStateDb.ResetAllAsync(CancellationToken.None);
+            var stateDb = await StateDbAccessor.GetCurrentAsync(CancellationToken.None);
+            await stateDb.ResetAllAsync(CancellationToken.None);
 
-            // 4. キャッシュファイル削除（PathOptions はデフォルト値 = AppDataPaths.LogFile(...) と一致するため new() で十分）
-            var opts = new MigratorOptions();
+            // 4. キャッシュファイル削除
+            var opts = OptionsFactory();
             ConfigHashChecker.ClearAll(opts.Paths, Logger);
 
             Snackbar.Add("データベースの初期化が完了しました。転送を再開するにはダッシュボードの「転送開始」ボタンを押してください。", Severity.Success, cfg =>
