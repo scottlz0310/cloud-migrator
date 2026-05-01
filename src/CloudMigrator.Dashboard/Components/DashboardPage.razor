@@ -765,6 +765,7 @@ else
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "RefreshAllAsync: 状態 DB の解決に失敗しました。今回の UI 更新をスキップします。");
+            _activeStateDb = null;
             _summary ??= new TransferDbSummary();
             _recentLogEntries = LogChannel.GetRecentEntries();
             return;

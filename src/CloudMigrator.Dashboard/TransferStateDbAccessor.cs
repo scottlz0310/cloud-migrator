@@ -109,7 +109,8 @@ public sealed class TransferStateDbAccessor : ITransferStateDbAccessor
             }
             else
             {
-                _dbByPath[dbPath] = created;
+                if (!ReferenceEquals(created, NullTransferStateDb.Instance))
+                    _dbByPath[dbPath] = created;
                 result = created;
             }
         }

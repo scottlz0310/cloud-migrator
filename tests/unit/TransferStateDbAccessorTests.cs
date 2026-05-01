@@ -77,6 +77,25 @@ public sealed class TransferStateDbAccessorTests : IAsyncDisposable
         db.Should().BeSameAs(NullTransferStateDb.Instance);
     }
 
+    [Fact]
+    public async Task GetForOptionsAsync_InitializationFailure_DoesNotCacheNullTransferStateDb()
+    {
+        var blockedPath = Path.Combine(_tempDir, "blocked.db");
+        Directory.CreateDirectory(blockedPath);
+        var opts = CreateOptions("dropbox");
+        opts.Paths.DropboxStateDb = blockedPath;
+        await using var accessor = CreateAccessor(() => opts);
+
+        var first = await accessor.GetForOptionsAsync(opts, CancellationToken.None);
+        Directory.Delete(blockedPath);
+        var second = await accessor.GetForOptionsAsync(opts, CancellationToken.None);
+        await second.SaveCheckpointAsync("route", "dropbox", CancellationToken.None);
+
+        first.Should().BeSameAs(NullTransferStateDb.Instance);
+        second.Should().NotBeSameAs(NullTransferStateDb.Instance);
+        (await second.GetCheckpointAsync("route", CancellationToken.None)).Should().Be("dropbox");
+    }
+
     private TransferStateDbAccessor CreateAccessor(Func<MigratorOptions> optionsFactory, string? explicitDbPath = null)
     {
         var accessor = new TransferStateDbAccessor(
