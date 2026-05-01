@@ -1,7 +1,7 @@
 # タスク管理
 
-詳細仕様: [docs/implementation-plan.md](docs/implementation-plan.md)
-前フェーズ履歴: [tasks-archive-20260414.md](docs/archive/tasks-archive-20260414.md)
+詳細仕様: [docs/implementation-plan.md](../implementation-plan.md)
+前フェーズ履歴: [tasks-archive-20260414.md](tasks-archive-20260414.md)
 
 ## 現在の状態: v0.6.0 HybridRateController バグ修正・UI 改善 📋
 
@@ -31,7 +31,7 @@
 
 ## 次フェーズ: v0.6.0 スループット主制御ハイブリッド方式
 
-> 設計書: [docs/transfer-control-design-v2.md](docs/transfer-control-design-v2.md)
+> 設計書: [docs/transfer-control-design-v2.md](../transfer-control-design-v2.md)
 
 ### 概要
 
