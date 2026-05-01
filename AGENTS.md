@@ -15,6 +15,7 @@
 - Dashboard component は表示とイベント転送を主責務とし、実行制御、状態集約、provider 選択は ViewModel / Application Service / factory へ寄せる。
 - SharePoint / Dropbox など provider 固有の分岐を UI component や `Core` 層へ直接広げない。
 - route / provider 固有の設定、state DB、metrics、phase 表示は route descriptor や factory など単一の定義から参照する方向を優先する。
+- 寄せ先クラスが未実装でも、Target Boundary Design の境界名を基準に薄い service / factory / descriptor を作るか、tactical fix の理由を明記する。
 - tactical fix で直接分岐を追加する場合は、理由、影響範囲、後続リファクタ issue を PR 説明またはコメントに明記する。
 
 詳細な判断基準と PR レビューチェックリストは、必ず [AI 実装ガードレール](docs/architecture/ai-implementation-guardrails.md) を参照してください。

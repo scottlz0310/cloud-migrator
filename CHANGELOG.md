@@ -21,7 +21,7 @@
 ### Added
 
 - **AI 実装ガードレール文書の追加（#199）**
-  - `docs/architecture/ai-implementation-guardrails.md` を追加し、MVVM / provider boundary / route boundary の禁止事項、許容分岐、tactical fix 条件、PR レビューチェックリストを明文化
+  - `docs/architecture/ai-implementation-guardrails.md` を追加し、MVVM / provider boundary / route boundary の禁止事項、許容分岐、Target Boundary Design、tactical fix 条件、PR レビューチェックリストを明文化
   - `AGENTS.md` と `CLAUDE.md` を追加し、Codex / Claude Code から同じガードレール文書を参照できる入口を用意
   - `.github/copilot-instructions.md` から Copilot CLI / Codex / Claude Code 共通の設計制約へリンク
 
