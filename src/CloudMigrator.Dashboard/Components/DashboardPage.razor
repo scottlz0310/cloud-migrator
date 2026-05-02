@@ -6,6 +6,7 @@
 @inject ILogChannel LogChannel
 @inject ISnackbar Snackbar
 @using CloudMigrator.Core.Configuration
+@using System.IO
 @implements IDisposable
 
 @* ── ヘッダー行（常時表示） ─────────────────────────────────────────────── *@
@@ -501,6 +502,23 @@ else
     }
 }
 
+@* ── #198: ルート・転送パス変更検出確認ダイアログ ────────────────────────── *@
+<MudMessageBox @ref="_configChangedDialogRef"
+               Title="設定変更を検出しました"
+               CancelText="転送を中止"
+               YesText="DB を初期化して転送開始">
+    <MessageContent>
+        <MudText>
+            転送ルート・パスが前回から変更されています。<br />
+            このまま転送を続けると、旧データとの整合性が失われます。<br />
+            <b>転送状態データベースを初期化してから転送を開始しますか？</b>
+        </MudText>
+        <MudAlert Severity="Severity.Warning" Class="mt-2" Dense="true">
+            初期化すると転送進捗・メトリクス・チェックポイントがすべて削除されます。
+        </MudAlert>
+    </MessageContent>
+</MudMessageBox>
+
 @code {
     // ── タブ ────────────────────────────────────────────────────────────────
     private string _dashboardTab = "overview";
@@ -509,6 +527,9 @@ else
     private TransferDbSummary? _summary;
     private TransferJobInfo? _currentJob;
     private bool _isJobRunning;
+
+    // ── #198: 設定変更確認ダイアログ ─────────────────────────────────────────
+    private MudMessageBox? _configChangedDialogRef;
 
     // ── フェーズ: idle / crawling / folder_creation / transferring / completed / stopped ─
     private string _phase = "";
@@ -1000,8 +1021,53 @@ else
             return;
         }
 
+        // #198: 前回転送時からルート・転送パスが変更されていれば DB 初期化を促す
+        var opts = OptionsFactory();
+        var hash = ConfigHashChecker.ComputeHash(opts);
+        var hashFilePath = opts.Paths.ConfigHash;
+        var hashFileExists = File.Exists(hashFilePath);
+        var hashChanged = await ConfigHashChecker.HasChangedAsync(hashFilePath, hash);
+
+        // ハッシュファイルが存在しても変更あり → リセット必要
+        // ハッシュファイルが存在しないが DB にデータあり（旧バージョンからのアップグレード／
+        // ハッシュファイルだけ削除された等） → 整合性保護のためリセット必要
+        // opts と同一の DB を参照するため GetForOptionsAsync(opts) を使用
+        var needsReset = hashChanged && hashFileExists;
+        if (!needsReset && !hashFileExists)
+        {
+            var stateDbForCheck = await StateDbAccessor.GetForOptionsAsync(opts, CancellationToken.None);
+            var summary = await stateDbForCheck.GetSummaryAsync(CancellationToken.None);
+            needsReset = summary.Total > 0;
+        }
+
+        if (needsReset)
+        {
+            // ジョブ実行中は DB 操作不可（_isJobRunning はキャッシュ値のため実体を再確認）
+            if (JobService.IsRunning) return;
+
+            var confirmed = await _configChangedDialogRef!.ShowAsync();
+            if (confirmed is not true) return;
+
+            // ダイアログ表示中（ShowAsync await 中）に別経路でジョブが開始した可能性があるため再確認
+            if (JobService.IsRunning) return;
+
+            // DB 全データ削除（opts に対応する DB を使用）
+            var stateDb = await StateDbAccessor.GetForOptionsAsync(opts, CancellationToken.None);
+            await stateDb.ResetAllAsync(CancellationToken.None);
+
+            // キャッシュファイル削除（OneDrive/SharePoint/Dropbox キャッシュ・skip_list）
+            ConfigHashChecker.ClearAll(opts.Paths, Logger);
+
+            Snackbar.Add("データベースを初期化しました。転送を開始します。", Severity.Info);
+        }
+
+        // 転送開始成功後のみハッシュを保存（失敗時はハッシュを更新しない）
         _currentJob = await JobService.TryStartAsync();
         _isJobRunning = _currentJob?.Status is JobStatus.Pending or JobStatus.Running;
+        if (_currentJob is not null)
+        {
+            await ConfigHashChecker.SaveHashAsync(hashFilePath, hash);
+        }
     }
 
     private void StopJob() => JobService.Cancel();

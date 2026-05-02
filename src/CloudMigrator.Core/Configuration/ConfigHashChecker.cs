@@ -11,6 +11,12 @@ namespace CloudMigrator.Core.Configuration;
 public static class ConfigHashChecker
 {
     /// <summary>
+    /// ハッシュファイルのスキーマバージョンプレフィックス。
+    /// このバージョンが付いていない旧形式ファイルは「変更なし」として扱い、
+    /// 次回転送成功時に新形式へ自動移行する（アップグレード時の誤 DB 初期化を防ぐ）。
+    /// </summary>
+    private const string HashVersionPrefix = "v2:";
+    /// <summary>
     /// 設定の SHA-256 ハッシュを計算する。
     /// Graph/Dropbox の識別子・ルートパスなど転送結果に影響する値を対象とする。
     /// </summary>
@@ -33,6 +39,21 @@ public static class ConfigHashChecker
             (options.DestinationRoot ?? string.Empty)
                 .Trim()
                 .Replace('\\', '/')
+                .Trim('/')).Append('|');
+        // DestinationProvider（#198）: sharepoint/dropbox のルート変更を検知する
+        // "graph" は "sharepoint" の旧エイリアス（ConfigurationService.NormalizeProvider と同じ規則）
+        var normalizedProvider = options.DestinationProvider?.Trim().ToLowerInvariant() switch
+        {
+            "sharepoint" or "graph" => "sharepoint",
+            "dropbox" => "dropbox",
+            var v => v ?? string.Empty
+        };
+        sb.Append(normalizedProvider).Append('|');
+        // OneDriveSourceFolder（#198）: 転送元フォルダパス変更を検知する
+        sb.Append(
+            (options.Graph.OneDriveSourceFolder ?? string.Empty)
+                .Trim()
+                .Replace('\\', '/')
                 .Trim('/'));
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
@@ -41,7 +62,9 @@ public static class ConfigHashChecker
 
     /// <summary>
     /// ハッシュファイルを読み込み、新しいハッシュと比較する。
-    /// ファイルが存在しない場合・内容が異なる場合は true を返す。
+    /// ファイルが存在しない場合は true を返す。
+    /// 旧形式（バージョンプレフィックスなし）のファイルはアップグレード時の誤 DB 初期化を防ぐため
+    /// 変更なし（false）として扱い、次回転送成功時に新形式へ移行する。
     /// </summary>
     public static async Task<bool> HasChangedAsync(
         string hashFilePath,
@@ -54,10 +77,15 @@ public static class ConfigHashChecker
         var stored = (await File.ReadAllTextAsync(hashFilePath, cancellationToken)
             .ConfigureAwait(false)).Trim();
 
-        return !string.Equals(stored, newHash, StringComparison.OrdinalIgnoreCase);
+        // 旧形式（バージョンプレフィックスなし）: 変更なしとして扱い新形式への移行を待つ
+        if (!stored.StartsWith(HashVersionPrefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var storedHash = stored[HashVersionPrefix.Length..];
+        return !string.Equals(storedHash, newHash, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>ハッシュをファイルへ保存する。</summary>
+    /// <summary>ハッシュをバージョンプレフィックス付きでファイルへ保存する。</summary>
     public static async Task SaveHashAsync(
         string hashFilePath,
         string hash,
@@ -67,7 +95,7 @@ public static class ConfigHashChecker
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        await File.WriteAllTextAsync(hashFilePath, hash, cancellationToken)
+        await File.WriteAllTextAsync(hashFilePath, HashVersionPrefix + hash, cancellationToken)
             .ConfigureAwait(false);
     }
 
