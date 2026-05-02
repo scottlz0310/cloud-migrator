@@ -157,7 +157,7 @@ public class ConfigHashCheckerTests : IDisposable
     {
         // 検証対象: HasChangedAsync  目的: ファイル末尾の改行・空白を無視してハッシュ比較すること
         var hash = "abcdef1234";
-        await File.WriteAllTextAsync(_hashFile, hash + "\n");
+        await File.WriteAllTextAsync(_hashFile, "v2:" + hash + "\n");
 
         var result = await ConfigHashChecker.HasChangedAsync(_hashFile, hash);
         result.Should().BeFalse();
@@ -166,12 +166,12 @@ public class ConfigHashCheckerTests : IDisposable
     [Fact]
     public async Task SaveHashAsync_CreatesDirectoryAndFile()
     {
-        // 検証対象: SaveHashAsync  目的: 中間ディレクトリを作成してハッシュを保存すること
+        // 検証対象: SaveHashAsync  目的: 中間ディレクトリを作成してバージョンプレフィックス付きでハッシュを保存すること
         var deepPath = Path.Combine(_testDir, "sub", "dir", "config_hash.txt");
         await ConfigHashChecker.SaveHashAsync(deepPath, "testhash");
 
         File.Exists(deepPath).Should().BeTrue();
-        (await File.ReadAllTextAsync(deepPath)).Should().Be("testhash");
+        (await File.ReadAllTextAsync(deepPath)).Should().Be("v2:testhash");
     }
 
     [Fact]
@@ -273,5 +273,17 @@ public class ConfigHashCheckerTests : IDisposable
         var h2 = ConfigHashChecker.ComputeHash(opts2);
 
         h1.Should().NotBe(h2);
+    }
+
+    [Fact]
+    public async Task HasChangedAsync_LegacyFormatFile_ReturnsFalse()
+    {
+        // 検証対象: HasChangedAsync（#202）  目的: バージョンプレフィックスのない旧形式ファイルは
+        // アップグレード後の誤 DB 初期化を防ぐため変更なし（false）と判定すること
+        var oldHash = "abcdefabcdef1234567890";
+        await File.WriteAllTextAsync(_hashFile, oldHash); // v2: プレフィックスなし（旧形式）
+
+        var result = await ConfigHashChecker.HasChangedAsync(_hashFile, "completelydifferenthash");
+        result.Should().BeFalse();
     }
 }

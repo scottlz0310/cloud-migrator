@@ -1048,6 +1048,9 @@ else
             var confirmed = await _configChangedDialogRef!.ShowAsync();
             if (confirmed is not true) return;
 
+            // ダイアログ表示中（ShowAsync await 中）に別経路でジョブが開始した可能性があるため再確認
+            if (JobService.IsRunning) return;
+
             // DB 全データ削除（opts に対応する DB を使用）
             var stateDb = await StateDbAccessor.GetForOptionsAsync(opts, CancellationToken.None);
             await stateDb.ResetAllAsync(CancellationToken.None);
