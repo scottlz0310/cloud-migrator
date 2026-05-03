@@ -42,7 +42,11 @@ public sealed record ConfigDto(
     bool ShowGraphs = true,
     int GraphColumns = 2,
     // ── UI テーマ設定（#177）──
-    string ThemeMode = "system");
+    string ThemeMode = "system",
+    // ── Dropbox 転送設定（#189）──
+    int DropboxSimpleUploadLimitMb = 100,
+    int DropboxUploadChunkSizeMb = 8,
+    bool DropboxEnableEnsureFolder = false);
 
 /// <summary>
 /// PUT /api/config で受け取るマージ更新 DTO。null フィールドは上書きしない。
@@ -82,7 +86,11 @@ public sealed record ConfigUpdateDto(
     bool? ShowGraphs = null,
     int? GraphColumns = null,
     // ── UI テーマ設定（#177）──
-    string? ThemeMode = null);
+    string? ThemeMode = null,
+    // ── Dropbox 転送設定（#189）──
+    int? DropboxSimpleUploadLimitMb = null,
+    int? DropboxUploadChunkSizeMb = null,
+    bool? DropboxEnableEnsureFolder = null);
 
 /// <summary>
 /// Graph プロバイダー設定 DTO（シークレット除外済み）。
@@ -280,6 +288,17 @@ public sealed class ConfigurationService : IConfigurationService
                 }
             }
 
+            // migrator.dropbox セクションを読み取る
+            var dropboxSimpleUploadLimitMb = 100;
+            var dropboxUploadChunkSizeMb = 8;
+            var dropboxEnableEnsureFolder = false;
+            if (m.TryGetProperty("dropbox", out var dropboxProp) && dropboxProp.ValueKind == JsonValueKind.Object)
+            {
+                dropboxSimpleUploadLimitMb = Math.Max(1, GetInt(dropboxProp, "simpleUploadLimitMb", 100));
+                dropboxUploadChunkSizeMb = Math.Max(1, GetInt(dropboxProp, "uploadChunkSizeMb", 8));
+                dropboxEnableEnsureFolder = dropboxProp.TryGetProperty("enableEnsureFolder", out var eefProp) && eefProp.ValueKind == JsonValueKind.True;
+            }
+
             return new ConfigDto(
                 MaxParallelTransfers: GetInt(m, "maxParallelTransfers", 4),
                 MaxParallelFolderCreations: GetInt(m, "maxParallelFolderCreations", 4),
@@ -311,7 +330,10 @@ public sealed class ConfigurationService : IConfigurationService
                 RcLatencyMode: rcLatencyMode,
                 ShowGraphs: !(m.TryGetProperty("showGraphs", out var sgProp) && sgProp.ValueKind == JsonValueKind.False),
                 GraphColumns: Math.Clamp(GetInt(m, "graphColumns", 2), 1, 4),
-                ThemeMode: themeMode);
+                ThemeMode: themeMode,
+                DropboxSimpleUploadLimitMb: dropboxSimpleUploadLimitMb,
+                DropboxUploadChunkSizeMb: dropboxUploadChunkSizeMb,
+                DropboxEnableEnsureFolder: dropboxEnableEnsureFolder);
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -358,6 +380,10 @@ public sealed class ConfigurationService : IConfigurationService
             && !string.Equals(update.RcLatencyMode, "Recent", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(update.RcLatencyMode, "Both", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("RcLatencyMode には None/Baseline/Recent/Both のいずれかを指定してください。", nameof(update));
+        if (update.DropboxSimpleUploadLimitMb.HasValue && update.DropboxSimpleUploadLimitMb.Value < 1)
+            throw new ArgumentException("DropboxSimpleUploadLimitMb は 1 以上である必要があります。", nameof(update));
+        if (update.DropboxUploadChunkSizeMb.HasValue && update.DropboxUploadChunkSizeMb.Value < 1)
+            throw new ArgumentException("DropboxUploadChunkSizeMb は 1 以上である必要があります。", nameof(update));
 
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -484,6 +510,19 @@ public sealed class ConfigurationService : IConfigurationService
                 if (update.RcEmergencyInflightDecay.HasValue) rcObj["emergencyInflightDecay"] = update.RcEmergencyInflightDecay.Value;
                 if (update.RcAddStep.HasValue) rcObj["addStep"] = update.RcAddStep.Value;
                 if (update.RcLatencyMode is not null) rcObj["latencyEvaluationMode"] = update.RcLatencyMode;
+            }
+
+            // migrator.dropbox セクションを更新（#189）
+            if (update.DropboxSimpleUploadLimitMb.HasValue || update.DropboxUploadChunkSizeMb.HasValue || update.DropboxEnableEnsureFolder.HasValue)
+            {
+                if (m["dropbox"] is not JsonObject dropboxObj)
+                {
+                    dropboxObj = new JsonObject();
+                    m["dropbox"] = dropboxObj;
+                }
+                if (update.DropboxSimpleUploadLimitMb.HasValue) dropboxObj["simpleUploadLimitMb"] = update.DropboxSimpleUploadLimitMb.Value;
+                if (update.DropboxUploadChunkSizeMb.HasValue) dropboxObj["uploadChunkSizeMb"] = update.DropboxUploadChunkSizeMb.Value;
+                if (update.DropboxEnableEnsureFolder.HasValue) dropboxObj["enableEnsureFolder"] = update.DropboxEnableEnsureFolder.Value;
             }
 
             // UI 表示設定

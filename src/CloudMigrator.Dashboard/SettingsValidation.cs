@@ -48,4 +48,10 @@ public static class SettingsValidation
         !useRateControl && adaptiveEnabled && initialDegree is < 0 or > 256
             ? "初期並列数は 0〜256 の範囲で入力してください。"
             : null;
+
+    public static string? ValidateDropboxSimpleUploadLimitMb(bool isDropboxRoute, int v) =>
+        isDropboxRoute && v is < 1 or > 2000 ? "単純アップロード上限は 1〜2000 MB の範囲で入力してください。" : null;
+
+    public static string? ValidateDropboxUploadChunkSizeMb(bool isDropboxRoute, int v) =>
+        isDropboxRoute && v is < 1 or > 500 ? "チャンクサイズ (Dropbox) は 1〜500 MB の範囲で入力してください。" : null;
 }
