@@ -588,7 +588,8 @@ else
         }
 
         // ルート descriptor を解決する（#208: IsSharePointRoute/IsDropboxRoute を HasSection 経由に置換）
-        // DestinationProvider が null/空 の場合は ArgumentNullException、未登録プロバイダーは InvalidOperationException が投げられる
+        // DestinationProvider が null/空の場合は Resolve を呼ばず _currentDescriptor=null にフォールバック。
+        // 登録外のプロバイダー名は InvalidOperationException を捕捉して同様にフォールバック。
         var providerName = OptionsFactory().DestinationProvider;
         if (!string.IsNullOrWhiteSpace(providerName))
         {
