@@ -11,7 +11,7 @@ public sealed class MigrationRouteRegistry
 
     /// <summary>
     /// <paramref name="descriptors"/> に重複する <see cref="IMigrationRouteDescriptor.ProviderName"/> が含まれる場合、
-    /// 後勝ちで上書きされる（<see cref="Enumerable.ToDictionary"/> の動作に準じる）。
+    /// <see cref="Enumerable.ToDictionary"/> の動作に従い <see cref="ArgumentException"/> を投げて起動を中断する。
     /// </summary>
     public MigrationRouteRegistry(IEnumerable<IMigrationRouteDescriptor> descriptors)
     {
@@ -23,12 +23,19 @@ public sealed class MigrationRouteRegistry
 
     /// <summary>
     /// プロバイダー識別子からルート descriptor を解決する（大文字小文字を問わない）。
+    /// 旧エイリアス <c>"graph"</c> は <c>"sharepoint"</c> に正規化してから解決する（<see cref="CloudMigrator.Core.Configuration.ConfigurationService"/> の NormalizeProvider と同じ規則）。
     /// </summary>
     /// <exception cref="InvalidOperationException">未登録のプロバイダー名の場合。</exception>
-    public IMigrationRouteDescriptor Resolve(string providerName) =>
-        _descriptors.TryGetValue(providerName, out var d)
+    public IMigrationRouteDescriptor Resolve(string providerName)
+    {
+        // "graph" は "sharepoint" の旧エイリアス（configs/config.json の destinationProvider 旧値）
+        var normalized = string.Equals(providerName, "graph", StringComparison.OrdinalIgnoreCase)
+            ? MigrationProviderNames.SharePoint
+            : providerName;
+        return _descriptors.TryGetValue(normalized, out var d)
             ? d
             : throw new InvalidOperationException($"未登録のプロバイダーです: '{providerName}'");
+    }
 
     /// <summary>登録済みの全 descriptor を ProviderName 昇順で返す。</summary>
     public IReadOnlyCollection<IMigrationRouteDescriptor> All =>

@@ -29,6 +29,8 @@ public class MigrationRouteRegistryTests
     [InlineData("SharePoint")]
     [InlineData("SHAREPOINT")]
     [InlineData("sharepoint")]
+    [InlineData("graph")]   // 旧エイリアス（既存 configs との後方互換）
+    [InlineData("GRAPH")]
     public void Resolve_ShouldBeCaseInsensitive_ForSharePoint(string providerName)
     {
         var registry = BuildDefault();
@@ -74,23 +76,21 @@ public class MigrationRouteRegistryTests
     [Fact]
     public void AllDescriptors_ShouldHaveUniqueProviderNames()
     {
-        // 重複登録時に後勝ちになるため、登録数と解決可能なプロバイダー数が一致しない場合を検出する
-        var registry = BuildDefault();
-        var providerNames = registry.All.Select(d => d.ProviderName).ToList();
-        providerNames.Should().OnlyHaveUniqueItems();
+        // 同一 ProviderName を持つ descriptor を 2 件渡すと ToDictionary が ArgumentException を投げる
+        var act = () => new MigrationRouteRegistry(
+            [new SharePointRouteDescriptor(), new SharePointRouteDescriptor()]);
+        act.Should().Throw<ArgumentException>();
     }
 
     [Theory]
-    [InlineData(nameof(SharePointRouteDescriptor))]
-    [InlineData(nameof(DropboxRouteDescriptor))]
-    public void EachDescriptor_ShouldNotHaveDuplicateSettingsSections(string descriptorTypeName)
+    [InlineData(nameof(SharePointRouteDescriptor), 9)]   // 共通 4 + SP 専用 5
+    [InlineData(nameof(DropboxRouteDescriptor), 7)]       // 共通 4 + Dropbox 専用 3
+    public void EachDescriptor_ShouldNotHaveDuplicateSettingsSections(string descriptorTypeName, int expectedCount)
     {
-        // IReadOnlySet は重複を排除するが、コンストラクタ定義の意図しない重複を unit test で明示する
+        // IReadOnlySet は重複を HashSet 初期化時に除去するため、意図しない重複があると Count が期待値を下回る。
+        // 期待件数を明示することで、コンストラクタ初期化子への誤った重複追加を検出する。
         var registry = BuildDefault();
         var descriptor = registry.All.First(d => d.GetType().Name == descriptorTypeName);
-
-        // HashSet は重複を自動排除するため、元のリストと一致すれば重複なし
-        var sections = descriptor.SettingsSections;
-        sections.Count.Should().Be(new HashSet<SettingsSectionId>(sections).Count);
+        descriptor.SettingsSections.Count.Should().Be(expectedCount);
     }
 }

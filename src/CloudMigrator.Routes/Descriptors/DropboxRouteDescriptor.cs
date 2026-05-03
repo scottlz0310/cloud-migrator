@@ -25,7 +25,7 @@ public sealed class DropboxRouteDescriptor : IMigrationRouteDescriptor
         SettingsSectionId.MaxParallelTransfers,
         SettingsSectionId.Timeout,
         SettingsSectionId.RetryPolicy,
-        SettingsSectionId.LargeFileThreshold,
+        SettingsSectionId.FileTransfer,
         SettingsSectionId.SimpleUploadLimit,
         SettingsSectionId.UploadChunkSize,
         SettingsSectionId.EnableEnsureFolder,

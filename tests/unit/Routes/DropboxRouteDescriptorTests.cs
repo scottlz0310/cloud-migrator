@@ -68,7 +68,7 @@ public class DropboxRouteDescriptorTests
     [InlineData(SettingsSectionId.MaxParallelTransfers)]
     [InlineData(SettingsSectionId.Timeout)]
     [InlineData(SettingsSectionId.RetryPolicy)]
-    [InlineData(SettingsSectionId.LargeFileThreshold)]
+    [InlineData(SettingsSectionId.FileTransfer)]
     public void SettingsSections_ShouldContain_CommonSections(SettingsSectionId section)
     {
         var sut = new DropboxRouteDescriptor();

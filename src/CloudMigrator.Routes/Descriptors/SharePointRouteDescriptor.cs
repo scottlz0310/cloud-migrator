@@ -25,7 +25,7 @@ public sealed class SharePointRouteDescriptor : IMigrationRouteDescriptor
         SettingsSectionId.MaxParallelTransfers,
         SettingsSectionId.Timeout,
         SettingsSectionId.RetryPolicy,
-        SettingsSectionId.LargeFileThreshold,
+        SettingsSectionId.FileTransfer,
         SettingsSectionId.TransferEngine,
         SettingsSectionId.RateControl,
         SettingsSectionId.HybridRateController,

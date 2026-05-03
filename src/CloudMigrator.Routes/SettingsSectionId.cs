@@ -11,7 +11,8 @@ public enum SettingsSectionId
     MaxParallelTransfers,
     Timeout,
     RetryPolicy,
-    LargeFileThreshold,
+    /// <summary>チャンクサイズ (ChunkSizeMb) と大ファイル閾値 (LargeFileThresholdMb) を含む「ファイル転送」セクション。</summary>
+    FileTransfer,
 
     // ── SharePoint 専用セクション ─────────────────────────────────────
     TransferEngine,
