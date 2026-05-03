@@ -762,8 +762,9 @@ else
         // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
         var opts = OptionsFactory();
         // ルート descriptor を解決する（#207: isDropbox magic literal を HasFolderCreationPhase に置換）
+        // 未登録プロバイダーの場合のみ InvalidOperationException が投げられる
         try { _currentDescriptor = RouteRegistry.Resolve(opts.DestinationProvider); }
-        catch (Exception ex) { _currentDescriptor = null; Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました: {Provider}", opts.DestinationProvider); }
+        catch (InvalidOperationException ex) { _currentDescriptor = null; Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました: {Provider}", opts.DestinationProvider); }
         _useRateControl = opts.RateControl.UseRateControl;
         _useHybridController = opts.RateControl.UseRateControl && opts.RateControl.UseHybridController;
         _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
@@ -846,8 +847,9 @@ else
             return;
         }
 
-        // フォルダ作成フェーズを持たないルート（Dropbox 等）はクロール完了後に直接 transferring へ遷移する
-        if (descriptor is null || !descriptor.HasFolderCreationPhase)
+        // descriptor が null（解決失敗）の場合は安全側に倒し folder_creation を維持する
+        // これにより、設定 typo 等で descriptor が取れなくても SharePoint のフェーズをスキップしない
+        if (descriptor is not null && !descriptor.HasFolderCreationPhase)
         {
             _phase = "transferring";
             return;
