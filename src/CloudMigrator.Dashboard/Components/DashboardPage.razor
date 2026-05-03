@@ -5,6 +5,7 @@
 @inject ILogger<DashboardPage> Logger
 @inject ILogChannel LogChannel
 @inject ISnackbar Snackbar
+@inject MigrationRouteRegistry RouteRegistry
 @using CloudMigrator.Core.Configuration
 @using System.IO
 @implements IDisposable
@@ -26,10 +27,10 @@
                     {
                         <MudText Typo="Typo.caption">転送元: @_discovery.OneDriveSourceFolderPath</MudText>
                     }
-                    @if (_discovery?.MigrationRoute == "OneDriveToDropbox")
+                    @if (_currentDescriptor?.ProviderName == RouteProviderNames.Dropbox)
                     {
                         <MudText Typo="Typo.caption">
-                            転送先: @(string.IsNullOrEmpty(_discovery.DropboxDestFolderPath)
+                            転送先: @(string.IsNullOrEmpty(_discovery?.DropboxDestFolderPath)
                                 ? "（Dropbox ルート）"
                                 : _discovery.DropboxDestFolderPath)
                         </MudText>
@@ -529,6 +530,8 @@ else
 
     // ── ルート情報（#154: ダッシュボードに常時表示） ───────────────────────────
     private DiscoveryConfigDto? _discovery;
+    // 現在アクティブなルート descriptor（#207: provider 分岐を RouteDescriptor 経由に）
+    private IMigrationRouteDescriptor? _currentDescriptor;
 
     // ── UI 表示設定（#156: グラフ表示, #157: グラフ列数） ───────────────────────
     private bool _showGraphs = true;
@@ -544,13 +547,10 @@ else
     [Parameter] public EventCallback NavigateToLogs { get; set; }
     private LogEntry[] _recentLogEntries = [];
 
-    private string RouteDisplayLabel => _discovery?.MigrationRoute switch
-    {
-        "OneDriveToSharePoint" => "OneDrive → SharePoint",
-        "OneDriveToDropbox"    => "OneDrive → Dropbox",
-        { Length: > 0 } r => r,
-        _ => ""
-    };
+    private string RouteDisplayLabel =>
+        _currentDescriptor is not null
+            ? $"OneDrive → {_currentDescriptor.DisplayName}"
+            : _discovery?.MigrationRoute ?? "";
 
     // ── 計算プロパティ ─────────────────────────────────────────────────────────
     // crawlTotal が確定している場合はそれを分母にする（クロール中は total が増加するため）
@@ -759,6 +759,10 @@ else
         // 実効設定を都度取得（環境変数 > config.json > デフォルト優先）
         // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
         var opts = OptionsFactory();
+        // ルート descriptor を解決する（#207: isDropbox magic literal を HasFolderCreationPhase に置換）
+        // opts.DestinationProvider が null の場合は ArgumentNullException、未登録プロバイダーは InvalidOperationException が投げられる
+        try { _currentDescriptor = RouteRegistry.Resolve(opts.DestinationProvider); }
+        catch (InvalidOperationException ex) { _currentDescriptor = null; Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました: {Provider}", opts.DestinationProvider); }
         _useRateControl = opts.RateControl.UseRateControl;
         _useHybridController = opts.RateControl.UseRateControl && opts.RateControl.UseHybridController;
         _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
@@ -804,7 +808,7 @@ else
         if (_currentJob is not null)
             _currentJob = JobService.GetJob(_currentJob.JobId) ?? _currentJob;
 
-        await RefreshPhaseAsync(opts.DestinationProvider, stateDb, ct);
+        await RefreshPhaseAsync(_currentDescriptor, stateDb, ct);
         await RefreshMetricsAsync(stateDb, ct);
         await UpdateElapsedAndEtaAsync(stateDb, ct);
         await RefreshFolderProgressAsync(stateDb, ct);
@@ -812,7 +816,7 @@ else
         _recentLogEntries = LogChannel.GetRecentEntries();
     }
 
-    private async Task RefreshPhaseAsync(string destinationProvider, ITransferStateDb stateDb, CancellationToken ct)
+    private async Task RefreshPhaseAsync(IMigrationRouteDescriptor? descriptor, ITransferStateDb stateDb, CancellationToken ct)
     {
         if (_summary is null) return;
 
@@ -841,9 +845,9 @@ else
             return;
         }
 
-        // Dropbox はフォルダ先行作成フェーズが存在しないため、クロール完了後は直接 transferring に遷移する
-        var isDropbox = destinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
-        if (isDropbox)
+        // descriptor が null（解決失敗）の場合は安全側に倒し folder_creation を維持する
+        // これにより、設定 typo 等で descriptor が取れなくても SharePoint のフェーズをスキップしない
+        if (descriptor is not null && !descriptor.HasFolderCreationPhase)
         {
             _phase = "transferring";
             return;
