@@ -14,6 +14,8 @@ using CloudMigrator.Providers.Dropbox.Auth;
 using CloudMigrator.Providers.Graph;
 using CloudMigrator.Providers.Graph.Auth;
 using CloudMigrator.Providers.Graph.Http;
+using CloudMigrator.Routes;
+using CloudMigrator.Routes.Descriptors;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -348,6 +350,12 @@ public partial class App : Application
         services.AddSingleton<IAzureAuthVerifyService, AzureAuthVerifyService>();
         services.AddSingleton<IGraphDiscoveryService, GraphDiscoveryService>();
         services.AddSingleton<ISharePointVerifyService, SharePointVerifyService>();
+
+        // ── 移行ルート descriptor（#195: 型登録のみ。既存の isDropbox 分岐は #196 で置換）──
+        // NOTE: #195 時点では runtime behavior の変更はなく、準備登録のみ。
+        services.AddSingleton<IMigrationRouteDescriptor, SharePointRouteDescriptor>();
+        services.AddSingleton<IMigrationRouteDescriptor, DropboxRouteDescriptor>();
+        services.AddSingleton<MigrationRouteRegistry>();
 
         // ── HTTP ─────────────────────────────────────────────────────────────
         services.AddHttpClient();
