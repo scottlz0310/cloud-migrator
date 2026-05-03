@@ -588,16 +588,23 @@ else
         }
 
         // ルート descriptor を解決する（#208: IsSharePointRoute/IsDropboxRoute を HasSection 経由に置換）
-        // opts.DestinationProvider が null の場合は ArgumentNullException、未登録プロバイダーは InvalidOperationException が投げられる
-        try
+        // DestinationProvider が null/空 の場合は ArgumentNullException、未登録プロバイダーは InvalidOperationException が投げられる
+        var providerName = OptionsFactory().DestinationProvider;
+        if (!string.IsNullOrWhiteSpace(providerName))
         {
-            var opts = OptionsFactory();
-            _currentDescriptor = RouteRegistry.Resolve(opts.DestinationProvider);
+            try
+            {
+                _currentDescriptor = RouteRegistry.Resolve(providerName);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _currentDescriptor = null;
+                Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました: {Provider}", providerName);
+            }
         }
-        catch (InvalidOperationException ex)
+        else
         {
             _currentDescriptor = null;
-            Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました。");
         }
     }
 
