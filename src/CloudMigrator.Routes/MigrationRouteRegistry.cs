@@ -28,6 +28,7 @@ public sealed class MigrationRouteRegistry
     /// <exception cref="InvalidOperationException">未登録のプロバイダー名の場合。</exception>
     public IMigrationRouteDescriptor Resolve(string providerName)
     {
+        ArgumentNullException.ThrowIfNull(providerName);
         // "graph" は "sharepoint" の旧エイリアス（configs/config.json の destinationProvider 旧値）
         var normalized = string.Equals(providerName, "graph", StringComparison.OrdinalIgnoreCase)
             ? MigrationProviderNames.SharePoint

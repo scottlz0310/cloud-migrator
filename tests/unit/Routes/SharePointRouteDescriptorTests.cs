@@ -13,6 +13,7 @@ public class SharePointRouteDescriptorTests
         new() { Paths = new PathOptions { SharePointStateDb = sharePointDb } };
 
     [Fact]
+    // 検証対象: SharePointRouteDescriptor.ProviderName  目的: "sharepoint" を返すことを確認する
     public void ProviderName_ShouldBe_SharePoint()
     {
         var sut = new SharePointRouteDescriptor();
@@ -20,6 +21,7 @@ public class SharePointRouteDescriptorTests
     }
 
     [Fact]
+    // 検証対象: SharePointRouteDescriptor.DisplayName  目的: 空でない表示名を返すことを確認する
     public void DisplayName_ShouldNotBeEmpty()
     {
         var sut = new SharePointRouteDescriptor();
@@ -27,6 +29,7 @@ public class SharePointRouteDescriptorTests
     }
 
     [Fact]
+    // 検証対象: SharePointRouteDescriptor.HasFolderCreationPhase  目的: SP はフォルダ作成フェーズを持つことを確認する
     public void HasFolderCreationPhase_ShouldBeTrue()
     {
         var sut = new SharePointRouteDescriptor();
@@ -34,6 +37,7 @@ public class SharePointRouteDescriptorTests
     }
 
     [Fact]
+    // 検証対象: SharePointRouteDescriptor.StateDbPath  目的: MigratorOptions.Paths.SharePointStateDb の値を返すことを確認する
     public void StateDbPath_ShouldReturn_SharePointStateDb()
     {
         var sut = new SharePointRouteDescriptor();
@@ -48,6 +52,7 @@ public class SharePointRouteDescriptorTests
     [InlineData(SettingsSectionId.HybridRateController)]
     [InlineData(SettingsSectionId.DynamicParallelism)]
     [InlineData(SettingsSectionId.MaxParallelFolderCreations)]
+    // 検証対象: SharePointRouteDescriptor.SettingsSections  目的: SP 専用セクションが含まれることを確認する
     public void SettingsSections_ShouldContain_SharePointSpecificSections(SettingsSectionId section)
     {
         var sut = new SharePointRouteDescriptor();
@@ -58,6 +63,7 @@ public class SharePointRouteDescriptorTests
     [InlineData(SettingsSectionId.SimpleUploadLimit)]
     [InlineData(SettingsSectionId.UploadChunkSize)]
     [InlineData(SettingsSectionId.EnableEnsureFolder)]
+    // 検証対象: SharePointRouteDescriptor.SettingsSections  目的: Dropbox 専用セクションが含まれないことを確認する
     public void SettingsSections_ShouldNotContain_DropboxSpecificSections(SettingsSectionId section)
     {
         var sut = new SharePointRouteDescriptor();
@@ -69,6 +75,7 @@ public class SharePointRouteDescriptorTests
     [InlineData(SettingsSectionId.Timeout)]
     [InlineData(SettingsSectionId.RetryPolicy)]
     [InlineData(SettingsSectionId.FileTransfer)]
+    // 検証対象: SharePointRouteDescriptor.SettingsSections  目的: 共通セクションが含まれることを確認する
     public void SettingsSections_ShouldContain_CommonSections(SettingsSectionId section)
     {
         var sut = new SharePointRouteDescriptor();

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using CloudMigrator.Core.Configuration;
 
 namespace CloudMigrator.Routes.Descriptors;
@@ -20,14 +21,13 @@ public sealed class DropboxRouteDescriptor : IMigrationRouteDescriptor
     public string StateDbPath(MigratorOptions opts) => opts.Paths.DropboxStateDb;
 
     /// <inheritdoc/>
-    public IReadOnlySet<SettingsSectionId> SettingsSections { get; } = new HashSet<SettingsSectionId>
-    {
+    public IReadOnlySet<SettingsSectionId> SettingsSections { get; } = FrozenSet.Create(
         SettingsSectionId.MaxParallelTransfers,
         SettingsSectionId.Timeout,
         SettingsSectionId.RetryPolicy,
         SettingsSectionId.FileTransfer,
         SettingsSectionId.SimpleUploadLimit,
         SettingsSectionId.UploadChunkSize,
-        SettingsSectionId.EnableEnsureFolder,
-    };
+        SettingsSectionId.EnableEnsureFolder
+    );
 }

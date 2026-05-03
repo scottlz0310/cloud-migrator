@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using CloudMigrator.Core.Configuration;
 
 namespace CloudMigrator.Routes.Descriptors;
@@ -20,8 +21,7 @@ public sealed class SharePointRouteDescriptor : IMigrationRouteDescriptor
     public string StateDbPath(MigratorOptions opts) => opts.Paths.SharePointStateDb;
 
     /// <inheritdoc/>
-    public IReadOnlySet<SettingsSectionId> SettingsSections { get; } = new HashSet<SettingsSectionId>
-    {
+    public IReadOnlySet<SettingsSectionId> SettingsSections { get; } = FrozenSet.Create(
         SettingsSectionId.MaxParallelTransfers,
         SettingsSectionId.Timeout,
         SettingsSectionId.RetryPolicy,
@@ -30,6 +30,6 @@ public sealed class SharePointRouteDescriptor : IMigrationRouteDescriptor
         SettingsSectionId.RateControl,
         SettingsSectionId.HybridRateController,
         SettingsSectionId.DynamicParallelism,
-        SettingsSectionId.MaxParallelFolderCreations,
-    };
+        SettingsSectionId.MaxParallelFolderCreations
+    );
 }

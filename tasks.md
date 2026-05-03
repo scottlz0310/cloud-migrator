@@ -28,7 +28,7 @@
 | 順番 | Issue | 種別 | タイトル | 判断 |
 |------|-------|------|----------|------|
 | 1 | [#196](https://github.com/scottlz0310/cloud-migrator/issues/196) | refactor / epic | Dashboard 中心の制御層を MVVM / provider 拡張しやすい構造へ整理する | 次の推奨着手。#195 の Routes プロジェクト（IMigrationRouteDescriptor）が足場として整った。 |
-| 3 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
+| 2 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
 | 保留 | [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) | epic / installer | MSIX パッケージング・Microsoft Store 公開 | MSI 配布 #97 の運用実績、Partner Center、Store 提出素材が前提。現フェーズでは計画保持のみ。 |
 
 ---
@@ -48,9 +48,9 @@
 
 ### 受け入れ条件
 
-- [ ] 責務境界の方針を issue または PR コメントで明文化する。
-- [ ] #189 / #191 との実装順と依存関係を整理する。
-- [ ] 大規模一括リファクタではなく段階的移行の計画を確認する。
+- [x] 責務境界の方針を issue または PR コメントで明文化する。（PR #205 にて実施）
+- [x] #189 / #191 との実装順と依存関係を整理する。（#189/#191 完了済み）
+- [x] 大規模一括リファクタではなく段階的移行の計画を確認する。（#196 epic として分離）
 
 ---
 

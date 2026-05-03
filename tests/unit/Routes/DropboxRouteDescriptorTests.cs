@@ -13,6 +13,7 @@ public class DropboxRouteDescriptorTests
         new() { Paths = new PathOptions { DropboxStateDb = dropboxDb } };
 
     [Fact]
+    // 検証対象: DropboxRouteDescriptor.ProviderName  目的: "dropbox" を返すことを確認する
     public void ProviderName_ShouldBe_Dropbox()
     {
         var sut = new DropboxRouteDescriptor();
@@ -20,6 +21,7 @@ public class DropboxRouteDescriptorTests
     }
 
     [Fact]
+    // 検証対象: DropboxRouteDescriptor.DisplayName  目的: 空でない表示名を返すことを確認する
     public void DisplayName_ShouldNotBeEmpty()
     {
         var sut = new DropboxRouteDescriptor();
@@ -27,6 +29,7 @@ public class DropboxRouteDescriptorTests
     }
 
     [Fact]
+    // 検証対象: DropboxRouteDescriptor.HasFolderCreationPhase  目的: Dropbox はフォルダ作成フェーズを持たないことを確認する
     public void HasFolderCreationPhase_ShouldBeFalse()
     {
         var sut = new DropboxRouteDescriptor();
@@ -34,6 +37,7 @@ public class DropboxRouteDescriptorTests
     }
 
     [Fact]
+    // 検証対象: DropboxRouteDescriptor.StateDbPath  目的: MigratorOptions.Paths.DropboxStateDb の値を返すことを確認する
     public void StateDbPath_ShouldReturn_DropboxStateDb()
     {
         var sut = new DropboxRouteDescriptor();
@@ -46,6 +50,7 @@ public class DropboxRouteDescriptorTests
     [InlineData(SettingsSectionId.SimpleUploadLimit)]
     [InlineData(SettingsSectionId.UploadChunkSize)]
     [InlineData(SettingsSectionId.EnableEnsureFolder)]
+    // 検証対象: DropboxRouteDescriptor.SettingsSections  目的: Dropbox 専用セクションが含まれることを確認する
     public void SettingsSections_ShouldContain_DropboxSpecificSections(SettingsSectionId section)
     {
         var sut = new DropboxRouteDescriptor();
@@ -58,6 +63,7 @@ public class DropboxRouteDescriptorTests
     [InlineData(SettingsSectionId.HybridRateController)]
     [InlineData(SettingsSectionId.DynamicParallelism)]
     [InlineData(SettingsSectionId.MaxParallelFolderCreations)]
+    // 検証対象: DropboxRouteDescriptor.SettingsSections  目的: SP 専用セクションが含まれないことを確認する
     public void SettingsSections_ShouldNotContain_SharePointSpecificSections(SettingsSectionId section)
     {
         var sut = new DropboxRouteDescriptor();
@@ -69,6 +75,7 @@ public class DropboxRouteDescriptorTests
     [InlineData(SettingsSectionId.Timeout)]
     [InlineData(SettingsSectionId.RetryPolicy)]
     [InlineData(SettingsSectionId.FileTransfer)]
+    // 検証対象: DropboxRouteDescriptor.SettingsSections  目的: 共通セクションが含まれることを確認する
     public void SettingsSections_ShouldContain_CommonSections(SettingsSectionId section)
     {
         var sut = new DropboxRouteDescriptor();
