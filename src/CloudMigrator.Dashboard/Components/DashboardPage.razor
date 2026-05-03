@@ -106,9 +106,12 @@ else
     </MudCard>
 
     @* ── タブ構造（MudTabs + 静的 MudTabPanel 3枚） ────────────────────────── *@
-    <MudTabs @bind-ActivePanelIndex="_dashboardTabIndex" Elevation="0" ApplyEffectsToContainer="true">
+    <MudTabs @bind-ActivePanelIndex="_dashboardTabIndex" Class="dashboard-tabs"
+             ActiveTabClass="active-dashboard-tab"
+             Rounded="true" Border="true" Elevation="0"
+             ApplyEffectsToContainer="true">
         @* Tab1: 概要 *@
-        <MudTabPanel Text="概要">
+        <MudTabPanel Text="概要" Icon="@Icons.Material.Filled.Dashboard">
         <MudGrid Class="mt-4">
                 @* ステータスカード行 *@
                 <MudItem xs="6" sm="4" md="2">
@@ -272,7 +275,7 @@ else
         </MudTabPanel>
 
         @* Tab2: 詳細情報 *@
-        <MudTabPanel Text="詳細情報">
+        <MudTabPanel Text="詳細情報" Icon="@Icons.Material.Filled.Analytics">
         <MudGrid Class="mt-4">
             @* レートモニター（_useRateControl 時のみ） *@
                 @if (_useRateControl)
@@ -453,7 +456,7 @@ else
         </MudTabPanel>
 
         @* Tab3: ログ *@
-        <MudTabPanel Text="ログ">
+        <MudTabPanel Text="ログ" Icon="@Icons.Material.Filled.Article">
         <MudCard Elevation="2" Class="mt-4">
             <MudCardHeader>
                     <CardHeaderContent>
