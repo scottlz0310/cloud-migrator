@@ -547,12 +547,10 @@ else
     [Parameter] public EventCallback NavigateToLogs { get; set; }
     private LogEntry[] _recentLogEntries = [];
 
-    private string RouteDisplayLabel => _currentDescriptor?.ProviderName switch
-    {
-        RouteProviderNames.SharePoint => "OneDrive → SharePoint",
-        RouteProviderNames.Dropbox    => "OneDrive → Dropbox",
-        _ => _discovery?.MigrationRoute ?? ""
-    };
+    private string RouteDisplayLabel =>
+        _currentDescriptor is not null
+            ? $"OneDrive → {_currentDescriptor.DisplayName}"
+            : _discovery?.MigrationRoute ?? "";
 
     // ── 計算プロパティ ─────────────────────────────────────────────────────────
     // crawlTotal が確定している場合はそれを分母にする（クロール中は total が増加するため）
@@ -762,7 +760,7 @@ else
         // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
         var opts = OptionsFactory();
         // ルート descriptor を解決する（#207: isDropbox magic literal を HasFolderCreationPhase に置換）
-        // 未登録プロバイダーの場合のみ InvalidOperationException が投げられる
+        // opts.DestinationProvider が null の場合は ArgumentNullException、未登録プロバイダーは InvalidOperationException が投げられる
         try { _currentDescriptor = RouteRegistry.Resolve(opts.DestinationProvider); }
         catch (InvalidOperationException ex) { _currentDescriptor = null; Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました: {Provider}", opts.DestinationProvider); }
         _useRateControl = opts.RateControl.UseRateControl;
