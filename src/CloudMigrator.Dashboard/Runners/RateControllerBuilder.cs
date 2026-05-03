@@ -86,7 +86,6 @@ internal static class RateControllerBuilder
         MigratorOptions opts,
         ITransferStateDb stateDb,
         Action<TimeSpan?>? accOnRateLimit,
-        ITransferRateController? accConcurrencyController,
         ILoggerFactory loggerFactory)
     {
         if (!opts.RateControl.UseRateControl)

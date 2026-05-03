@@ -22,7 +22,7 @@ public interface IMigrationPipelineRunner
     /// 移行パイプラインを実行する。
     /// </summary>
     /// <param name="opts">実行時設定。呼び出し元が <c>AppConfiguration.Build()</c> から取得して渡す。</param>
-    /// <param name="stateDb">状態 DB。呼び出し元が <see cref="ITransferStateDbAccessor"/> から解決して渡す。</param>
+    /// <param name="stateDb">状態 DB。呼び出し元が <c>ITransferStateDbAccessor</c> から解決して渡す。</param>
     /// <param name="ct">キャンセルトークン。</param>
     Task RunAsync(MigratorOptions opts, ITransferStateDb stateDb, CancellationToken ct);
 }

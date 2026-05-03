@@ -49,7 +49,6 @@ public sealed class DropboxPipelineRunner : IMigrationPipelineRunner
         var rate = RateControllerBuilder.BuildRateController(
             opts, stateDb,
             acc.OnRateLimit,
-            acc.ConcurrencyController,
             _loggerFactory);
 
         var effectiveOnRateLimit = rate.IsEmpty ? acc.OnRateLimit : rate.FinalOnRateLimit;
