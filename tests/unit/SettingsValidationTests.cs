@@ -188,4 +188,60 @@ public class SettingsValidationTests
     [Fact]
     public void ValidateAdaptiveInitialDegree_UseRateControlTrue_ReturnsNull() =>
         SettingsValidation.ValidateAdaptiveInitialDegree(true, true, -999).Should().BeNull();
+
+    // ── Dropbox 転送設定バリデーション（#189）──────────────────────────────
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(100)]
+    [InlineData(2000)]
+    public void ValidateDropboxSimpleUploadLimitMb_DropboxRoute_ValidValues_ReturnsNull(int v)
+    {
+        // 検証対象: ValidateDropboxSimpleUploadLimitMb  目的: 1〜2000 の範囲ではエラーなし
+        SettingsValidation.ValidateDropboxSimpleUploadLimitMb(true, v).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(2001)]
+    public void ValidateDropboxSimpleUploadLimitMb_DropboxRoute_OutOfRange_ReturnsError(int v)
+    {
+        // 検証対象: ValidateDropboxSimpleUploadLimitMb  目的: 範囲外でエラーを返すこと
+        SettingsValidation.ValidateDropboxSimpleUploadLimitMb(true, v).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ValidateDropboxSimpleUploadLimitMb_NonDropboxRoute_ReturnsNull()
+    {
+        // 検証対象: ValidateDropboxSimpleUploadLimitMb  目的: Dropbox 路線以外は値に関係なく null
+        SettingsValidation.ValidateDropboxSimpleUploadLimitMb(false, 0).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(500)]
+    public void ValidateDropboxUploadChunkSizeMb_DropboxRoute_ValidValues_ReturnsNull(int v)
+    {
+        // 検証対象: ValidateDropboxUploadChunkSizeMb  目的: 1〜500 の範囲ではエラーなし
+        SettingsValidation.ValidateDropboxUploadChunkSizeMb(true, v).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(501)]
+    public void ValidateDropboxUploadChunkSizeMb_DropboxRoute_OutOfRange_ReturnsError(int v)
+    {
+        // 検証対象: ValidateDropboxUploadChunkSizeMb  目的: 範囲外でエラーを返すこと
+        SettingsValidation.ValidateDropboxUploadChunkSizeMb(true, v).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ValidateDropboxUploadChunkSizeMb_NonDropboxRoute_ReturnsNull()
+    {
+        // 検証対象: ValidateDropboxUploadChunkSizeMb  目的: Dropbox 路線以外は値に関係なく null
+        SettingsValidation.ValidateDropboxUploadChunkSizeMb(false, 0).Should().BeNull();
+    }
 }

@@ -1084,7 +1084,130 @@ public sealed class ConfigurationServiceTests : IDisposable
         result.SharePointSiteDisplayName.Should().Be("既存サイト名");
     }
 
+    // ── Dropbox 転送設定（#189）─────────────────────────────────────────
+
+    [Fact]
+    public async Task GetConfigAsync_DropboxSection_ReturnsDropboxValues()
+    {
+        // 検証対象: GetConfigAsync（dropbox セクション）  目的: JSON の dropbox 値が正しく読み取られること
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "dropbox",
+                dropbox = new
+                {
+                    simpleUploadLimitMb = 150,
+                    uploadChunkSizeMb = 16,
+                    enableEnsureFolder = true
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.DropboxSimpleUploadLimitMb.Should().Be(150);
+        result.DropboxUploadChunkSizeMb.Should().Be(16);
+        result.DropboxEnableEnsureFolder.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_NoDropboxSection_ReturnsDefaults()
+    {
+        // 検証対象: GetConfigAsync（dropbox セクションなし）  目的: dropbox セクションが存在しない場合はデフォルト値を返すこと
+        var svc = new ConfigurationService(_configPath);
+
+        var result = await svc.GetConfigAsync();
+
+        result.DropboxSimpleUploadLimitMb.Should().Be(100);
+        result.DropboxUploadChunkSizeMb.Should().Be(8);
+        result.DropboxEnableEnsureFolder.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_DropboxFields_WritesToDropboxSection()
+    {
+        // 検証対象: UpdateConfigAsync（dropbox フィールド保存）  目的: dropbox 設定が config.json に正しく書き込まれること
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(
+            DropboxSimpleUploadLimitMb: 200,
+            DropboxUploadChunkSizeMb: 32,
+            DropboxEnableEnsureFolder: true));
+        var result = await svc.GetConfigAsync();
+
+        result.DropboxSimpleUploadLimitMb.Should().Be(200);
+        result.DropboxUploadChunkSizeMb.Should().Be(32);
+        result.DropboxEnableEnsureFolder.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsync_DropboxFields_PreservesExistingRootPath()
+    {
+        // 検証対象: UpdateConfigAsync（dropbox.rootPath 保護）  目的: dropbox フィールド更新時に既存の rootPath が失われないこと
+        WriteConfig(new
+        {
+            migrator = new
+            {
+                maxParallelTransfers = 4,
+                chunkSizeMb = 5,
+                largeFileThresholdMb = 4,
+                retryCount = 3,
+                timeoutSec = 300,
+                destinationRoot = string.Empty,
+                destinationProvider = "dropbox",
+                dropbox = new
+                {
+                    rootPath = "/既存のパス",
+                    simpleUploadLimitMb = 100
+                }
+            }
+        });
+        var svc = new ConfigurationService(_configPath);
+
+        await svc.UpdateConfigAsync(new ConfigUpdateDto(DropboxUploadChunkSizeMb: 16));
+
+        var json = await File.ReadAllTextAsync(_configPath);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("migrator")
+            .GetProperty("dropbox")
+            .GetProperty("rootPath")
+            .GetString()
+            .Should().Be("/既存のパス");
+    }
+
     // ── ヘルパー ────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2001)]
+    // 検証対象: UpdateConfigAsync（DropboxSimpleUploadLimitMb 範囲外）  目的: 1〜2000 外の値で ArgumentException が発生すること
+    public async Task UpdateConfigAsync_WhenDropboxSimpleUploadLimitMbOutOfRange_ThrowsArgumentException(int value)
+    {
+        WriteConfig(new { });
+        var svc = new ConfigurationService(_configPath);
+        var act = () => svc.UpdateConfigAsync(new ConfigUpdateDto(DropboxSimpleUploadLimitMb: value));
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(501)]
+    // 検証対象: UpdateConfigAsync（DropboxUploadChunkSizeMb 範囲外）  目的: 1〜500 外の値で ArgumentException が発生すること
+    public async Task UpdateConfigAsync_WhenDropboxUploadChunkSizeMbOutOfRange_ThrowsArgumentException(int value)
+    {
+        WriteConfig(new { });
+        var svc = new ConfigurationService(_configPath);
+        var act = () => svc.UpdateConfigAsync(new ConfigUpdateDto(DropboxUploadChunkSizeMb: value));
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
 
     private void WriteConfig(object data)
     {

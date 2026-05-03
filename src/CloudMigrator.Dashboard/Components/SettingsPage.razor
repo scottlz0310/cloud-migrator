@@ -1,3 +1,4 @@
+@using CloudMigrator.Core.Wizard
 @inject IConfigurationService ConfigService
 @inject ITransferStateDbAccessor StateDbAccessor
 @inject ITransferJobService JobService
@@ -59,7 +60,7 @@ else
                         <MudText Typo="Typo.overline" Color="Color.Secondary">転送先</MudText>
                         @switch (_discovery.MigrationRoute)
                         {
-                            case "OneDriveToSharePoint":
+                            case nameof(WizardRoute.OneDriveToSharePoint):
                                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
                                     <MudText Typo="Typo.body2">@SharePointSiteDisplay</MudText>
                                     @if (SharePointSiteWebUrlSafe is { } safeUrl)
@@ -82,7 +83,7 @@ else
                                     @(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "（ライブラリルート）")
                                 </MudText>
                                 break;
-                            case "OneDriveToDropbox":
+                            case nameof(WizardRoute.OneDriveToDropbox):
                                 <MudText Typo="Typo.body2">Dropbox</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary" Style="word-break: break-all;">
                                     @(_discovery.DropboxDestFolderPath is { Length: > 0 } dp ? dp : "（Dropbox ルート）")
@@ -176,6 +177,8 @@ else
                 <MudExpansionPanel Text="詳細設定（上級者向け）" Dense="true">
                     <MudGrid Spacing="2" Class="pt-2">
 
+                        @if (IsSharePointRoute)
+                        {
                         @* 転送制御エンジン *@
                         <MudItem xs="12">
                             <MudText Typo="Typo.subtitle2" Class="mb-1">転送制御エンジン</MudText>
@@ -371,6 +374,7 @@ else
                                 </MudItem>
                             }
                         }
+                        }
 
                         @* ファイル転送詳細設定 *@
                         <MudItem xs="12">
@@ -391,6 +395,8 @@ else
                                              Variant="Variant.Outlined"
                                              HelperText="これより大きいファイルをチャンクアップロードに切り替える閾値。デフォルト: 4" />
                         </MudItem>
+                        @if (IsSharePointRoute)
+                        {
                         <MudItem xs="12" sm="6">
                             <MudNumericField @bind-Value="_editMaxParallelFolderCreations"
                                              Label="最大並行フォルダ作成数"
@@ -398,6 +404,38 @@ else
                                              Variant="Variant.Outlined"
                                              HelperText="フォルダ構造の作成フェーズで同時に作成するフォルダ数の上限。デフォルト: 4" />
                         </MudItem>
+                        }
+
+                        @if (IsDropboxRoute)
+                        {
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-1">Dropbox 転送設定</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editDropboxSimpleUploadLimitMb"
+                                             Label="単純アップロード上限 (MB)"
+                                             Min="1" Max="2000"
+                                             Variant="Variant.Outlined"
+                                             HelperText="この値以下のファイルは単純アップロード、超過は upload session（チャンク）を使用します。デフォルト: 100" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="_editDropboxUploadChunkSizeMb"
+                                             Label="チャンクサイズ (MB) [Dropbox]"
+                                             Min="1" Max="500"
+                                             Variant="Variant.Outlined"
+                                             HelperText="upload session 使用時の 1 チャンクのサイズ。デフォルト: 8" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudSwitch @bind-Value="_editDropboxEnableEnsureFolder"
+                                       Label="アップロード前に親フォルダを事前作成する（EnableEnsureFolder）"
+                                       Color="Color.Secondary" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                通常は無効（Dropbox はファイルアップロード時に親フォルダを自動作成するため）。
+                                有効化すると API 呼び出しが増加します。デバッグ・互換性確認時のみ使用してください。
+                            </MudText>
+                        </MudItem>
+                        }
 
                     </MudGrid>
                 </MudExpansionPanel>
@@ -497,9 +535,19 @@ else
     private double _editRcEmergencyInflightDecay;
     private double _editRcAddStep;
     private string _editRcLatencyMode = "None";
+    // Dropbox 転送設定（#189）
+    private int _editDropboxSimpleUploadLimitMb;
+    private int _editDropboxUploadChunkSizeMb;
+    private bool _editDropboxEnableEnsureFolder;
     // 表示設定（#177/#178）
     private int _editGraphColumns;
     private string _editThemeMode = "system";
+
+    private bool IsSharePointRoute =>
+        string.Equals(_discovery?.MigrationRoute, nameof(WizardRoute.OneDriveToSharePoint), StringComparison.Ordinal);
+
+    private bool IsDropboxRoute =>
+        string.Equals(_discovery?.MigrationRoute, nameof(WizardRoute.OneDriveToDropbox), StringComparison.Ordinal);
 
     private string SharePointSiteDisplay =>
         _discovery?.SharePointSiteDisplayName is { Length: > 0 } sn ? sn :
@@ -587,22 +635,28 @@ else
         _editRcLatencyMode = cfg.RcLatencyMode;
         _editGraphColumns = cfg.GraphColumns;
         _editThemeMode = cfg.ThemeMode;
+        _editDropboxSimpleUploadLimitMb = cfg.DropboxSimpleUploadLimitMb;
+        _editDropboxUploadChunkSizeMb = cfg.DropboxUploadChunkSizeMb;
+        _editDropboxEnableEnsureFolder = cfg.DropboxEnableEnsureFolder;
     }
 
     private async Task SaveTransferSettingsAsync()
     {
         var err =
             SettingsValidation.ValidateMaxParallelTransfers(_editMaxParallelTransfers) ??
-            SettingsValidation.ValidateMaxParallelFolderCreations(_editMaxParallelFolderCreations) ??
             SettingsValidation.ValidateChunkSizeMb(_editChunkSizeMb) ??
             SettingsValidation.ValidateLargeFileThresholdMb(_editLargeFileThresholdMb) ??
             SettingsValidation.ValidateRetryCount(_editRetryCount) ??
             SettingsValidation.ValidateTimeoutSec(_editTimeoutSec) ??
-            SettingsValidation.ValidateRcWindowSecs(_editUseRateControl, _editRcShortWindowSec, _editRcLongWindowSec) ??
-            SettingsValidation.ValidateRcDecayFactors(_editUseRateControl, _editRcMinDecayFactor, _editRcMaxDecayFactor) ??
-            SettingsValidation.ValidateAdaptiveDecreasePercent(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyDecreasePercent) ??
-            SettingsValidation.ValidateAdaptiveIncreaseIntervalSec(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyIncreaseIntervalSec) ??
-            SettingsValidation.ValidateAdaptiveInitialDegree(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyInitialDegree);
+            // SharePoint 専用項目は Dropbox 路線では非表示のためバリデーションをスキップする
+            (IsSharePointRoute ? SettingsValidation.ValidateMaxParallelFolderCreations(_editMaxParallelFolderCreations) : null) ??
+            (IsSharePointRoute ? SettingsValidation.ValidateRcWindowSecs(_editUseRateControl, _editRcShortWindowSec, _editRcLongWindowSec) : null) ??
+            (IsSharePointRoute ? SettingsValidation.ValidateRcDecayFactors(_editUseRateControl, _editRcMinDecayFactor, _editRcMaxDecayFactor) : null) ??
+            (IsSharePointRoute ? SettingsValidation.ValidateAdaptiveDecreasePercent(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyDecreasePercent) : null) ??
+            (IsSharePointRoute ? SettingsValidation.ValidateAdaptiveIncreaseIntervalSec(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyIncreaseIntervalSec) : null) ??
+            (IsSharePointRoute ? SettingsValidation.ValidateAdaptiveInitialDegree(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyInitialDegree) : null) ??
+            SettingsValidation.ValidateDropboxSimpleUploadLimitMb(IsDropboxRoute, _editDropboxSimpleUploadLimitMb) ??
+            SettingsValidation.ValidateDropboxUploadChunkSizeMb(IsDropboxRoute, _editDropboxUploadChunkSizeMb);
         if (err is not null)
         {
             Snackbar.Add(err, Severity.Warning);
@@ -616,31 +670,34 @@ else
             // UseRateControl=OFF: RC フィールドを null → 同上
             var update = new ConfigUpdateDto(
                 MaxParallelTransfers: _editMaxParallelTransfers,
-                MaxParallelFolderCreations: _editMaxParallelFolderCreations,
+                MaxParallelFolderCreations: IsSharePointRoute ? _editMaxParallelFolderCreations : null,
                 ChunkSizeMb: _editChunkSizeMb,
                 LargeFileThresholdMb: _editLargeFileThresholdMb,
                 RetryCount: _editRetryCount,
                 TimeoutSec: _editTimeoutSec,
-                AdaptiveConcurrencyEnabled: _editUseRateControl ? null : _editAdaptiveConcurrencyEnabled,
-                AdaptiveConcurrencyInitialDegree: _editUseRateControl ? null : _editAdaptiveConcurrencyInitialDegree,
-                AdaptiveConcurrencyDecreasePercent: _editUseRateControl ? null : _editAdaptiveConcurrencyDecreasePercent,
-                AdaptiveConcurrencyIncreaseIntervalSec: _editUseRateControl ? null : _editAdaptiveConcurrencyIncreaseIntervalSec,
-                UseRateControl: _editUseRateControl,
-                RcShortWindowSec: _editUseRateControl ? _editRcShortWindowSec : null,
-                RcLongWindowSec: _editUseRateControl ? _editRcLongWindowSec : null,
-                RcEmergencyThresholdPct: _editUseRateControl ? _editRcEmergencyThresholdPct : null,
-                RcSlowdownThresholdPct: _editUseRateControl ? _editRcSlowdownThresholdPct : null,
-                RcDecayK: _editUseRateControl ? _editRcDecayK : null,
-                RcMinDecayFactor: _editUseRateControl ? _editRcMinDecayFactor : null,
-                RcMaxDecayFactor: _editUseRateControl ? _editRcMaxDecayFactor : null,
-                RcInFlightThreshold: _editUseRateControl ? _editRcInFlightThreshold : null,
-                RcMaxConcurrency: _editUseRateControl ? _editRcMaxConcurrency : null,
-                UseHybridController: _editUseRateControl ? _editUseHybridController : null,
-                RcCooldownSec: (_editUseRateControl && _editUseHybridController) ? _editRcCooldownSec : null,
-                RcEmergencyDecay: (_editUseRateControl && _editUseHybridController) ? _editRcEmergencyDecay : null,
-                RcEmergencyInflightDecay: (_editUseRateControl && _editUseHybridController) ? _editRcEmergencyInflightDecay : null,
-                RcAddStep: (_editUseRateControl && _editUseHybridController) ? _editRcAddStep : null,
-                RcLatencyMode: (_editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null);
+                AdaptiveConcurrencyEnabled: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyEnabled : null,
+                AdaptiveConcurrencyInitialDegree: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyInitialDegree : null,
+                AdaptiveConcurrencyDecreasePercent: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyDecreasePercent : null,
+                AdaptiveConcurrencyIncreaseIntervalSec: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyIncreaseIntervalSec : null,
+                UseRateControl: IsSharePointRoute ? _editUseRateControl : (bool?)null,
+                RcShortWindowSec: (IsSharePointRoute && _editUseRateControl) ? _editRcShortWindowSec : null,
+                RcLongWindowSec: (IsSharePointRoute && _editUseRateControl) ? _editRcLongWindowSec : null,
+                RcEmergencyThresholdPct: (IsSharePointRoute && _editUseRateControl) ? _editRcEmergencyThresholdPct : null,
+                RcSlowdownThresholdPct: (IsSharePointRoute && _editUseRateControl) ? _editRcSlowdownThresholdPct : null,
+                RcDecayK: (IsSharePointRoute && _editUseRateControl) ? _editRcDecayK : null,
+                RcMinDecayFactor: (IsSharePointRoute && _editUseRateControl) ? _editRcMinDecayFactor : null,
+                RcMaxDecayFactor: (IsSharePointRoute && _editUseRateControl) ? _editRcMaxDecayFactor : null,
+                RcInFlightThreshold: (IsSharePointRoute && _editUseRateControl) ? _editRcInFlightThreshold : null,
+                RcMaxConcurrency: (IsSharePointRoute && _editUseRateControl) ? _editRcMaxConcurrency : null,
+                UseHybridController: (IsSharePointRoute && _editUseRateControl) ? _editUseHybridController : null,
+                RcCooldownSec: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcCooldownSec : null,
+                RcEmergencyDecay: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcEmergencyDecay : null,
+                RcEmergencyInflightDecay: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcEmergencyInflightDecay : null,
+                RcAddStep: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcAddStep : null,
+                RcLatencyMode: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null,
+                DropboxSimpleUploadLimitMb: IsDropboxRoute ? _editDropboxSimpleUploadLimitMb : null,
+                DropboxUploadChunkSizeMb: IsDropboxRoute ? _editDropboxUploadChunkSizeMb : null,
+                DropboxEnableEnsureFolder: IsDropboxRoute ? _editDropboxEnableEnsureFolder : null);
             await ConfigService.UpdateConfigAsync(update);
             // 表示設定の編集中の値を保護してから転送設定のみ再反映する
             var savedTheme = _editThemeMode;
