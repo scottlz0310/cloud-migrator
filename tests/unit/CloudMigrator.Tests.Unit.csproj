@@ -38,6 +38,7 @@
     <ProjectReference Include="..\..\src\CloudMigrator.Observability\CloudMigrator.Observability.csproj" />
     <ProjectReference Include="..\..\src\CloudMigrator.Providers.Dropbox\CloudMigrator.Providers.Dropbox.csproj" />
     <ProjectReference Include="..\..\src\CloudMigrator.Providers.Graph\CloudMigrator.Providers.Graph.csproj" />
+    <ProjectReference Include="..\..\src\CloudMigrator.Routes\CloudMigrator.Routes.csproj" />
   </ItemGroup>
 
 </Project>
