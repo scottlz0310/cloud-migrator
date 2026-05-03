@@ -9,7 +9,7 @@ namespace CloudMigrator.Routes.Descriptors;
 public sealed class SharePointRouteDescriptor : IMigrationRouteDescriptor
 {
     /// <inheritdoc/>
-    public string ProviderName => MigrationProviderNames.SharePoint;
+    public string ProviderName => RouteProviderNames.SharePoint;
 
     /// <inheritdoc/>
     public string DisplayName => "SharePoint Online";

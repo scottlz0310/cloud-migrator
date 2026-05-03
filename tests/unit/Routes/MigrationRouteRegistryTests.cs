@@ -37,7 +37,7 @@ public class MigrationRouteRegistryTests
     public void Resolve_ShouldBeCaseInsensitive_ForSharePoint(string providerName)
     {
         var registry = BuildDefault();
-        registry.Resolve(providerName).ProviderName.Should().Be(MigrationProviderNames.SharePoint);
+        registry.Resolve(providerName).ProviderName.Should().Be(RouteProviderNames.SharePoint);
     }
 
     [Theory]
@@ -48,7 +48,7 @@ public class MigrationRouteRegistryTests
     public void Resolve_ShouldBeCaseInsensitive_ForDropbox(string providerName)
     {
         var registry = BuildDefault();
-        registry.Resolve(providerName).ProviderName.Should().Be(MigrationProviderNames.Dropbox);
+        registry.Resolve(providerName).ProviderName.Should().Be(RouteProviderNames.Dropbox);
     }
 
     [Fact]

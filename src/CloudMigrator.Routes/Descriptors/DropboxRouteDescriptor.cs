@@ -9,7 +9,7 @@ namespace CloudMigrator.Routes.Descriptors;
 public sealed class DropboxRouteDescriptor : IMigrationRouteDescriptor
 {
     /// <inheritdoc/>
-    public string ProviderName => MigrationProviderNames.Dropbox;
+    public string ProviderName => RouteProviderNames.Dropbox;
 
     /// <inheritdoc/>
     public string DisplayName => "Dropbox";

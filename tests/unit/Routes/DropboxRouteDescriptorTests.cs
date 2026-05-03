@@ -17,7 +17,7 @@ public class DropboxRouteDescriptorTests
     public void ProviderName_ShouldBe_Dropbox()
     {
         var sut = new DropboxRouteDescriptor();
-        sut.ProviderName.Should().Be(MigrationProviderNames.Dropbox);
+        sut.ProviderName.Should().Be(RouteProviderNames.Dropbox);
     }
 
     [Fact]

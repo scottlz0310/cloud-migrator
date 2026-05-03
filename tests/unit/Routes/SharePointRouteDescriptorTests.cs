@@ -17,7 +17,7 @@ public class SharePointRouteDescriptorTests
     public void ProviderName_ShouldBe_SharePoint()
     {
         var sut = new SharePointRouteDescriptor();
-        sut.ProviderName.Should().Be(MigrationProviderNames.SharePoint);
+        sut.ProviderName.Should().Be(RouteProviderNames.SharePoint);
     }
 
     [Fact]

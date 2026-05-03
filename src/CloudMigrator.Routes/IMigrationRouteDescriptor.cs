@@ -12,7 +12,7 @@ public interface IMigrationRouteDescriptor
     /// <summary>
     /// プロバイダー識別子（例: "sharepoint", "dropbox"）。
     /// <see cref="MigratorOptions.DestinationProvider"/> の値と対応する。
-    /// <see cref="MigrationProviderNames"/> の定数を使用する。
+    /// <see cref="RouteProviderNames"/> の定数を使用する。
     /// </summary>
     string ProviderName { get; }
 

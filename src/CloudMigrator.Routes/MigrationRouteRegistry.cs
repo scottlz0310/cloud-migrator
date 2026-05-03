@@ -31,7 +31,7 @@ public sealed class MigrationRouteRegistry
         ArgumentNullException.ThrowIfNull(providerName);
         // "graph" は "sharepoint" の旧エイリアス（configs/config.json の destinationProvider 旧値）
         var normalized = string.Equals(providerName, "graph", StringComparison.OrdinalIgnoreCase)
-            ? MigrationProviderNames.SharePoint
+            ? RouteProviderNames.SharePoint
             : providerName;
         return _descriptors.TryGetValue(normalized, out var d)
             ? d
