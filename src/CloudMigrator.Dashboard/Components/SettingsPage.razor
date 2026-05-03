@@ -5,6 +5,7 @@
 @inject Func<MigratorOptions> OptionsFactory
 @inject ISnackbar Snackbar
 @inject ILogger<SettingsPage> Logger
+@inject MigrationRouteRegistry RouteRegistry
 
 <MudText Typo="Typo.h5" Class="mb-4">設定</MudText>
 
@@ -31,13 +32,9 @@ else
                 <MudStack Spacing="3">
                     <div>
                         <MudText Typo="Typo.overline" Color="Color.Secondary">移行ルート</MudText>
-                        <MudText Typo="Typo.body2">@(_discovery.MigrationRoute switch
-                        {
-                            "OneDriveToSharePoint" => "OneDrive → SharePoint",
-                            "OneDriveToDropbox" => "OneDrive → Dropbox",
-                            null or "" => "未設定",
-                            _ => "未設定"
-                        })</MudText>
+                        <MudText Typo="Typo.body2">@(_currentDescriptor is not null
+                            ? $"OneDrive → {_currentDescriptor.DisplayName}"
+                            : (_discovery?.MigrationRoute is { Length: > 0 } ? _discovery.MigrationRoute : "未設定"))</MudText>
                     </div>
                     <MudDivider />
                     <div>
@@ -177,7 +174,7 @@ else
                 <MudExpansionPanel Text="詳細設定（上級者向け）" Dense="true">
                     <MudGrid Spacing="2" Class="pt-2">
 
-                        @if (IsSharePointRoute)
+                        @if (HasSection(SettingsSectionId.TransferEngine))
                         {
                         @* 転送制御エンジン *@
                         <MudItem xs="12">
@@ -395,7 +392,7 @@ else
                                              Variant="Variant.Outlined"
                                              HelperText="これより大きいファイルをチャンクアップロードに切り替える閾値。デフォルト: 4" />
                         </MudItem>
-                        @if (IsSharePointRoute)
+                        @if (HasSection(SettingsSectionId.MaxParallelFolderCreations))
                         {
                         <MudItem xs="12" sm="6">
                             <MudNumericField @bind-Value="_editMaxParallelFolderCreations"
@@ -406,7 +403,7 @@ else
                         </MudItem>
                         }
 
-                        @if (IsDropboxRoute)
+                        @if (HasSection(SettingsSectionId.SimpleUploadLimit))
                         {
                         <MudItem xs="12">
                             <MudDivider Class="my-2" />
@@ -503,6 +500,7 @@ else
 
     private ConfigDto? _config;
     private DiscoveryConfigDto? _discovery;
+    private IMigrationRouteDescriptor? _currentDescriptor;
     private bool _isRebuilding;
     private MudMessageBox? _confirmBox;
 
@@ -543,11 +541,9 @@ else
     private int _editGraphColumns;
     private string _editThemeMode = "system";
 
-    private bool IsSharePointRoute =>
-        string.Equals(_discovery?.MigrationRoute, nameof(WizardRoute.OneDriveToSharePoint), StringComparison.Ordinal);
-
-    private bool IsDropboxRoute =>
-        string.Equals(_discovery?.MigrationRoute, nameof(WizardRoute.OneDriveToDropbox), StringComparison.Ordinal);
+    // セクション表示可否判定（#208: IsSharePointRoute/IsDropboxRoute magic literal を descriptor.SettingsSections 経由に置換）
+    private bool HasSection(SettingsSectionId id) =>
+        _currentDescriptor?.SettingsSections.Contains(id) == true;
 
     private string SharePointSiteDisplay =>
         _discovery?.SharePointSiteDisplayName is { Length: > 0 } sn ? sn :
@@ -589,6 +585,19 @@ else
         {
             Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗したため、未設定として扱います。");
             _discovery = null;
+        }
+
+        // ルート descriptor を解決する（#208: IsSharePointRoute/IsDropboxRoute を HasSection 経由に置換）
+        // opts.DestinationProvider が null の場合は ArgumentNullException、未登録プロバイダーは InvalidOperationException が投げられる
+        try
+        {
+            var opts = OptionsFactory();
+            _currentDescriptor = RouteRegistry.Resolve(opts.DestinationProvider);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _currentDescriptor = null;
+            Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました。");
         }
     }
 
@@ -649,14 +658,14 @@ else
             SettingsValidation.ValidateRetryCount(_editRetryCount) ??
             SettingsValidation.ValidateTimeoutSec(_editTimeoutSec) ??
             // SharePoint 専用項目は Dropbox 路線では非表示のためバリデーションをスキップする
-            (IsSharePointRoute ? SettingsValidation.ValidateMaxParallelFolderCreations(_editMaxParallelFolderCreations) : null) ??
-            (IsSharePointRoute ? SettingsValidation.ValidateRcWindowSecs(_editUseRateControl, _editRcShortWindowSec, _editRcLongWindowSec) : null) ??
-            (IsSharePointRoute ? SettingsValidation.ValidateRcDecayFactors(_editUseRateControl, _editRcMinDecayFactor, _editRcMaxDecayFactor) : null) ??
-            (IsSharePointRoute ? SettingsValidation.ValidateAdaptiveDecreasePercent(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyDecreasePercent) : null) ??
-            (IsSharePointRoute ? SettingsValidation.ValidateAdaptiveIncreaseIntervalSec(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyIncreaseIntervalSec) : null) ??
-            (IsSharePointRoute ? SettingsValidation.ValidateAdaptiveInitialDegree(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyInitialDegree) : null) ??
-            SettingsValidation.ValidateDropboxSimpleUploadLimitMb(IsDropboxRoute, _editDropboxSimpleUploadLimitMb) ??
-            SettingsValidation.ValidateDropboxUploadChunkSizeMb(IsDropboxRoute, _editDropboxUploadChunkSizeMb);
+            (HasSection(SettingsSectionId.MaxParallelFolderCreations) ? SettingsValidation.ValidateMaxParallelFolderCreations(_editMaxParallelFolderCreations) : null) ??
+            (HasSection(SettingsSectionId.RateControl) ? SettingsValidation.ValidateRcWindowSecs(_editUseRateControl, _editRcShortWindowSec, _editRcLongWindowSec) : null) ??
+            (HasSection(SettingsSectionId.RateControl) ? SettingsValidation.ValidateRcDecayFactors(_editUseRateControl, _editRcMinDecayFactor, _editRcMaxDecayFactor) : null) ??
+            (HasSection(SettingsSectionId.DynamicParallelism) ? SettingsValidation.ValidateAdaptiveDecreasePercent(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyDecreasePercent) : null) ??
+            (HasSection(SettingsSectionId.DynamicParallelism) ? SettingsValidation.ValidateAdaptiveIncreaseIntervalSec(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyIncreaseIntervalSec) : null) ??
+            (HasSection(SettingsSectionId.DynamicParallelism) ? SettingsValidation.ValidateAdaptiveInitialDegree(_editUseRateControl, _editAdaptiveConcurrencyEnabled, _editAdaptiveConcurrencyInitialDegree) : null) ??
+            SettingsValidation.ValidateDropboxSimpleUploadLimitMb(HasSection(SettingsSectionId.SimpleUploadLimit), _editDropboxSimpleUploadLimitMb) ??
+            SettingsValidation.ValidateDropboxUploadChunkSizeMb(HasSection(SettingsSectionId.UploadChunkSize), _editDropboxUploadChunkSizeMb);
         if (err is not null)
         {
             Snackbar.Add(err, Severity.Warning);
@@ -670,34 +679,34 @@ else
             // UseRateControl=OFF: RC フィールドを null → 同上
             var update = new ConfigUpdateDto(
                 MaxParallelTransfers: _editMaxParallelTransfers,
-                MaxParallelFolderCreations: IsSharePointRoute ? _editMaxParallelFolderCreations : null,
+                MaxParallelFolderCreations: HasSection(SettingsSectionId.MaxParallelFolderCreations) ? _editMaxParallelFolderCreations : null,
                 ChunkSizeMb: _editChunkSizeMb,
                 LargeFileThresholdMb: _editLargeFileThresholdMb,
                 RetryCount: _editRetryCount,
                 TimeoutSec: _editTimeoutSec,
-                AdaptiveConcurrencyEnabled: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyEnabled : null,
-                AdaptiveConcurrencyInitialDegree: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyInitialDegree : null,
-                AdaptiveConcurrencyDecreasePercent: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyDecreasePercent : null,
-                AdaptiveConcurrencyIncreaseIntervalSec: (IsSharePointRoute && !_editUseRateControl) ? _editAdaptiveConcurrencyIncreaseIntervalSec : null,
-                UseRateControl: IsSharePointRoute ? _editUseRateControl : (bool?)null,
-                RcShortWindowSec: (IsSharePointRoute && _editUseRateControl) ? _editRcShortWindowSec : null,
-                RcLongWindowSec: (IsSharePointRoute && _editUseRateControl) ? _editRcLongWindowSec : null,
-                RcEmergencyThresholdPct: (IsSharePointRoute && _editUseRateControl) ? _editRcEmergencyThresholdPct : null,
-                RcSlowdownThresholdPct: (IsSharePointRoute && _editUseRateControl) ? _editRcSlowdownThresholdPct : null,
-                RcDecayK: (IsSharePointRoute && _editUseRateControl) ? _editRcDecayK : null,
-                RcMinDecayFactor: (IsSharePointRoute && _editUseRateControl) ? _editRcMinDecayFactor : null,
-                RcMaxDecayFactor: (IsSharePointRoute && _editUseRateControl) ? _editRcMaxDecayFactor : null,
-                RcInFlightThreshold: (IsSharePointRoute && _editUseRateControl) ? _editRcInFlightThreshold : null,
-                RcMaxConcurrency: (IsSharePointRoute && _editUseRateControl) ? _editRcMaxConcurrency : null,
-                UseHybridController: (IsSharePointRoute && _editUseRateControl) ? _editUseHybridController : null,
-                RcCooldownSec: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcCooldownSec : null,
-                RcEmergencyDecay: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcEmergencyDecay : null,
-                RcEmergencyInflightDecay: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcEmergencyInflightDecay : null,
-                RcAddStep: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcAddStep : null,
-                RcLatencyMode: (IsSharePointRoute && _editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null,
-                DropboxSimpleUploadLimitMb: IsDropboxRoute ? _editDropboxSimpleUploadLimitMb : null,
-                DropboxUploadChunkSizeMb: IsDropboxRoute ? _editDropboxUploadChunkSizeMb : null,
-                DropboxEnableEnsureFolder: IsDropboxRoute ? _editDropboxEnableEnsureFolder : null);
+                AdaptiveConcurrencyEnabled: (HasSection(SettingsSectionId.DynamicParallelism) && !_editUseRateControl) ? _editAdaptiveConcurrencyEnabled : null,
+                AdaptiveConcurrencyInitialDegree: (HasSection(SettingsSectionId.DynamicParallelism) && !_editUseRateControl) ? _editAdaptiveConcurrencyInitialDegree : null,
+                AdaptiveConcurrencyDecreasePercent: (HasSection(SettingsSectionId.DynamicParallelism) && !_editUseRateControl) ? _editAdaptiveConcurrencyDecreasePercent : null,
+                AdaptiveConcurrencyIncreaseIntervalSec: (HasSection(SettingsSectionId.DynamicParallelism) && !_editUseRateControl) ? _editAdaptiveConcurrencyIncreaseIntervalSec : null,
+                UseRateControl: HasSection(SettingsSectionId.RateControl) ? _editUseRateControl : (bool?)null,
+                RcShortWindowSec: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcShortWindowSec : null,
+                RcLongWindowSec: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcLongWindowSec : null,
+                RcEmergencyThresholdPct: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcEmergencyThresholdPct : null,
+                RcSlowdownThresholdPct: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcSlowdownThresholdPct : null,
+                RcDecayK: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcDecayK : null,
+                RcMinDecayFactor: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcMinDecayFactor : null,
+                RcMaxDecayFactor: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcMaxDecayFactor : null,
+                RcInFlightThreshold: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcInFlightThreshold : null,
+                RcMaxConcurrency: (HasSection(SettingsSectionId.RateControl) && _editUseRateControl) ? _editRcMaxConcurrency : null,
+                UseHybridController: (HasSection(SettingsSectionId.HybridRateController) && _editUseRateControl) ? _editUseHybridController : null,
+                RcCooldownSec: (HasSection(SettingsSectionId.HybridRateController) && _editUseRateControl && _editUseHybridController) ? _editRcCooldownSec : null,
+                RcEmergencyDecay: (HasSection(SettingsSectionId.HybridRateController) && _editUseRateControl && _editUseHybridController) ? _editRcEmergencyDecay : null,
+                RcEmergencyInflightDecay: (HasSection(SettingsSectionId.HybridRateController) && _editUseRateControl && _editUseHybridController) ? _editRcEmergencyInflightDecay : null,
+                RcAddStep: (HasSection(SettingsSectionId.HybridRateController) && _editUseRateControl && _editUseHybridController) ? _editRcAddStep : null,
+                RcLatencyMode: (HasSection(SettingsSectionId.HybridRateController) && _editUseRateControl && _editUseHybridController) ? _editRcLatencyMode : null,
+                DropboxSimpleUploadLimitMb: HasSection(SettingsSectionId.SimpleUploadLimit) ? _editDropboxSimpleUploadLimitMb : null,
+                DropboxUploadChunkSizeMb: HasSection(SettingsSectionId.UploadChunkSize) ? _editDropboxUploadChunkSizeMb : null,
+                DropboxEnableEnsureFolder: HasSection(SettingsSectionId.EnableEnsureFolder) ? _editDropboxEnableEnsureFolder : null);
             await ConfigService.UpdateConfigAsync(update);
             // 表示設定の編集中の値を保護してから転送設定のみ再反映する
             var savedTheme = _editThemeMode;
