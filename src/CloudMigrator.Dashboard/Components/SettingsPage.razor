@@ -60,7 +60,7 @@ else
                         <MudText Typo="Typo.overline" Color="Color.Secondary">転送先</MudText>
                         @switch (_discovery.MigrationRoute)
                         {
-                            case "OneDriveToSharePoint":
+                            case nameof(WizardRoute.OneDriveToSharePoint):
                                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
                                     <MudText Typo="Typo.body2">@SharePointSiteDisplay</MudText>
                                     @if (SharePointSiteWebUrlSafe is { } safeUrl)
@@ -83,7 +83,7 @@ else
                                     @(_discovery.SharePointDestFolderPath is { Length: > 0 } q ? q : "（ライブラリルート）")
                                 </MudText>
                                 break;
-                            case "OneDriveToDropbox":
+                            case nameof(WizardRoute.OneDriveToDropbox):
                                 <MudText Typo="Typo.body2">Dropbox</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary" Style="word-break: break-all;">
                                     @(_discovery.DropboxDestFolderPath is { Length: > 0 } dp ? dp : "（Dropbox ルート）")

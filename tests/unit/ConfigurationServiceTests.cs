@@ -1185,6 +1185,30 @@ public sealed class ConfigurationServiceTests : IDisposable
 
     // ── ヘルパー ────────────────────────────────────────────────────────
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2001)]
+    // 検証対象: UpdateConfigAsync（DropboxSimpleUploadLimitMb 範囲外）  目的: 1〜2000 外の値で ArgumentException が発生すること
+    public async Task UpdateConfigAsync_WhenDropboxSimpleUploadLimitMbOutOfRange_ThrowsArgumentException(int value)
+    {
+        WriteConfig(new { });
+        var svc = new ConfigurationService(_configPath);
+        var act = () => svc.UpdateConfigAsync(new ConfigUpdateDto(DropboxSimpleUploadLimitMb: value));
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(501)]
+    // 検証対象: UpdateConfigAsync（DropboxUploadChunkSizeMb 範囲外）  目的: 1〜500 外の値で ArgumentException が発生すること
+    public async Task UpdateConfigAsync_WhenDropboxUploadChunkSizeMbOutOfRange_ThrowsArgumentException(int value)
+    {
+        WriteConfig(new { });
+        var svc = new ConfigurationService(_configPath);
+        var act = () => svc.UpdateConfigAsync(new ConfigUpdateDto(DropboxUploadChunkSizeMb: value));
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
     private void WriteConfig(object data)
     {
         var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });

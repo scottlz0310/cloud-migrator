@@ -557,8 +557,8 @@ public sealed class ConfigurationService : IConfigurationService
     }
 
     private static int GetInt(JsonElement element, string name, int defaultValue)
-        => element.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.Number
-            ? prop.GetInt32()
+        => element.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var v)
+            ? v
             : defaultValue;
 
     private static string GetString(JsonElement element, string name, string defaultValue)
