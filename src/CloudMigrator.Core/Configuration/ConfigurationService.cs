@@ -294,8 +294,8 @@ public sealed class ConfigurationService : IConfigurationService
             var dropboxEnableEnsureFolder = false;
             if (m.TryGetProperty("dropbox", out var dropboxProp) && dropboxProp.ValueKind == JsonValueKind.Object)
             {
-                dropboxSimpleUploadLimitMb = Math.Max(1, GetInt(dropboxProp, "simpleUploadLimitMb", 100));
-                dropboxUploadChunkSizeMb = Math.Max(1, GetInt(dropboxProp, "uploadChunkSizeMb", 8));
+                dropboxSimpleUploadLimitMb = Math.Clamp(GetInt(dropboxProp, "simpleUploadLimitMb", 100), 1, 2000);
+                dropboxUploadChunkSizeMb = Math.Clamp(GetInt(dropboxProp, "uploadChunkSizeMb", 8), 1, 500);
                 dropboxEnableEnsureFolder = dropboxProp.TryGetProperty("enableEnsureFolder", out var eefProp) && eefProp.ValueKind == JsonValueKind.True;
             }
 
@@ -380,10 +380,10 @@ public sealed class ConfigurationService : IConfigurationService
             && !string.Equals(update.RcLatencyMode, "Recent", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(update.RcLatencyMode, "Both", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("RcLatencyMode には None/Baseline/Recent/Both のいずれかを指定してください。", nameof(update));
-        if (update.DropboxSimpleUploadLimitMb.HasValue && update.DropboxSimpleUploadLimitMb.Value < 1)
-            throw new ArgumentException("DropboxSimpleUploadLimitMb は 1 以上である必要があります。", nameof(update));
-        if (update.DropboxUploadChunkSizeMb.HasValue && update.DropboxUploadChunkSizeMb.Value < 1)
-            throw new ArgumentException("DropboxUploadChunkSizeMb は 1 以上である必要があります。", nameof(update));
+        if (update.DropboxSimpleUploadLimitMb.HasValue && update.DropboxSimpleUploadLimitMb.Value is < 1 or > 2000)
+            throw new ArgumentException("DropboxSimpleUploadLimitMb は 1〜2000 の範囲で指定してください。", nameof(update));
+        if (update.DropboxUploadChunkSizeMb.HasValue && update.DropboxUploadChunkSizeMb.Value is < 1 or > 500)
+            throw new ArgumentException("DropboxUploadChunkSizeMb は 1〜500 の範囲で指定してください。", nameof(update));
 
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
