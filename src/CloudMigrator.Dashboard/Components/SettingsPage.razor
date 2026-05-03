@@ -543,8 +543,7 @@ else
     private string _editThemeMode = "system";
 
     private bool IsSharePointRoute =>
-        _discovery is null ||
-        string.Equals(_discovery.MigrationRoute, "OneDriveToSharePoint", StringComparison.Ordinal);
+        string.Equals(_discovery?.MigrationRoute, "OneDriveToSharePoint", StringComparison.Ordinal);
 
     private bool IsDropboxRoute =>
         string.Equals(_discovery?.MigrationRoute, "OneDriveToDropbox", StringComparison.Ordinal);
