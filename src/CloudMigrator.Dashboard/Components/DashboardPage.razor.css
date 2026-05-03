@@ -1,0 +1,9 @@
+/* 非選択タブを控えめに表示（選択状態の視認性向上） */
+::deep .mud-tab:not(.mud-tab-active) {
+    opacity: 0.6;
+}
+
+/* 選択中タブは明確に */
+::deep .mud-tab.mud-tab-active {
+    opacity: 1;
+}

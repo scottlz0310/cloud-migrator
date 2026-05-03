@@ -105,21 +105,13 @@ else
         </MudCardContent>
     </MudCard>
 
-    @* ── タブ構造（モックアップ準拠カスタムタブバー） ─────────────────────── *@
-    <div style="display:flex; border-bottom:1px solid var(--mud-palette-divider); margin-bottom:0;">
-        @foreach (var tab in new[] { ("概要","overview"), ("詳細情報","detail"), ("ログ","log") })
-        {
-            var isActive = _dashboardTab == tab.Item2;
-            <button type="button" @onclick="@(() => _dashboardTab = tab.Item2)"
-                    style="@($"padding:10px 20px; background:none; border:none; cursor:pointer; font-size:14px; font-weight:{(isActive ? 600 : 400)}; color:{(isActive ? "var(--mud-palette-primary)" : "var(--mud-palette-text-secondary)")}; border-bottom:2px solid {(isActive ? "var(--mud-palette-primary)" : "transparent")}; margin-bottom:-1px; transition:color .15s,border-color .15s;")">
-                @tab.Item1
-            </button>
-        }
-    </div>
-
-    @* ── Tab1: 概要 ──────────────────────────────────────────────────────── *@
-    @if (_dashboardTab == "overview")
-    {
+    @* ── タブ構造（MudTabs + 静的 MudTabPanel 3枚） ────────────────────────── *@
+    <MudTabs @bind-ActivePanelIndex="_dashboardTabIndex" Class="dashboard-tabs"
+             ActiveTabClass="active-dashboard-tab"
+             Rounded="true" Border="true" Elevation="0"
+             ApplyEffectsToContainer="true">
+        @* Tab1: 概要 *@
+        <MudTabPanel Text="概要" Icon="@Icons.Material.Filled.Dashboard">
         <MudGrid Class="mt-4">
                 @* ステータスカード行 *@
                 <MudItem xs="6" sm="4" md="2">
@@ -280,11 +272,10 @@ else
                     </MudItem>
                 }
         </MudGrid>
-    }
+        </MudTabPanel>
 
-    @* ── Tab2: 詳細情報 ──────────────────────────────────────────────────── *@
-    @if (_dashboardTab == "detail")
-    {
+        @* Tab2: 詳細情報 *@
+        <MudTabPanel Text="詳細情報" Icon="@Icons.Material.Filled.Analytics">
         <MudGrid Class="mt-4">
             @* レートモニター（_useRateControl 時のみ） *@
                 @if (_useRateControl)
@@ -462,11 +453,10 @@ else
                     </MudItem>
                 }
         </MudGrid>
-    }
+        </MudTabPanel>
 
-    @* ── Tab3: ログ ──────────────────────────────────────────────────────── *@
-    @if (_dashboardTab == "log")
-    {
+        @* Tab3: ログ *@
+        <MudTabPanel Text="ログ" Icon="@Icons.Material.Filled.Article">
         <MudCard Elevation="2" Class="mt-4">
             <MudCardHeader>
                     <CardHeaderContent>
@@ -499,7 +489,8 @@ else
                     </div>
                 </MudCardContent>
         </MudCard>
-    }
+        </MudTabPanel>
+    </MudTabs>
 }
 
 @* ── #198: ルート・転送パス変更検出確認ダイアログ ────────────────────────── *@
@@ -521,7 +512,7 @@ else
 
 @code {
     // ── タブ ────────────────────────────────────────────────────────────────
-    private string _dashboardTab = "overview";
+    private int _dashboardTabIndex = 0;
 
     // ── サマリー & ジョブ ──────────────────────────────────────────────────────
     private TransferDbSummary? _summary;

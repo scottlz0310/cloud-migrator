@@ -24,6 +24,19 @@
             display: flex;
             align-items: center;
         }
+        /* 非選択タブを控えめに */
+        .dashboard-tabs .mud-tab {
+            opacity: 0.65;
+            font-weight: 500;
+        }
+        /* 選択中タブを強調（背景・太字・角丸） */
+        .dashboard-tabs .active-dashboard-tab {
+            opacity: 1;
+            font-weight: 700;
+            background-color: var(--mud-palette-primary-hover);
+            color: var(--mud-palette-primary);
+            border-radius: 10px 10px 0 0;
+        }
     </style>
 </head>
 <body>

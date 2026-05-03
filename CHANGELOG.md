@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Refactored
+
+- **DashboardPage タブバーを MudTabs 静的 MudTabPanel に戻す（#191）**
+  - PR #188 で導入したカスタム `<button>` タブバー（`@foreach` + inline style）を削除し、MudBlazor 標準の `MudTabs` + 静的 `MudTabPanel` 3 枚に変更
+  - 「概要」「詳細情報」「ログ」の各パネルを `@foreach` を使わず静的に配置
+  - `_dashboardTab`（string）を `_dashboardTabIndex`（int）に置き換え
+  - キーボード操作と ARIA 属性が MudBlazor 標準挙動に戻った
+  - MUD0002 アナライザーエラーが発生しないことを確認
+
 ### Fixed
 
 - **ルート・転送パス変更時の state DB 初期化を必須化（#198）**
