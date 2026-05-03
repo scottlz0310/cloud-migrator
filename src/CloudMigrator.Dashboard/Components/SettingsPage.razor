@@ -1,3 +1,4 @@
+@using CloudMigrator.Core.Wizard
 @inject IConfigurationService ConfigService
 @inject ITransferStateDbAccessor StateDbAccessor
 @inject ITransferJobService JobService
@@ -543,10 +544,10 @@ else
     private string _editThemeMode = "system";
 
     private bool IsSharePointRoute =>
-        string.Equals(_discovery?.MigrationRoute, "OneDriveToSharePoint", StringComparison.Ordinal);
+        string.Equals(_discovery?.MigrationRoute, nameof(WizardRoute.OneDriveToSharePoint), StringComparison.Ordinal);
 
     private bool IsDropboxRoute =>
-        string.Equals(_discovery?.MigrationRoute, "OneDriveToDropbox", StringComparison.Ordinal);
+        string.Equals(_discovery?.MigrationRoute, nameof(WizardRoute.OneDriveToDropbox), StringComparison.Ordinal);
 
     private string SharePointSiteDisplay =>
         _discovery?.SharePointSiteDisplayName is { Length: > 0 } sn ? sn :
