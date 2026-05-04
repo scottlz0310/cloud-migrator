@@ -37,7 +37,7 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.201'
+          global-json-file: global.json
 
       - name: バージョン文字列を抽出（v プレフィックス除去）
         id: version
@@ -149,7 +149,7 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.201'
+          global-json-file: global.json
 
       - name: WiX Toolset v5 インストール
         run: dotnet tool install wix --version 5.0.2 --global
