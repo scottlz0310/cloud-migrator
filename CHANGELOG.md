@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+---
+
+## [0.6.0] - 2026-05-04
+
+### Changed
+
+- **アプリケーションアイコンを刷新**
+  - `assets/CloudMigrator_ICO.png`（1024×1024 ARGB）を元に 16/32/48/64/128/256px マルチ解像度の `CloudMigrator.ico` を生成
+  - Dashboard（`ApplicationIcon`）および MSI インストーラー（Add/Remove Programs アイコン・スタートメニューショートカット）に適用
+
 ### Refactored
 
 - **App.xaml.cs の移行パイプライン実行ロジックをルート対応ファクトリに切り出す（#209）**
@@ -886,7 +896,10 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...v0.6.0
+[0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/scottlz0310/cloud-migrator/releases/tag/v0.1.0
