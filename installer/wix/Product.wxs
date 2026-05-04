@@ -2,7 +2,7 @@
 <!--
   Product.wxs - Cloud Migrator MSI インストーラー定義 (WiX Toolset v5)
 
-  インストール先 : %LOCALAPPDATA%\Programs\CloudMigrator\（既定。UI で変更可）
+  インストール先 : %LOCALAPPDATA%\Programs\CloudMigrator\（既定。UI で変更可。ただし per-user のためシステムフォルダ不可）
   スコープ       : perUser（UAC 昇格不要）
   UpgradeCode    : 全バージョン共通で固定（変更禁止）
   ProductCode    : MajorUpgrade により自動管理（Guid="*"）
@@ -39,6 +39,20 @@
     <MajorUpgrade DowngradeErrorMessage="より新しいバージョンの Cloud Migrator がインストール済みです。" />
 
     <!--
+      per-user インストール先の制約
+      Scope="perUser" のため UAC 昇格は行われない。WixUI_InstallDir でユーザーが
+      Program Files・Windows フォルダ等の管理者権限が必要な場所を選択した場合、
+      インストール後半でアクセス拒否となって失敗する。
+      以下の Condition が InstallExecuteSequence の LaunchConditions フェーズで
+      INSTALLFOLDER を検査し、システムフォルダが選択されていれば早期にエラーを表示して中断する。
+      （InstallUISequence の LaunchConditions では既定値 %LOCALAPPDATA%\Programs\CloudMigrator
+        が評価されるため条件は通過し、UI は正常に表示される）
+    -->
+    <Condition Message="このインストーラーは per-user スコープのため、管理者権限が必要なシステムフォルダにはインストールできません。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下のフォルダに変更してください。">
+      NOT (INSTALLFOLDER &lt;&lt; ProgramFilesFolder OR INSTALLFOLDER &lt;&lt; ProgramFiles64Folder OR INSTALLFOLDER &lt;&lt; WindowsFolder OR INSTALLFOLDER &lt;&lt; SystemFolder)
+    </Condition>
+
+    <!--
       ADDTOPATH: PATH への追加を制御するプロパティ（既定: 1 = 有効）
       無効にする場合: msiexec /i cloud-migrator-setup.msi ADDTOPATH=0
     -->
@@ -52,7 +66,7 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- インストール先: 既定は %LOCALAPPDATA%\Programs\CloudMigrator\（UI で変更可） -->
+    <!-- インストール先: 既定は %LOCALAPPDATA%\Programs\CloudMigrator\（UI で変更可。per-user のためシステムフォルダ不可） -->
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="CloudMigrator" />
