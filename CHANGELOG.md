@@ -9,6 +9,15 @@
 
 ### Refactored
 
+- **App.xaml.cs の移行パイプライン実行ロジックをルート対応ファクトリに切り出す（#209）**
+  - `MigrationWork` 内の `if (isDropbox)` 分岐を `IMigrationPipelineRunner` + `MigrationPipelineRunnerRegistry` パターンに置換
+  - `SharePointPipelineRunner` / `DropboxPipelineRunner` を `CloudMigrator.Dashboard/Runners/` に新設
+  - ACC 構築・rate controller 構築ロジックを `RateControllerBuilder` 共通ヘルパーに分離
+  - `BuildHybridController` static メソッドを `App.xaml.cs` から削除（`RateControllerBuilder` に移動）
+  - DI に `IMigrationPipelineRunner` x2 と `MigrationPipelineRunnerRegistry` を登録
+  - 新プロバイダー追加は `Runner` 実装 + DI 登録のみで対応可能（`App.xaml.cs` の変更不要）
+  - `MigrationPipelineRunnerRegistryTests` 12件追加・全 unit テスト 1031件 PASS
+
 - **DashboardPage タブバーを MudTabs 静的 MudTabPanel に戻す（#191）**
   - PR #188 で導入したカスタム `<button>` タブバー（`@foreach` + inline style）を削除し、MudBlazor 標準の `MudTabs` + 静的 `MudTabPanel` 3 枚に変更
   - 「概要」「詳細情報」「ログ」の各パネルを `@foreach` を使わず静的に配置

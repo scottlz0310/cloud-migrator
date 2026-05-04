@@ -1,19 +1,14 @@
 using System.IO;
-using System.Net.Http;
 using System.Windows;
 using CloudMigrator.Core.Configuration;
 using CloudMigrator.Core.Credentials;
-using CloudMigrator.Core.Migration;
 using CloudMigrator.Core.Setup;
-using CloudMigrator.Core.State;
 using CloudMigrator.Core.Transfer;
 using CloudMigrator.Core.Wizard;
+using CloudMigrator.Dashboard.Runners;
 using CloudMigrator.Observability;
-using CloudMigrator.Providers.Dropbox;
 using CloudMigrator.Providers.Dropbox.Auth;
-using CloudMigrator.Providers.Graph;
 using CloudMigrator.Providers.Graph.Auth;
-using CloudMigrator.Providers.Graph.Http;
 using CloudMigrator.Routes;
 using CloudMigrator.Routes.Descriptors;
 using Microsoft.Extensions.Configuration;
@@ -96,117 +91,16 @@ public partial class App : Application
         {
             var loggerFactory2 = sp.GetRequiredService<ILoggerFactory>();
             var stateDbAccessor = sp.GetRequiredService<ITransferStateDbAccessor>();
+            var runnerRegistry = sp.GetRequiredService<MigrationPipelineRunnerRegistry>();
 
             async Task MigrationWork(CancellationToken ct)
             {
                 var configuration = AppConfiguration.Build();
                 var opts = configuration.GetSection(MigratorOptions.SectionName).Get<MigratorOptions>() ?? new MigratorOptions();
 
-                ICredentialStore credentialStore = CredentialStoreFactory.Create();
-                var clientSecret = await credentialStore.GetAsync(CredentialKeys.AzureClientSecret).ConfigureAwait(false)
-                    ?? AppConfiguration.GetGraphClientSecret();
-
-                var auth = new GraphAuthenticator(opts.Graph.ClientId, opts.Graph.TenantId, clientSecret);
-
-                // AdaptiveConcurrencyController の初期化
-                // 宛先 provider に応じて AdaptiveConcurrency.sharepoint / AdaptiveConcurrency.dropbox の
-                // プロファイルを参照し、対応する Enabled=true かつ UseRateControl=false 時のみ ACC を使用する
-                var isDropbox = opts.DestinationProvider.Equals("dropbox", StringComparison.OrdinalIgnoreCase);
-
                 // UI とジョブが同じ route-aware な DB 解決を使うことで、Dropbox 実行時も
                 // Dashboard が書き込み先と同じ state DB を参照できるようにする。
                 var effectiveStateDb = await stateDbAccessor.GetForOptionsAsync(opts, ct).ConfigureAwait(false);
-
-                var adaptiveOpts = opts.GetAdaptiveConcurrency(isDropbox ? "dropbox" : "sharepoint");
-                AdaptiveConcurrencyController? accMain = null;        // Dispose + onRateLimit 用に保持
-                AdaptiveConcurrencyController? accFolder = null;      // Dispose + onRateLimit 用に保持
-                ITransferRateController? concurrencyController = null;
-                ITransferRateController? folderCreationController = null;
-                Action<TimeSpan?>? onRateLimit = null;
-                Action<ITransferRateController?>? activateController = null;
-                if (adaptiveOpts.Enabled && !opts.RateControl.UseRateControl)
-                {
-                    var initialDegree = adaptiveOpts.InitialDegree > 0
-                        ? Math.Min(adaptiveOpts.InitialDegree, opts.MaxParallelTransfers)
-                        : opts.MaxParallelTransfers;
-                    accMain = new AdaptiveConcurrencyController(
-                        initialDegree: initialDegree,
-                        minDegree: adaptiveOpts.MinDegree,
-                        maxDegree: opts.MaxParallelTransfers,
-                        increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
-                        logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
-                        increaseStep: adaptiveOpts.IncreaseStep,
-                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
-                        decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
-                    concurrencyController = new AdaptiveConcurrencyControllerAdapter(accMain);
-
-                    // Phase C（フォルダ先行作成）専用コントローラー（maxDegree = MaxParallelFolderCreations）
-                    // 転送用コントローラーとは独立させ、Phase C の 429 が Phase D の並列度に影響しないようにする
-                    var maxFolderCreationDegree = Math.Max(1, opts.MaxParallelFolderCreations);
-                    var folderInitialDegree = adaptiveOpts.InitialDegree > 0
-                        ? Math.Min(adaptiveOpts.InitialDegree, maxFolderCreationDegree)
-                        : maxFolderCreationDegree;
-                    accFolder = new AdaptiveConcurrencyController(
-                        initialDegree: folderInitialDegree,
-                        minDegree: Math.Min(adaptiveOpts.MinDegree, maxFolderCreationDegree),
-                        maxDegree: maxFolderCreationDegree,
-                        increaseIntervalSec: adaptiveOpts.IncreaseIntervalSec,
-                        logger: loggerFactory2.CreateLogger<AdaptiveConcurrencyController>(),
-                        increaseStep: adaptiveOpts.IncreaseStep,
-                        decreaseTriggerCount: adaptiveOpts.DecreaseTriggerCount,
-                        decreaseMultiplier: adaptiveOpts.DecreaseMultiplier);
-                    folderCreationController = new AdaptiveConcurrencyControllerAdapter(accFolder);
-
-                    // onRateLimit はプロキシ経由にしてフェーズに応じて通知先を切り替える
-                    AdaptiveConcurrencyController? activeCtrl = accMain;
-                    onRateLimit = retryAfter => Volatile.Read(ref activeCtrl)?.NotifyRateLimit(retryAfter);
-                    // 参照一致で folderCreationController（Phase C 用）か concurrencyController（Phase D 用）かを判別する
-                    activateController = ctrl =>
-                        Volatile.Write(ref activeCtrl, ReferenceEquals(ctrl, folderCreationController) ? accFolder : accMain);
-                }
-
-                // UseRateControl=true 時は RateControlledTransferController を構築する
-                // （TransferCommand と同等の組み立てパターン）
-                // UseRateControl=true && UseHybridController=true の場合は HybridRateController（#163）へ切替える。
-                RateControlledTransferController? rateController = null;
-                HybridRateController? hybridController = null;
-                MetricsBuffer? rateMetricsBuffer = null;
-                if (opts.RateControl.UseRateControl)
-                {
-                    rateMetricsBuffer = new MetricsBuffer(
-                        effectiveStateDb,
-                        opts.RateControl.MetricsFlushIntervalSec,
-                        loggerFactory2.CreateLogger<MetricsBuffer>());
-
-                    if (opts.RateControl.UseHybridController)
-                    {
-                        hybridController = BuildHybridController(opts, rateMetricsBuffer, loggerFactory2);
-                        // RetryHandler が 429/503 をリトライして成功した場合、パイプライン側からは NotifyRateLimit が呼ばれない。
-                        // RateLimitAwareHandler 経由で AIMD の rate_429 入力を取り込めるよう onRateLimit チェーンへ接続する。
-                        var existingOnRateLimit = onRateLimit;
-                        onRateLimit = retryAfter =>
-                        {
-                            existingOnRateLimit?.Invoke(retryAfter);
-                            hybridController.NotifyRateLimit(retryAfter);
-                        };
-                        concurrencyController = hybridController;
-                    }
-                    else
-                    {
-                        var aggregator = new TransferMetricsAggregator();
-                        rateController = new RateControlledTransferController(
-                            aggregator,
-                            opts.RateControl,
-                            rateMetricsBuffer,
-                            loggerFactory2.CreateLogger<RateControlledTransferController>());
-                        // 429 発生時に RateControlledTransferController へ通知する
-                        onRateLimit = retryAfter => rateController.NotifyRateLimit(retryAfter);
-                        concurrencyController = rateController;
-                        loggerFactory2.CreateLogger("MigrationWork").LogInformation(
-                            "RateControlledTransferController を構築しました（初期レート: {Rate:F1} req/sec）",
-                            opts.RateControl.InitialRatePerSec);
-                    }
-                }
 
                 // 設定変更検知（FR-10）: CLI の TransferCommand と同等のハッシュ確認を行う
                 var configHash = ConfigHashChecker.ComputeHash(opts);
@@ -218,105 +112,13 @@ public partial class App : Application
                     hashLogger.LogWarning("設定変更を検知しました。キャッシュと skip_list をクリアします。");
                     ConfigHashChecker.ClearAll(opts.Paths, hashLogger);
                     await ConfigHashChecker.SaveHashAsync(opts.Paths.ConfigHash, configHash, ct).ConfigureAwait(false);
-                    // effectiveStateDb: SharePoint 路線は DI stateDb、Dropbox 路線は専用 dropboxStateDb を指す
                     await effectiveStateDb.ResetAllAsync(ct).ConfigureAwait(false);
                 }
 
-                try
-                {
-                    var graphClient = GraphClientFactory.Create(
-                        auth,
-                        timeoutSec: opts.TimeoutSec,
-                        maxRetry: opts.RetryCount,
-                        onRateLimit: onRateLimit ?? (_ => { }),
-                        rateLimitLogger: loggerFactory2.CreateLogger<GraphStorageProvider>());
-
-                    var storageOptions = new GraphStorageOptions
-                    {
-                        OneDriveUserId = opts.Graph.OneDriveUserId,
-                        SharePointDriveId = opts.Graph.SharePointDriveId,
-                        OneDriveSourceFolder = opts.Graph.OneDriveSourceFolder,
-                    };
-
-                    var sessionStore = new UploadSessionStore(Path.Combine(AppDataPaths.LogsDirectory, "upload_sessions.json"));
-
-                    var storageProvider = new GraphStorageProvider(
-                        graphClient,
-                        loggerFactory2.CreateLogger<GraphStorageProvider>(),
-                        storageOptions,
-                        largeFileThresholdMb: opts.LargeFileThresholdMb,
-                        chunkSizeMb: opts.ChunkSizeMb,
-                        sessionStore: sessionStore);
-
-                    if (isDropbox)
-                    {
-                        var dropboxOptions = new DropboxStorageOptions
-                        {
-                            RootPath = opts.Dropbox.RootPath,
-                            SimpleUploadLimitMb = opts.Dropbox.SimpleUploadLimitMb,
-                            UploadChunkSizeMb = opts.Dropbox.UploadChunkSizeMb,
-                        };
-                        var normalizedTimeoutSec = Math.Max(1, opts.TimeoutSec);
-                        var dropboxHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(normalizedTimeoutSec) };
-                        var dropboxOAuthService = sp.GetRequiredService<IDropboxOAuthService>();
-                        // コンストラクタで例外が発生した場合も dropboxHttpClient を確実に Dispose する
-                        DropboxStorageProvider? dropboxProvider = null;
-                        try
-                        {
-                            dropboxProvider = new DropboxStorageProvider(
-                                loggerFactory2.CreateLogger<DropboxStorageProvider>(),
-                                credentialStore,
-                                dropboxOAuthService,
-                                dropboxOptions,
-                                httpClient: dropboxHttpClient,
-                                disposeHttpClient: true,
-                                maxRetry: opts.RetryCount,
-                                onRateLimit: onRateLimit);
-                            var dropboxPipeline = new DropboxMigrationPipeline(
-                                storageProvider,
-                                dropboxProvider,
-                                effectiveStateDb,
-                                opts,
-                                loggerFactory2.CreateLogger<DropboxMigrationPipeline>(),
-                                concurrencyController);
-                            await dropboxPipeline.RunAsync(ct).ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            if (dropboxProvider is not null)
-                                dropboxProvider.Dispose();
-                            else
-                                dropboxHttpClient.Dispose();
-                        }
-                    }
-                    else
-                    {
-                        var pipeline = new SharePointMigrationPipeline(
-                            storageProvider,
-                            storageProvider,
-                            effectiveStateDb,
-                            opts,
-                            loggerFactory2.CreateLogger<SharePointMigrationPipeline>(),
-                            concurrencyController,
-                            folderCreationController,
-                            activateController);
-                        await pipeline.RunAsync(ct).ConfigureAwait(false);
-                    }
-                }
-                finally
-                {
-                    // AdaptiveConcurrencyControllerAdapter は内部 ACC を所有しないため ACC を直接 Dispose する
-                    accMain?.Dispose();
-                    accFolder?.Dispose();
-                    // MetricsBuffer は effectiveStateDb（dropboxStateDb）への Flush を行うため
-                    // dropboxStateDb より先に Dispose して最終 Flush を完了させる
-                    if (hybridController is not null)
-                        await hybridController.DisposeAsync().ConfigureAwait(false);
-                    if (rateController is not null)
-                        await rateController.DisposeAsync().ConfigureAwait(false);
-                    if (rateMetricsBuffer is not null)
-                        await rateMetricsBuffer.DisposeAsync().ConfigureAwait(false);
-                }
+                // プロバイダー名からランナーを解決してパイプラインを実行する
+                // 新プロバイダー追加は Runner + DI 登録のみで対応可能（App.xaml.cs の変更不要）
+                var runner = runnerRegistry.Resolve(opts.DestinationProvider);
+                await runner.RunAsync(opts, effectiveStateDb, ct).ConfigureAwait(false);
             }
 
             return new TransferJobService(
@@ -351,11 +153,15 @@ public partial class App : Application
         services.AddSingleton<IGraphDiscoveryService, GraphDiscoveryService>();
         services.AddSingleton<ISharePointVerifyService, SharePointVerifyService>();
 
-        // ── 移行ルート descriptor（#195: 型登録のみ。既存の isDropbox 分岐は #196 で置換）──
-        // NOTE: #195 時点では runtime behavior の変更はなく、準備登録のみ。
+        // ── 移行ルート descriptor ──
         services.AddSingleton<IMigrationRouteDescriptor, SharePointRouteDescriptor>();
         services.AddSingleton<IMigrationRouteDescriptor, DropboxRouteDescriptor>();
         services.AddSingleton<MigrationRouteRegistry>();
+
+        // ── 移行パイプライン Runner（#209: isDropbox 分岐を runner 委譲に置換）──
+        services.AddSingleton<IMigrationPipelineRunner, SharePointPipelineRunner>();
+        services.AddSingleton<IMigrationPipelineRunner, DropboxPipelineRunner>();
+        services.AddSingleton<MigrationPipelineRunnerRegistry>();
 
         // ── HTTP ─────────────────────────────────────────────────────────────
         services.AddHttpClient();
@@ -368,63 +174,6 @@ public partial class App : Application
         services.AddSingleton<MainWindow>();
 
         return services.BuildServiceProvider();
-    }
-
-    /// <summary>
-    /// ハイブリッド制御（#163）用のコントローラーを構築する。
-    /// <c>rate_state.json</c> から前回レートを復元し、<c>[minRate, maxRate]</c> にクランプして WeightedTokenBucket の初期レートに反映する。
-    /// </summary>
-    private static HybridRateController BuildHybridController(
-        MigratorOptions opts, MetricsBuffer metricsBuffer, ILoggerFactory loggerFactory)
-    {
-        var rc = opts.RateControl;
-        var logger = loggerFactory.CreateLogger("MigrationWork");
-
-        var logsDir = Path.GetDirectoryName(opts.Paths.SkipList) ?? AppDataPaths.LogsDirectory;
-        var rateStatePath = Path.Combine(logsDir, "rate_state.json");
-        var stateStore = new RateStateStore(rateStatePath);
-
-        var loaded = stateStore.Load();
-        double initialRate = loaded is not null
-            ? Math.Clamp(loaded.RateTokensPerSec, rc.MinTokensPerSec, rc.MaxTokensPerSec)
-            : rc.InitialTokensPerSec;
-        // ウォームスタート: max_inflight も [MinInflight, MaxInflight] にクランプして HybridRateController へ渡す。
-        int? initialMaxInflight = loaded?.MaxInflight is int saved
-            ? Math.Clamp(saved, rc.MinInflight, rc.MaxInflight)
-            : null;
-        if (loaded is not null)
-        {
-            logger.LogInformation(
-                "rate_state.json から前回状態を復元しました（形式: {Format}, rate: {Rate:F2} tokens/sec, max_inflight: {MaxInflight}）",
-                loaded.Format, initialRate, initialMaxInflight?.ToString() ?? "(未保存)");
-        }
-
-        var bucket = new WeightedTokenBucket(initialRate: initialRate, maxBurst: rc.MaxBurstTokens);
-
-        var aimdSettings = AimdFeedbackSettings.FromRateControlSettings(rc);
-        aimdSettings.InitialRate = initialRate;
-        var aimd = new AimdFeedbackController(aimdSettings);
-
-        var metrics = new SlidingWindowMetrics(
-            mode: rc.WindowMode,
-            windowSec: rc.WindowSec,
-            maxCount: rc.MaxWindowCount,
-            minSamples: rc.MinSamples);
-
-        var controller = new HybridRateController(
-            bucket,
-            aimd,
-            metrics,
-            rc,
-            metricsBuffer,
-            stateStore,
-            loggerFactory.CreateLogger<HybridRateController>(),
-            initialMaxInflight);
-
-        logger.LogInformation(
-            "HybridRateController を構築しました（初期レート: {Rate:F2} tokens/sec, max_inflight: {MaxInflight}, 制御周期: {Interval}s）",
-            initialRate, controller.CurrentMaxInflight, rc.ControlIntervalSec);
-        return controller;
     }
 
 }
