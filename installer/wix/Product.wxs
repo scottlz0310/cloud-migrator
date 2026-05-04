@@ -2,13 +2,16 @@
 <!--
   Product.wxs - Cloud Migrator MSI インストーラー定義 (WiX Toolset v5)
 
-  インストール先 : %LOCALAPPDATA%\Programs\CloudMigrator\（既定。UI で変更可。ただし per-user のためシステムフォルダ不可）
-  スコープ       : perUser（UAC 昇格不要）
+  インストール先 : 既定は %LOCALAPPDATA%\Programs\CloudMigrator\（現在のユーザーのみ選択時）
+                   全ユーザー選択時は %ProgramFiles%\CloudMigrator\
+  スコープ       : WixUI_Advanced でユーザーが選択（既定: 現在のユーザーのみ = UAC 不要）
+                   全ユーザー選択時は UAC 昇格が必要
   UpgradeCode    : 全バージョン共通で固定（変更禁止）
   ProductCode    : MajorUpgrade により自動管理（Guid="*"）
 
-  UI 構成: WixUI_InstallDir
-    ようこそ → ライセンス同意 → インストール先選択 → 確認 → 進捗 → 完了
+  UI 構成: WixUI_Advanced
+    ようこそ → ライセンス同意 → インストールスコープ選択（現在のユーザー / 全ユーザー）
+    → インストール先選択 → 確認 → 進捗 → 完了
     完了画面のチェックボックスから Dashboard を起動可能。
 
   ビルド例（CI / ローカル共通）:
@@ -32,28 +35,27 @@
            Manufacturer="scottlz0310"
            Version="$(var.Version)"
            UpgradeCode="C8A5F3B2-7E1D-4A9C-B6F0-2D8E3C1A5047"
-           Scope="perUser"
            Codepage="65001">
 
     <!-- 旧バージョンを自動アンインストールしてから新バージョンをインストール -->
     <MajorUpgrade DowngradeErrorMessage="より新しいバージョンの Cloud Migrator がインストール済みです。" />
 
     <!--
-      per-user インストール先の制約（ホワイトリスト方式）
-      Scope="perUser" のため UAC 昇格は行われない。Program Files 等の既知システムフォルダだけでなく
-      C:\CloudMigrator 等の任意パスも標準ユーザーに書き込み権限がない場合がある。
-      blacklist では網羅できないため、USERPROFILE 環境変数（%LOCALAPPDATA% / %APPDATA% 等の親）
-      を SetProperty で MSI プロパティとして取得し、インストール先がユーザープロファイル配下か
-      をホワイトリスト検査する方式に変更。
-      （InstallUISequence の LaunchConditions では既定値 %LOCALAPPDATA%\Programs\CloudMigrator
-        が評価されるため条件は通過し、UI は正常に表示される）
+      MSIINSTALLPERUSER=1 でデフォルトを「現在のユーザーのみ」に設定（UAC 昇格不要）。
+      WixUI_Advanced の InstallScopeDlg でユーザーが変更可能。
+      全ユーザー選択時（MSIINSTALLPERUSER が空）は UAC 昇格が要求される。
     -->
-    <SetProperty Id="ENV_USERPROFILE"
-                 Value="[%USERPROFILE]"
-                 Sequence="both"
-                 Before="LaunchConditions" />
-    <Launch Condition="INSTALLFOLDER &lt;&lt; ENV_USERPROFILE"
-            Message="このインストーラーは per-user スコープのため、現在のユーザープロファイル配下のフォルダにのみインストールできます。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下（または %USERPROFILE% 配下）のフォルダに変更してください。" />
+    <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
+
+    <!--
+      WixUI_Advanced が必要とするプロパティ。
+      ApplicationFolderName: per-user インストール時のフォルダ名。
+        InstallScopeDlg が %LOCALAPPDATA%\Programs\<ApplicationFolderName>\ を APPLICATIONFOLDER に設定する。
+      WixAppFolder: デフォルトスコープを示す文字列（"WixPerMachineFolder" = 全ユーザー優先にする場合）。
+        MSIINSTALLPERUSER=1 と組み合わせて per-user がデフォルトになる。
+    -->
+    <Property Id="ApplicationFolderName" Value="CloudMigrator" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
 
     <!--
       ADDTOPATH: PATH への追加を制御するプロパティ（既定: 1 = 有効）
@@ -69,11 +71,15 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- インストール先: 既定は %LOCALAPPDATA%\Programs\CloudMigrator\（UI で変更可。per-user のためシステムフォルダ不可） -->
-    <StandardDirectory Id="LocalAppDataFolder">
-      <Directory Id="ProgramsFolder" Name="Programs">
-        <Directory Id="INSTALLFOLDER" Name="CloudMigrator" />
-      </Directory>
+    <!--
+      インストール先: APPLICATIONFOLDER の初期値は ProgramFiles64Folder\CloudMigrator。
+      WixUI_Advanced の InstallScopeDlg がスコープ選択後に以下のように上書きする:
+      - 現在のユーザー選択時: %LOCALAPPDATA%\Programs\CloudMigrator\（UAC 不要）
+      - 全ユーザー選択時:     %ProgramFiles%\CloudMigrator\（UAC 昇格が要求される）
+      ここでの Directory 定義は per-machine 時の初期値および MSI リンカーの参照解決用。
+    -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="APPLICATIONFOLDER" Name="CloudMigrator" />
     </StandardDirectory>
 
     <!-- スタートメニュー -->
@@ -85,7 +91,7 @@
       主要実行ファイル（Guid 固定: アップグレード/修復時のコンポーネント追跡を安定させる）
       両 exe を明示参照することで BinDir に不足がある場合のビルド時エラーを保証する
     -->
-    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+    <ComponentGroup Id="ProductComponents" Directory="APPLICATIONFOLDER">
       <Component Id="MainExecutable" Guid="EA5F2D8B-1C3A-4E7F-9B0D-6A2C4E8F1B3D">
         <File Id="cloud_migrator_exe"
               Source="$(var.BinDir)\cloud-migrator.exe"
@@ -103,9 +109,9 @@
       DepsDir は BinDir から *.exe / *.pdb を取り除いた専用ディレクトリ。
       WiX 5.0.2 の Files 要素は Exclude 属性を未サポートのため、
       CI / ローカル検証スクリプトで事前フィルタリングしたディレクトリを参照する。
-      サブディレクトリ（wwwroot/ / runtimes/ など）の構造はそのまま INSTALLFOLDER 下に展開される
+      サブディレクトリ（wwwroot/ / runtimes/ など）の構造はそのまま APPLICATIONFOLDER 下に展開される
     -->
-    <ComponentGroup Id="DashboardComponents" Directory="INSTALLFOLDER">
+    <ComponentGroup Id="DashboardComponents" Directory="APPLICATIONFOLDER">
       <Files Include="$(var.DepsDir)\**\*" />
     </ComponentGroup>
 
@@ -114,8 +120,8 @@
       <Component Id="ApplicationShortcut" Guid="*">
         <Shortcut Id="StartMenuShortcut"
                   Name="Cloud Migrator"
-                  Target="[INSTALLFOLDER]CloudMigrator.Dashboard.exe"
-                  WorkingDirectory="INSTALLFOLDER"
+                  Target="[APPLICATIONFOLDER]CloudMigrator.Dashboard.exe"
+                  WorkingDirectory="APPLICATIONFOLDER"
                   Description="Cloud storage migration tool"
                   Icon="CloudMigratorIcon" />
         <RemoveFolder Id="RemoveAppMenuFolder"
@@ -140,19 +146,37 @@
       </Component>
     </ComponentGroup>
 
-    <!-- PATH へ追加（ユーザー環境変数 / アンインストール時に自動削除）
-         Guid 固定: アップグレード時の PATH エントリ追跡を安定させる
-         ADDTOPATH=0 を渡すとインストールをスキップ（既定: 1 = 有効） -->
-    <ComponentGroup Id="PathComponents" Directory="INSTALLFOLDER">
-      <Component Id="PathEntry" Guid="3F7A9C1E-5B2D-4F8A-0C6E-8B1D3F5A7C9E" Condition="ADDTOPATH">
+    <!-- PATH へ追加（アンインストール時に自動削除）
+         ADDTOPATH=0 を渡すとインストールをスキップ（既定: 1 = 有効）
+         per-user 選択時はユーザー環境変数、全ユーザー選択時はシステム環境変数へ追加する。 -->
+    <ComponentGroup Id="PathComponents" Directory="APPLICATIONFOLDER">
+      <!-- per-user インストール時: ユーザー環境変数 PATH（Guid 固定: アップグレード追跡安定化） -->
+      <Component Id="UserPathEntry" Guid="3F7A9C1E-5B2D-4F8A-0C6E-8B1D3F5A7C9E"
+                 Condition="ADDTOPATH AND MSIINSTALLPERUSER = 1">
         <Environment Id="UserPath"
                      Name="PATH"
-                     Value="[INSTALLFOLDER]"
+                     Value="[APPLICATIONFOLDER]"
                      Permanent="no"
                      Part="last"
                      Action="set"
                      System="no" />
         <RegistryValue Root="HKCU"
+                       Key="Software\CloudMigrator\Path"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+      <!-- 全ユーザーインストール時: システム環境変数 PATH -->
+      <Component Id="SystemPathEntry" Guid="F2E8D4A1-7C3B-4F9E-0D5A-1B6C8E2F4D7A"
+                 Condition="ADDTOPATH AND NOT MSIINSTALLPERUSER">
+        <Environment Id="SystemPath"
+                     Name="PATH"
+                     Value="[APPLICATIONFOLDER]"
+                     Permanent="no"
+                     Part="last"
+                     Action="set"
+                     System="yes" />
+        <RegistryValue Root="HKLM"
                        Key="Software\CloudMigrator\Path"
                        Type="integer"
                        Value="1"
@@ -169,8 +193,9 @@
 
     <!-- ─── UI 設定 ─────────────────────────────────────────────────────────── -->
 
-    <!-- WixUI_InstallDir: ようこそ → ライセンス → インストール先 → 確認 → 進捗 → 完了 -->
-    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <!-- WixUI_Advanced: ようこそ → ライセンス → スコープ選択 → インストール先 → 確認 → 進捗 → 完了
+         インストール先は ApplicationFolderName / WixAppFolder プロパティで管理するため InstallDirectory 不要 -->
+    <ui:WixUI Id="WixUI_Advanced" />
 
     <!-- ライセンス文書（RTF）と UI 用ビットマップ -->
     <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)License.rtf" />
@@ -196,7 +221,7 @@
       Dashboard.exe を起動する Custom Action
       Wix4UtilCA_X64 は WixToolset.Util.wixext が提供するカスタムアクション DLL。
       WixShellExec は内部で ShellExecute を呼び、起動完了を待たずに復帰する。
-      Impersonate="yes" でユーザー権限のまま起動する（perUser 配置のため）。
+      Impersonate="yes" でユーザー権限のまま起動する（perUser / per-machine いずれでも有効）。
     -->
     <Property Id="WixShellExecTarget" Value="[#CloudMigrator_Dashboard_exe]" />
     <CustomAction Id="LaunchApplication"

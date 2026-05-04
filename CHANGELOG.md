@@ -9,6 +9,24 @@
 
 ---
 
+## [0.7.1] - 2026-05-04
+
+### Changed
+
+- **MSI インストーラーをユーザー/システムインストール選択制に変更 (`WixUI_Advanced`)**
+  - `WixUI_InstallDir` から `WixUI_Advanced` へ移行。インストール開始時にスコープ選択ダイアログが表示されるようになった
+  - 「現在のユーザーのみ」（既定）を選択すると UAC 昇格なしで `%LOCALAPPDATA%\Programs\CloudMigrator\` にインストール
+  - 「すべてのユーザー」を選択すると UAC 昇格を経て `%ProgramFiles%\CloudMigrator\` にインストール
+  - `Scope="perUser"` を削除し、インストールスコープ管理を Windows インストーラー標準の `MSIINSTALLPERUSER` プロパティに委譲
+
+### Fixed
+
+- **MSI ウェルカム画面でインストールがブロックされるバグを修正**
+  - `SetProperty` で取得した `ENV_USERPROFILE` が `InstallUISequence` の `LaunchConditions` 評価時点で空になり、常にインストールをブロックしていた問題を修正
+  - `WixUI_Advanced` 移行に伴い、無効な `<Launch>` 条件チェックを削除
+
+---
+
 ## [0.7.0] - 2026-05-04
 
 ### Added
@@ -922,7 +940,8 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...v0.6.0
 [0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0
