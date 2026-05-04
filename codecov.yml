@@ -4,6 +4,8 @@ coverage:
       default:
         # Blazor Hybrid (WPF + Razor) UI code is excluded because UI testing is not feasible.
         # CLI entry point and dashboard launcher launch external processes and are not unit-testable.
+        # Dashboard/Runners directly instantiates external SDKs (Graph/Dropbox) as composition root,
+        # making unit testing impractical without integration-level test infrastructure.
         target: auto
         threshold: 5%
 
