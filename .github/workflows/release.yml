@@ -101,23 +101,26 @@ jobs:
         run: |
           set -euo pipefail
 
+          RELEASE_EXISTS=false
           if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
             echo "Release '${{ github.ref_name }}' は既に存在します。"
-            exit 0
+            RELEASE_EXISTS=true
           fi
 
-          if gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes; then
-            echo "Release '${{ github.ref_name }}' を作成しました。"
-          elif gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
-            echo "別の並列ジョブが Release '${{ github.ref_name }}' を作成済みのため成功扱いにします。"
-          else
-            echo "Release '${{ github.ref_name }}' の作成に失敗しました。"
-            exit 1
+          if [ "$RELEASE_EXISTS" = "false" ]; then
+            if gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --generate-notes; then
+              echo "Release '${{ github.ref_name }}' を作成しました。"
+            elif gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+              echo "別の並列ジョブが Release '${{ github.ref_name }}' を作成済みのため成功扱いにします。"
+            else
+              echo "Release '${{ github.ref_name }}' の作成に失敗しました。"
+              exit 1
+            fi
           fi
 
-          # Draft 状態のまま残らないよう、常に公開・Latest に設定する
+          # Draft 状態のまま残らないよう、常に公開・Latest に設定する（既存リリースも対象）
           gh release edit "${{ github.ref_name }}" --draft=false --latest
           echo "Release '${{ github.ref_name }}' を公開済み・Latest に設定しました。"
         env:
