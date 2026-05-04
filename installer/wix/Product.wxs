@@ -52,9 +52,8 @@
                  Value="[%USERPROFILE]"
                  Sequence="both"
                  Before="LaunchConditions" />
-    <Condition Message="このインストーラーは per-user スコープのため、現在のユーザープロファイル配下のフォルダにのみインストールできます。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下（または %USERPROFILE% 配下）のフォルダに変更してください。">
-      INSTALLFOLDER &lt;&lt; ENV_USERPROFILE
-    </Condition>
+    <Launch Condition="INSTALLFOLDER &lt;&lt; ENV_USERPROFILE"
+            Message="このインストーラーは per-user スコープのため、現在のユーザープロファイル配下のフォルダにのみインストールできます。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下（または %USERPROFILE% 配下）のフォルダに変更してください。" />
 
     <!--
       ADDTOPATH: PATH への追加を制御するプロパティ（既定: 1 = 有効）
