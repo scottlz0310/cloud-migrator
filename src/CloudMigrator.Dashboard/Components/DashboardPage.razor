@@ -789,6 +789,14 @@ else
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗しました。"); }
 
+        // DestinationProvider 未設定の場合は state DB アクセスをスキップする（LogError 連続出力によるログ汚染を防ぐ）
+        if (string.IsNullOrWhiteSpace(opts.DestinationProvider))
+        {
+            _summary ??= new TransferDbSummary();
+            _recentLogEntries = LogChannel.GetRecentEntries();
+            return;
+        }
+
         ITransferStateDb stateDb;
         try
         {

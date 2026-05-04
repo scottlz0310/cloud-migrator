@@ -226,9 +226,25 @@
 
         var result = await FolderService.ListFoldersAsync(AccessToken, _currentPath);
         if (result.Success)
+        {
             _folders = result.Folders?.ToList() ?? [];
+        }
+        else if (!string.IsNullOrEmpty(_currentPath))
+        {
+            // パスが存在しない場合（新規フォルダ設定後にコンポーネントが再生成されると
+            // _isNewFolder がリセットされるため、フラグに頼れない）は親パスで再試行する。
+            _currentPath = GetParentPath(_currentPath);
+            _breadcrumbs = BuildBreadcrumbs(_currentPath);
+            var retryResult = await FolderService.ListFoldersAsync(AccessToken, _currentPath);
+            if (retryResult.Success)
+                _folders = retryResult.Folders?.ToList() ?? [];
+            else
+                _error = $"フォルダ一覧の取得に失敗しました: {retryResult.ErrorMessage}";
+        }
         else
+        {
             _error = $"フォルダ一覧の取得に失敗しました: {result.ErrorMessage}";
+        }
 
         _isLoading = false;
         StateHasChanged();
