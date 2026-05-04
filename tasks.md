@@ -2,7 +2,7 @@
 
 前フェーズ履歴: [docs/archive/tasks-archive-20260501.md](docs/archive/tasks-archive-20260501.md)
 
-## 現在の状態: open issue 起点の v0.6.1 計画
+## 現在の状態: v0.7.0 リリース準備中
 
 - 確認日: 2026-05-04
 - 対象リポジトリ: `scottlz0310/cloud-migrator`

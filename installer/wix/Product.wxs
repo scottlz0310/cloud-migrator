@@ -2,13 +2,19 @@
 <!--
   Product.wxs - Cloud Migrator MSI インストーラー定義 (WiX Toolset v5)
 
-  インストール先 : %LOCALAPPDATA%\Programs\CloudMigrator\
+  インストール先 : %LOCALAPPDATA%\Programs\CloudMigrator\（既定。UI で変更可。ただし per-user のためシステムフォルダ不可）
   スコープ       : perUser（UAC 昇格不要）
   UpgradeCode    : 全バージョン共通で固定（変更禁止）
   ProductCode    : MajorUpgrade により自動管理（Guid="*"）
 
+  UI 構成: WixUI_InstallDir
+    ようこそ → ライセンス同意 → インストール先選択 → 確認 → 進捗 → 完了
+    完了画面のチェックボックスから Dashboard を起動可能。
+
   ビルド例（CI / ローカル共通）:
     wix build Product.wxs -arch x64 \
+      -ext WixToolset.UI.wixext \
+      -ext WixToolset.Util.wixext \
       -d Version=1.2.3 \
       -d BinDir=path\to\publish\win-x64 \
       -d DepsDir=path\to\publish\win-x64-deps \
@@ -18,16 +24,36 @@
 
   注意: WiX ツールセットはバージョン 4/5 ともに v4 名前空間を使用する。
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <Package Name="Cloud Migrator"
            Manufacturer="scottlz0310"
            Version="$(var.Version)"
            UpgradeCode="C8A5F3B2-7E1D-4A9C-B6F0-2D8E3C1A5047"
-           Scope="perUser">
+           Scope="perUser"
+           Codepage="65001">
 
     <!-- 旧バージョンを自動アンインストールしてから新バージョンをインストール -->
     <MajorUpgrade DowngradeErrorMessage="より新しいバージョンの Cloud Migrator がインストール済みです。" />
+
+    <!--
+      per-user インストール先の制約（ホワイトリスト方式）
+      Scope="perUser" のため UAC 昇格は行われない。Program Files 等の既知システムフォルダだけでなく
+      C:\CloudMigrator 等の任意パスも標準ユーザーに書き込み権限がない場合がある。
+      blacklist では網羅できないため、USERPROFILE 環境変数（%LOCALAPPDATA% / %APPDATA% 等の親）
+      を SetProperty で MSI プロパティとして取得し、インストール先がユーザープロファイル配下か
+      をホワイトリスト検査する方式に変更。
+      （InstallUISequence の LaunchConditions では既定値 %LOCALAPPDATA%\Programs\CloudMigrator
+        が評価されるため条件は通過し、UI は正常に表示される）
+    -->
+    <SetProperty Id="ENV_USERPROFILE"
+                 Value="[%USERPROFILE]"
+                 Sequence="both"
+                 Before="LaunchConditions" />
+    <Launch Condition="INSTALLFOLDER &lt;&lt; ENV_USERPROFILE"
+            Message="このインストーラーは per-user スコープのため、現在のユーザープロファイル配下のフォルダにのみインストールできます。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下（または %USERPROFILE% 配下）のフォルダに変更してください。" />
 
     <!--
       ADDTOPATH: PATH への追加を制御するプロパティ（既定: 1 = 有効）
@@ -38,10 +64,12 @@
     <!-- Add/Remove Programs に表示されるアイコン -->
     <Icon Id="CloudMigratorIcon" SourceFile="$(sys.SOURCEFILEDIR)..\..\assets\CloudMigrator.ico" />
     <Property Id="ARPPRODUCTICON" Value="CloudMigratorIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/scottlz0310/cloud-migrator#readme" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/scottlz0310/cloud-migrator" />
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- インストール先: %LOCALAPPDATA%\Programs\CloudMigrator\ -->
+    <!-- インストール先: 既定は %LOCALAPPDATA%\Programs\CloudMigrator\（UI で変更可。per-user のためシステムフォルダ不可） -->
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="CloudMigrator" />
@@ -81,7 +109,7 @@
       <Files Include="$(var.DepsDir)\**\*" />
     </ComponentGroup>
 
-    <!-- スタートメニューショートカット -->
+    <!-- スタートメニューショートカット（Dashboard 起動 + README リンク） -->
     <ComponentGroup Id="ShortcutComponents" Directory="AppMenuFolder">
       <Component Id="ApplicationShortcut" Guid="*">
         <Shortcut Id="StartMenuShortcut"
@@ -93,9 +121,19 @@
         <RemoveFolder Id="RemoveAppMenuFolder"
                       Directory="AppMenuFolder"
                       On="uninstall" />
-        <!-- ショートカットの KeyPath: レジストリで存在チェック -->
         <RegistryValue Root="HKCU"
                        Key="Software\CloudMigrator\Shortcuts"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+      <Component Id="ReadmeShortcut" Guid="B4D7E2F1-9C3A-4F8B-A1E5-7C2D9F3B5A8C">
+        <util:InternetShortcut Id="ReadmeUrl"
+                               Name="Cloud Migrator README"
+                               Target="https://github.com/scottlz0310/cloud-migrator#readme"
+                               Type="url" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\CloudMigrator\ReadmeShortcut"
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
@@ -128,6 +166,52 @@
       <ComponentGroupRef Id="ShortcutComponents" />
       <ComponentGroupRef Id="PathComponents" />
     </Feature>
+
+    <!-- ─── UI 設定 ─────────────────────────────────────────────────────────── -->
+
+    <!-- WixUI_InstallDir: ようこそ → ライセンス → インストール先 → 確認 → 進捗 → 完了 -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <!-- ライセンス文書（RTF）と UI 用ビットマップ -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)License.rtf" />
+    <WixVariable Id="WixUIBannerBmp"  Value="$(sys.SOURCEFILEDIR)..\..\assets\cm-banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp"  Value="$(sys.SOURCEFILEDIR)..\..\assets\cm-dialog.bmp" />
+
+    <!-- 新規インストール・アップグレード時のみ ExitDialog に「Dashboard を起動する」チェックボックスを表示する。
+         修復・アンインストール完了時は LaunchApplication アクションが実行されないため、
+         チェックボックスを非表示にして誤操作を防ぐ。 -->
+    <SetProperty Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX"
+                 Value="1"
+                 Sequence="ui"
+                 Before="AppSearch"
+                 Condition="NOT Installed" />
+    <SetProperty Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
+                 Value="Cloud Migrator Dashboard を起動する"
+                 Sequence="ui"
+                 Before="AppSearch"
+                 Condition="NOT Installed" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="スタートメニューの「Cloud Migrator」フォルダから README（GitHub）も参照できます。" />
+
+    <!--
+      Dashboard.exe を起動する Custom Action
+      Wix4UtilCA_X64 は WixToolset.Util.wixext が提供するカスタムアクション DLL。
+      WixShellExec は内部で ShellExecute を呼び、起動完了を待たずに復帰する。
+      Impersonate="yes" でユーザー権限のまま起動する（perUser 配置のため）。
+    -->
+    <Property Id="WixShellExecTarget" Value="[#CloudMigrator_Dashboard_exe]" />
+    <CustomAction Id="LaunchApplication"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes" />
+
+    <!-- ExitDialog の「完了」ボタン押下時、チェックボックスがオンかつ新規/アップグレードのみ起動 -->
+    <UI>
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+    </UI>
 
   </Package>
 </Wix>

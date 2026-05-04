@@ -9,6 +9,32 @@
 
 ---
 
+## [0.7.0] - 2026-05-04
+
+### Added
+
+- **MSI インストーラーに UI ウィザードを導入**
+  - `WixUI_InstallDir` を採用し、ようこそ → ライセンス同意 → インストール先選択 → 確認 → 進捗 → 完了 のフルウィザード化
+  - ライセンス文書（MIT）を `installer/wix/License.rtf` として同梱表示
+  - イラストグラフィック適用: 上部バナー（`assets/cm-banner.bmp` / 493×58）・サイドパネル（`assets/cm-dialog.bmp` / 493×312）
+  - 完了ダイアログのチェックボックスから Cloud Migrator Dashboard を直接起動可能（`WixShellExec` カスタムアクション）
+  - スタートメニューに「Cloud Migrator README」ショートカット（GitHub README へのリンク）を追加
+  - Add/Remove Programs に `ARPHELPLINK` / `ARPURLINFOABOUT` を設定
+  - WiX 拡張 `WixToolset.UI.wixext` / `WixToolset.Util.wixext` を CI / ローカルビルドの双方で登録するよう更新
+
+### Fixed
+
+- **per-user インストール先の検証を USERPROFILE ホワイトリスト方式に強化**
+  - 従来の blacklist（Program Files / Windows / System フォルダ）では `C:\CloudMigrator` 等の任意パスを通してしまう問題を修正
+  - `SetProperty` で `USERPROFILE` 環境変数を MSI プロパティ `ENV_USERPROFILE` として取得し、`INSTALLFOLDER << ENV_USERPROFILE` で検証するホワイトリスト方式に変更
+- **ExitDialog の「Dashboard を起動する」チェックボックスを新規インストール・アップグレード時のみ表示**
+  - 修復・アンインストール完了時は `LaunchApplication` アクションが実行されないため、チェックボックスを `NOT Installed` 条件付きに変更し誤解を招く UI を解消
+- **`release.yml` の WiX 拡張インストール step で失敗を確実に検知**
+  - PowerShell の `$LASTEXITCODE` 上書き問題により `wix extension add` の失敗が見逃されることがあった
+  - `$PSNativeCommandUseErrorActionPreference = $true` を追加し各ネイティブコマンドの非 0 終了で即 step 失敗するよう修正
+
+---
+
 ## [0.6.0] - 2026-05-04
 
 ### Changed
@@ -896,7 +922,8 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...v0.6.0
 [0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.2.1...v0.3.0

@@ -101,12 +101,17 @@ internal static class DashboardLauncher
     /// <summary>CloudMigrator.Dashboard.exe のパスを探す。</summary>
     private static string? FindDashboardExe()
     {
-        // 1. 同一ディレクトリ（publish / self-contained インストール）
+        // 1. 同一ディレクトリ（publish / MSI インストール本流）
+        //    MSI は cloud-migrator.exe と CloudMigrator.Dashboard.exe を同じ INSTALLFOLDER に配置する。
+        //    ユーザーが WixUI_InstallDir でカスタムパスを選んでもこのチェックでヒットする。
         var candidate = Path.Combine(AppContext.BaseDirectory, "CloudMigrator.Dashboard.exe");
         if (File.Exists(candidate))
             return candidate;
 
-        // 2. インストール済みパス
+        // 2. 既定インストール先のフォールバック（PATH を通さず別経路から CLI を実行されたケース用）
+        //    カスタムパスでインストールされた場合は #1 で解決される前提。
+        //    完全な解決はレジストリ参照（HKCU\Software\CloudMigrator）への移行が必要だが、
+        //    本 PR では実害が限定的なため見送り（追跡 Issue 起票予定）。
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var installCandidate = Path.Combine(localAppData, "Programs", "CloudMigrator", "CloudMigrator.Dashboard.exe");
         if (File.Exists(installCandidate))
