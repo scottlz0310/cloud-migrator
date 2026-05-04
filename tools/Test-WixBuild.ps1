@@ -47,10 +47,15 @@ if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
 # Util  : ExitDialog 起動用 WixShellExec カスタムアクション + InternetShortcut
 # 注意: バージョン未指定だと最新（v7 系）が取得されて WiX 5 と不整合になる。
 #       wix 本体のバージョンに合わせて 5.0.2 にピン留めする。
+# $ErrorActionPreference = "Stop" はネイティブコマンドの非 0 終了を止めないため、
+# $LASTEXITCODE を明示検査してネットワーク障害や権限不足を早期に検出する。
 $wixExtVersion = "5.0.2"
 Write-Host "▶ WiX 拡張を確認/登録中（v$wixExtVersion）..." -ForegroundColor Cyan
 foreach ($ext in @("WixToolset.UI.wixext", "WixToolset.Util.wixext")) {
-    & wix extension add -g "$ext/$wixExtVersion" 2>&1 | Out-Null
+    $output = & wix extension add -g "$ext/$wixExtVersion" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "WiX 拡張 '$ext/$wixExtVersion' の登録に失敗しました（exit=$LASTEXITCODE）。`n$output"
+    }
 }
 
 # ─── 1. パブリッシュ ─────────────────────────────────────────────────────────
