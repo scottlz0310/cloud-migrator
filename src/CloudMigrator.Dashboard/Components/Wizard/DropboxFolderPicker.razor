@@ -85,6 +85,33 @@
                     </MudList>
                 }
 
+                @* ── 新しいフォルダ名を入力して設定（作成は転送時に自動） ── *@
+                <MudDivider Class="my-2" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
+                    ここにないフォルダ名を入力すると、転送開始時に自動作成されます。
+                </MudText>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudTextField T="string"
+                                  @bind-Value="_newFolderName"
+                                  Label="新しいフォルダ名"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Disabled="@_isLoading"
+                                  Immediate="true"
+                                  Placeholder="例: Migration2024"
+                                  Error="@(_newFolderNameError is not null)"
+                                  HelperText="@(_newFolderNameError ?? "/ \\ : &lt; &gt; &quot; | は使用できません")"
+                                  HelperTextOnFocus="true" />
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Secondary"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.CreateNewFolder"
+                               Disabled="@(_isLoading || string.IsNullOrWhiteSpace(_newFolderName))"
+                               OnClick="SetNewFolderName">
+                        このパスに設定
+                    </MudButton>
+                </MudStack>
+
                 @* アクションボタン *@
                 <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
                     <MudButton Variant="Variant.Outlined"
@@ -121,9 +148,14 @@
 
     [Inject] private IDropboxFolderService FolderService { get; set; } = default!;
 
+    // Dropbox パス区切り(/)に加え、Windows/SharePoint と共通の禁止文字
+    private static readonly char[] InvalidDropboxFolderNameChars = ['/', '\\', '<', '>', '"', '|', ':'];
+
     private bool _isOpen;
     private bool _isLoading;
     private string? _error;
+    private string _newFolderName = string.Empty;
+    private string? _newFolderNameError;
 
     // 現在のナビゲーション状態
     private string _currentPath = string.Empty;
@@ -144,6 +176,8 @@
         _currentPath = SelectedFolderPath;
         _breadcrumbs = BuildBreadcrumbs(_currentPath);
         _isOpen = true;
+        _newFolderName = string.Empty;
+        _newFolderNameError = null;
         await LoadFoldersAsync();
     }
 
@@ -196,6 +230,30 @@
     {
         SelectedFolderPath = _currentPath;
         _isOpen = false;
+        await OnFolderSelected.InvokeAsync(SelectedFolderPath);
+    }
+
+    private async Task SetNewFolderName()
+    {
+        var name = _newFolderName.Trim();
+        if (string.IsNullOrEmpty(name)) return;
+
+        if (name.IndexOfAny(InvalidDropboxFolderNameChars) >= 0)
+        {
+            _newFolderNameError = "フォルダ名に使用できない文字が含まれています（/ \\ : < > \" |）";
+            return;
+        }
+        _newFolderNameError = null;
+
+        // Dropbox パス形式: /parent/newname（ルートの場合は /newname）
+        var newPath = string.IsNullOrEmpty(_currentPath)
+            ? "/" + name
+            : _currentPath.TrimEnd('/') + "/" + name;
+
+        SelectedFolderPath = newPath;
+        _newFolderName = string.Empty;
+        _isOpen = false;
+
         await OnFolderSelected.InvokeAsync(SelectedFolderPath);
     }
 
