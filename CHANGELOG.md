@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **MSI インストーラーに UI ウィザードを導入**
+  - `WixUI_InstallDir` を採用し、ようこそ → ライセンス同意 → インストール先選択 → 確認 → 進捗 → 完了 のフルウィザード化
+  - ライセンス文書（MIT）を `installer/wix/License.rtf` として同梱表示
+  - イラストグラフィック適用: 上部バナー（`assets/cm-banner.bmp` / 493×58）・サイドパネル（`assets/cm-dialog.bmp` / 493×312）
+  - 完了ダイアログのチェックボックスから Cloud Migrator Dashboard を直接起動可能（`WixShellExec` カスタムアクション）
+  - スタートメニューに「Cloud Migrator README」ショートカット（GitHub README へのリンク）を追加
+  - Add/Remove Programs に `ARPHELPLINK` / `ARPURLINFOABOUT` を設定
+  - WiX 拡張 `WixToolset.UI.wixext` / `WixToolset.Util.wixext` を CI / ローカルビルドの双方で登録するよう更新
+
 ---
 
 ## [0.6.0] - 2026-05-04
