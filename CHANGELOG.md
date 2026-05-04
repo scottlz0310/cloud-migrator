@@ -9,6 +9,16 @@
 
 ---
 
+## [0.7.1] - 2026-05-04
+
+### Fixed
+
+- **MSI ウェルカム画面でインストールがブロックされるバグを修正**
+  - `SetProperty` で取得した `ENV_USERPROFILE` が `InstallUISequence` の `LaunchConditions` 評価時点で空になり、常にインストールをブロックしていた問題を修正
+  - `Scope="perUser"` により Windows インストーラーが per-user 制限を保証するため、独自の `<Launch>` 条件チェックは不要と判断して削除
+
+---
+
 ## [0.7.0] - 2026-05-04
 
 ### Added
@@ -922,7 +932,8 @@
 - `task.md` - フェーズ別タスク管理
 - `README.md` - プロジェクト概要・構成・開発手順
 
-[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.4.0...v0.6.0
 [0.4.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.3.0...v0.4.0

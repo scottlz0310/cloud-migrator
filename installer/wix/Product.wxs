@@ -39,23 +39,6 @@
     <MajorUpgrade DowngradeErrorMessage="より新しいバージョンの Cloud Migrator がインストール済みです。" />
 
     <!--
-      per-user インストール先の制約（ホワイトリスト方式）
-      Scope="perUser" のため UAC 昇格は行われない。Program Files 等の既知システムフォルダだけでなく
-      C:\CloudMigrator 等の任意パスも標準ユーザーに書き込み権限がない場合がある。
-      blacklist では網羅できないため、USERPROFILE 環境変数（%LOCALAPPDATA% / %APPDATA% 等の親）
-      を SetProperty で MSI プロパティとして取得し、インストール先がユーザープロファイル配下か
-      をホワイトリスト検査する方式に変更。
-      （InstallUISequence の LaunchConditions では既定値 %LOCALAPPDATA%\Programs\CloudMigrator
-        が評価されるため条件は通過し、UI は正常に表示される）
-    -->
-    <SetProperty Id="ENV_USERPROFILE"
-                 Value="[%USERPROFILE]"
-                 Sequence="both"
-                 Before="LaunchConditions" />
-    <Launch Condition="INSTALLFOLDER &lt;&lt; ENV_USERPROFILE"
-            Message="このインストーラーは per-user スコープのため、現在のユーザープロファイル配下のフォルダにのみインストールできます。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下（または %USERPROFILE% 配下）のフォルダに変更してください。" />
-
-    <!--
       ADDTOPATH: PATH への追加を制御するプロパティ（既定: 1 = 有効）
       無効にする場合: msiexec /i cloud-migrator-setup.msi ADDTOPATH=0
     -->
