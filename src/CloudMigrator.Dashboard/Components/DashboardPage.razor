@@ -789,14 +789,13 @@ else
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.LogWarning(ex, "Discovery 設定の読み込みに失敗しました。"); }
 
-        // DestinationProvider 未設定の場合は state DB アクセスをスキップする（LogError 連続出力によるログ汚染を防ぐ）。
-        // 設定変更で DestinationProvider が消えた際、古い _summary 等が残存してダッシュボードが汚染されないようリセットする。
-        if (string.IsNullOrWhiteSpace(opts.DestinationProvider))
+        // _currentDescriptor が null（DestinationProvider 未設定または未登録プロバイダー名）の場合は
+        // state DB アクセスをスキップし、DB 依存の全表示状態をリセットする。
+        // 未登録 provider 名での StateDbAccessor 呼び出しを防ぐことで（TransferStateDbAccessor が
+        // dropbox 以外を SharePoint DB パスとして扱うため）、誤った DB 参照を避ける。
+        if (_currentDescriptor == null)
         {
-            _activeStateDb = null;
-            _summary = new TransferDbSummary();
-            _phase = "";
-            _isJobRunning = false;
+            ResetDbDependentState();
             _recentLogEntries = LogChannel.GetRecentEntries();
             return;
         }
@@ -834,6 +833,37 @@ else
         await RefreshFolderProgressAsync(stateDb, ct);
         if (_useRateControl) await RefreshRateControlMetricsAsync(stateDb, ct);
         _recentLogEntries = LogChannel.GetRecentEntries();
+    }
+
+    private void ResetDbDependentState()
+    {
+        _activeStateDb = null;
+        _summary = new TransferDbSummary();
+        _phase = "";
+        _isJobRunning = false;
+        _currentJob = null;
+        _elapsed = "—";
+        _workingElapsed = "—";
+        _eta = "—";
+        _completedAt = null;
+        _peakFilesPerMin = 0;
+        _peakBytesPerSec = 0;
+        _latestFilesPerMin = 0;
+        _currentParallelism = 0;
+        _filesSeries = [];
+        _filesLabels = [];
+        _bytesSeries = [];
+        _bytesLabels = [];
+        _rateLimitSeries = [];
+        _rateLimitLabels = [];
+        _parallelSeries = [];
+        _parallelLabels = [];
+        _rcCurrentRate = -1;
+        _rcInFlight = -1;
+        _rcRate429Short = -1;
+        _rcRate429Long = -1;
+        _rcHysteresisStateCode = -1;
+        _throughputWindowSec = 0;
     }
 
     private async Task RefreshPhaseAsync(IMigrationRouteDescriptor? descriptor, ITransferStateDb stateDb, CancellationToken ct)

@@ -128,6 +128,20 @@ public sealed class DropboxFolderServiceTests
         result.IsPathNotFound.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ListFoldersAsync_When409WithoutPathNotFound_IsPathNotFoundFalse()
+    {
+        // 検証対象: ListFoldersAsync  目的: 409 でも error_summary に path/not_found を含まない場合は IsPathNotFound=false のまま返すこと
+        var sut = new DropboxFolderService(
+            BuildFactory(JsonResponse("""{"error_summary":"too_many_files/.","error":{".tag":"too_many_files"}}""", HttpStatusCode.Conflict)),
+            NullLogger<DropboxFolderService>.Instance);
+
+        var result = await sut.ListFoldersAsync("token", "/folder");
+
+        result.Success.Should().BeFalse();
+        result.IsPathNotFound.Should().BeFalse();
+    }
+
     // ── 例外 ──────────────────────────────────────────────────────────────
 
     [Fact]
