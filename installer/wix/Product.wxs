@@ -39,17 +39,21 @@
     <MajorUpgrade DowngradeErrorMessage="より新しいバージョンの Cloud Migrator がインストール済みです。" />
 
     <!--
-      per-user インストール先の制約
-      Scope="perUser" のため UAC 昇格は行われない。WixUI_InstallDir でユーザーが
-      Program Files・Windows フォルダ等の管理者権限が必要な場所を選択した場合、
-      インストール後半でアクセス拒否となって失敗する。
-      以下の Condition が InstallExecuteSequence の LaunchConditions フェーズで
-      INSTALLFOLDER を検査し、システムフォルダが選択されていれば早期にエラーを表示して中断する。
+      per-user インストール先の制約（ホワイトリスト方式）
+      Scope="perUser" のため UAC 昇格は行われない。Program Files 等の既知システムフォルダだけでなく
+      C:\CloudMigrator 等の任意パスも標準ユーザーに書き込み権限がない場合がある。
+      blacklist では網羅できないため、USERPROFILE 環境変数（%LOCALAPPDATA% / %APPDATA% 等の親）
+      を SetProperty で MSI プロパティとして取得し、インストール先がユーザープロファイル配下か
+      をホワイトリスト検査する方式に変更。
       （InstallUISequence の LaunchConditions では既定値 %LOCALAPPDATA%\Programs\CloudMigrator
         が評価されるため条件は通過し、UI は正常に表示される）
     -->
-    <Condition Message="このインストーラーは per-user スコープのため、管理者権限が必要なシステムフォルダにはインストールできません。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下のフォルダに変更してください。">
-      NOT (INSTALLFOLDER &lt;&lt; ProgramFilesFolder OR INSTALLFOLDER &lt;&lt; ProgramFiles64Folder OR INSTALLFOLDER &lt;&lt; WindowsFolder OR INSTALLFOLDER &lt;&lt; SystemFolder)
+    <SetProperty Id="ENV_USERPROFILE"
+                 Value="[%USERPROFILE]"
+                 Sequence="both"
+                 Before="LaunchConditions" />
+    <Condition Message="このインストーラーは per-user スコープのため、現在のユーザープロファイル配下のフォルダにのみインストールできます。&#13;&#10;インストール先を %LOCALAPPDATA%\Programs\ 以下（または %USERPROFILE% 配下）のフォルダに変更してください。">
+      INSTALLFOLDER &lt;&lt; ENV_USERPROFILE
     </Condition>
 
     <!--
