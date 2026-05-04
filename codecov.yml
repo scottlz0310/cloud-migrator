@@ -9,6 +9,7 @@ coverage:
 
 ignore:
   - "src/CloudMigrator.Dashboard/Components/**"
+  - "src/CloudMigrator.Dashboard/Runners/**"
   - "src/CloudMigrator.Dashboard/MainWindow.xaml.cs"
   - "src/CloudMigrator.Dashboard/App.xaml.cs"
   - "src/CloudMigrator.Dashboard/WpfDialogService.cs"
