@@ -27,6 +27,16 @@
 
 ### Fixed
 
+- **#196 実機テスト：DropboxFolderPicker に新規フォルダ名設定機能を追加**
+  - `DropboxFolderPicker` コンポーネントに「新しいフォルダ名入力 → このパスに設定」UIを追加
+  - `DriveFolderPicker`（SharePoint 用）と同等の操作性を実現
+  - Dropbox パス形式（`/folder/name`）に従って新パスを構成し、転送開始時に `EnsureFolder` で自動作成
+  - 禁止文字バリデーション（`/ \ : < > " |`）を実装
+
+- **#196 実機テスト：DashboardPage の `Resolve()` null ガードを `SettingsPage` と対称化**
+  - `RefreshAllAsync` 内で `opts.DestinationProvider` が null または空の場合に早期リターンするガードを追加
+  - `MigrationRouteRegistry.Resolve()` が内部で `ArgumentNullException` を投げる前にガードする（`SettingsPage` 側の既存パターンに統一）
+
 - **ルート・転送パス変更時の state DB 初期化を必須化（#198）**
   - `ConfigHashChecker.ComputeHash` に `DestinationProvider`（"sharepoint"/"dropbox"）と `Graph.OneDriveSourceFolder`（転送元フォルダパス）を追加し、これらの変更をハッシュで検知できるようにした
   - `DashboardPage` の転送開始前にハッシュ変更を検出し、前回ハッシュが存在する場合は確認ダイアログを表示して DB 強制リセット（`ResetAllAsync` + `ClearAll`）を実施するよう変更
