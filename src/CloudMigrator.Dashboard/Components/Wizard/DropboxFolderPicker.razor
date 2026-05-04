@@ -156,6 +156,9 @@
     private string? _error;
     private string _newFolderName = string.Empty;
     private string? _newFolderNameError;
+    // SetNewFolderName() で設定されたパスは Dropbox 上にまだ存在しない。
+    // OpenPicker() で ListFoldersAsync に渡すと API エラーになるため、親パスで開始するフラグ。
+    private bool _isNewFolder;
 
     // 現在のナビゲーション状態
     private string _currentPath = string.Empty;
@@ -173,7 +176,12 @@
 
     private async Task OpenPicker()
     {
-        _currentPath = SelectedFolderPath;
+        // SetNewFolderName() で設定されたパスは Dropbox に存在しないため、
+        // 親パスからナビゲーションを開始する。既存フォルダを選択した場合はそのパスから。
+        _currentPath = _isNewFolder
+            ? GetParentPath(SelectedFolderPath)
+            : SelectedFolderPath;
+        _isNewFolder = false;
         _breadcrumbs = BuildBreadcrumbs(_currentPath);
         _isOpen = true;
         _newFolderName = string.Empty;
@@ -229,6 +237,7 @@
     private async Task ConfirmSelection()
     {
         SelectedFolderPath = _currentPath;
+        _isNewFolder = false;
         _isOpen = false;
         await OnFolderSelected.InvokeAsync(SelectedFolderPath);
     }
@@ -251,10 +260,18 @@
             : _currentPath.TrimEnd('/') + "/" + name;
 
         SelectedFolderPath = newPath;
+        _isNewFolder = true; // 次回 OpenPicker() で親パスからナビゲーションを開始する
         _newFolderName = string.Empty;
         _isOpen = false;
 
         await OnFolderSelected.InvokeAsync(SelectedFolderPath);
+    }
+
+    private static string GetParentPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return string.Empty;
+        var lastSlash = path.LastIndexOf('/');
+        return lastSlash <= 0 ? string.Empty : path[..lastSlash];
     }
 
     private static List<string> BuildBreadcrumbs(string path)
