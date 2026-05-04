@@ -110,16 +110,16 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes; then
             echo "Release '${{ github.ref_name }}' を作成しました。"
-            exit 0
-          fi
-
-          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+          elif gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
             echo "別の並列ジョブが Release '${{ github.ref_name }}' を作成済みのため成功扱いにします。"
-            exit 0
+          else
+            echo "Release '${{ github.ref_name }}' の作成に失敗しました。"
+            exit 1
           fi
 
-          echo "Release '${{ github.ref_name }}' の作成に失敗しました。"
-          exit 1
+          # Draft 状態のまま残らないよう、常に公開・Latest に設定する
+          gh release edit "${{ github.ref_name }}" --draft=false --latest
+          echo "Release '${{ github.ref_name }}' を公開済み・Latest に設定しました。"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
