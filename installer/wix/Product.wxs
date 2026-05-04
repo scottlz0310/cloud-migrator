@@ -48,6 +48,16 @@
     <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
 
     <!--
+      WixUI_Advanced が必要とするプロパティ。
+      ApplicationFolderName: per-user インストール時のフォルダ名。
+        InstallScopeDlg が %LOCALAPPDATA%\Programs\<ApplicationFolderName>\ を APPLICATIONFOLDER に設定する。
+      WixAppFolder: デフォルトスコープを示す文字列（"WixPerMachineFolder" = 全ユーザー優先にする場合）。
+        MSIINSTALLPERUSER=1 と組み合わせて per-user がデフォルトになる。
+    -->
+    <Property Id="ApplicationFolderName" Value="CloudMigrator" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+
+    <!--
       ADDTOPATH: PATH への追加を制御するプロパティ（既定: 1 = 有効）
       無効にする場合: msiexec /i cloud-migrator-setup.msi ADDTOPATH=0
     -->
@@ -62,9 +72,11 @@
     <MediaTemplate EmbedCab="yes" />
 
     <!--
-      インストール先: WixUI_Advanced の InstallScopeDlg が APPLICATIONFOLDER を管理する。
+      インストール先: APPLICATIONFOLDER の初期値は ProgramFiles64Folder\CloudMigrator。
+      WixUI_Advanced の InstallScopeDlg がスコープ選択後に以下のように上書きする:
       - 現在のユーザー選択時: %LOCALAPPDATA%\Programs\CloudMigrator\（UAC 不要）
       - 全ユーザー選択時:     %ProgramFiles%\CloudMigrator\（UAC 昇格が要求される）
+      ここでの Directory 定義は per-machine 時の初期値および MSI リンカーの参照解決用。
     -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="APPLICATIONFOLDER" Name="CloudMigrator" />
@@ -165,7 +177,7 @@
                      Action="set"
                      System="yes" />
         <RegistryValue Root="HKLM"
-                       Key="SOFTWARE\CloudMigrator\Path"
+                       Key="Software\CloudMigrator\Path"
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
@@ -181,8 +193,9 @@
 
     <!-- ─── UI 設定 ─────────────────────────────────────────────────────────── -->
 
-    <!-- WixUI_Advanced: ようこそ → ライセンス → スコープ選択 → インストール先 → 確認 → 進捗 → 完了 -->
-    <ui:WixUI Id="WixUI_Advanced" InstallDirectory="APPLICATIONFOLDER" />
+    <!-- WixUI_Advanced: ようこそ → ライセンス → スコープ選択 → インストール先 → 確認 → 進捗 → 完了
+         インストール先は ApplicationFolderName / WixAppFolder プロパティで管理するため InstallDirectory 不要 -->
+    <ui:WixUI Id="WixUI_Advanced" />
 
     <!-- ライセンス文書（RTF）と UI 用ビットマップ -->
     <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)License.rtf" />
