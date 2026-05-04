@@ -85,10 +85,10 @@
                     </MudList>
                 }
 
-                @* ── 新しいフォルダ名を入力して設定（作成は転送時に自動） ── *@
+                @* ── 新しいフォルダ名を入力して設定（ファイルアップロード時に自動作成、空フォルダは転送されない） ── *@
                 <MudDivider Class="my-2" />
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
-                    ここにないフォルダ名を入力すると、転送開始時に自動作成されます。
+                    ここにないフォルダ名を入力すると、ファイルのアップロード時に自動作成されます（空フォルダは転送されません）。
                 </MudText>
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                     <MudTextField T="string"
