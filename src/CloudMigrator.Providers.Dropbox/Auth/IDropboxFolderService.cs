@@ -22,4 +22,5 @@ public sealed record DropboxFolderEntry(string Name, string PathDisplay);
 public sealed record DropboxFolderListResult(
     bool Success,
     IReadOnlyList<DropboxFolderEntry>? Folders = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    bool IsPathNotFound = false);
