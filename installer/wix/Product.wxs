@@ -178,9 +178,19 @@
     <WixVariable Id="WixUIBannerBmp"  Value="$(sys.SOURCEFILEDIR)..\..\assets\cm-banner.bmp" />
     <WixVariable Id="WixUIDialogBmp"  Value="$(sys.SOURCEFILEDIR)..\..\assets\cm-dialog.bmp" />
 
-    <!-- 完了ダイアログのオプションチェックボックス: Dashboard を起動 -->
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Cloud Migrator Dashboard を起動する" />
+    <!-- 新規インストール・アップグレード時のみ ExitDialog に「Dashboard を起動する」チェックボックスを表示する。
+         修復・アンインストール完了時は LaunchApplication アクションが実行されないため、
+         チェックボックスを非表示にして誤操作を防ぐ。 -->
+    <SetProperty Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX"
+                 Value="1"
+                 Sequence="ui"
+                 Before="AppSearch"
+                 Condition="NOT Installed" />
+    <SetProperty Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
+                 Value="Cloud Migrator Dashboard を起動する"
+                 Sequence="ui"
+                 Before="AppSearch"
+                 Condition="NOT Installed" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="スタートメニューの「Cloud Migrator」フォルダから README（GitHub）も参照できます。" />
 
     <!--

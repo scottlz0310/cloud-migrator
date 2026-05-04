@@ -161,7 +161,9 @@ jobs:
         # UI    : ようこそ/ライセンス/インストール先/進捗/完了 ダイアログ
         # Util  : ExitDialog 起動用 WixShellExec + InternetShortcut（README リンク）
         # 注意: バージョン未指定だと最新（v7 系）が取得されて WiX 5 本体と不整合になる
+        # $PSNativeCommandUseErrorActionPreference = $true : ネイティブコマンド非0終了で即 step 失敗
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           wix extension add -g WixToolset.UI.wixext/5.0.2
           wix extension add -g WixToolset.Util.wixext/5.0.2
 
