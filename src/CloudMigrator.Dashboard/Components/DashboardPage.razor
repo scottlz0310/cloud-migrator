@@ -760,9 +760,17 @@ else
         // ファクトリ経由で毎回 AppConfiguration.Build() を呼ぶため、設定変更後も最新値を反映する
         var opts = OptionsFactory();
         // ルート descriptor を解決する（#207: isDropbox magic literal を HasFolderCreationPhase に置換）
-        // opts.DestinationProvider が null の場合は ArgumentNullException、未登録プロバイダーは InvalidOperationException が投げられる
-        try { _currentDescriptor = RouteRegistry.Resolve(opts.DestinationProvider); }
-        catch (InvalidOperationException ex) { _currentDescriptor = null; Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました: {Provider}", opts.DestinationProvider); }
+        // DestinationProvider が null/空の場合は Resolve を呼ばず _currentDescriptor=null にフォールバック（SettingsPage と同一パターン）。
+        // 登録外のプロバイダー名は InvalidOperationException を捕捉して同様にフォールバック。
+        if (!string.IsNullOrWhiteSpace(opts.DestinationProvider))
+        {
+            try { _currentDescriptor = RouteRegistry.Resolve(opts.DestinationProvider); }
+            catch (InvalidOperationException ex) { _currentDescriptor = null; Logger.LogWarning(ex, "ルート descriptor の解決に失敗しました: {Provider}", opts.DestinationProvider); }
+        }
+        else
+        {
+            _currentDescriptor = null;
+        }
         _useRateControl = opts.RateControl.UseRateControl;
         _useHybridController = opts.RateControl.UseRateControl && opts.RateControl.UseHybridController;
         _rcSlowdownThreshold  = opts.RateControl.SlowdownThreshold;
