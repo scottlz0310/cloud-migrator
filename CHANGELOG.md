@@ -30,7 +30,7 @@
 - **#196 実機テスト：DropboxFolderPicker に新規フォルダ名設定機能を追加**
   - `DropboxFolderPicker` コンポーネントに「新しいフォルダ名入力 → このパスに設定」UIを追加
   - `DriveFolderPicker`（SharePoint 用）と同等の操作性を実現
-  - Dropbox パス形式（`/folder/name`）に従って新パスを構成し、転送開始時に `EnsureFolder` で自動作成
+  - Dropbox パス形式（`/folder/name`）に従って新パスを構成。ファイルアップロード時に Dropbox の親フォルダ自動作成機能によってフォルダが作成される（`EnableEnsureFolder` オプションによる明示的な事前作成は別途設定が必要）
   - 禁止文字バリデーション（`/ \ : < > " |`）を実装
 
 - **#196 実機テスト：DashboardPage の `Resolve()` null ガードを `SettingsPage` と対称化**

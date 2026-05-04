@@ -50,7 +50,11 @@ public sealed class DropboxFolderService : IDropboxFolderService
                     _logger.LogWarning(
                         "Dropbox files/list_folder 失敗 [{Path}]: HTTP {Status} — {Body}",
                         folderPath, (int)response.StatusCode, errorBody);
-                    return new DropboxFolderListResult(false, ErrorMessage: $"HTTP {(int)response.StatusCode}");
+                    // 409 かつ error_summary に path/not_found を含む場合のみ IsPathNotFound=true にする。
+                    // 認証エラー（401）や一時障害（5xx）は IsPathNotFound=false のままとし、呼び出し元でエラー表示する。
+                    var isPathNotFound = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                        && errorBody.Contains("path/not_found", StringComparison.OrdinalIgnoreCase);
+                    return new DropboxFolderListResult(false, ErrorMessage: $"HTTP {(int)response.StatusCode}", IsPathNotFound: isPathNotFound);
                 }
 
                 var responseJson = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

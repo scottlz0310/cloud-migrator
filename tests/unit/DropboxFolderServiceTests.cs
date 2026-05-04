@@ -100,6 +100,34 @@ public sealed class DropboxFolderServiceTests
         result.ErrorMessage.Should().Contain("409");
     }
 
+    [Fact]
+    public async Task ListFoldersAsync_When409PathNotFound_SetsIsPathNotFound()
+    {
+        // 検証対象: ListFoldersAsync  目的: 409 かつ error_summary に path/not_found を含む場合に IsPathNotFound=true を返すこと
+        var sut = new DropboxFolderService(
+            BuildFactory(JsonResponse("""{"error_summary":"path/not_found/.","error":{".tag":"path","path":{".tag":"not_found"}}}""", HttpStatusCode.Conflict)),
+            NullLogger<DropboxFolderService>.Instance);
+
+        var result = await sut.ListFoldersAsync("token", "/NotExist");
+
+        result.Success.Should().BeFalse();
+        result.IsPathNotFound.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ListFoldersAsync_WhenNon409Error_DoesNotSetIsPathNotFound()
+    {
+        // 検証対象: ListFoldersAsync  目的: 認証エラー（401）など path/not_found 以外のエラーでは IsPathNotFound=false のまま返すこと
+        var sut = new DropboxFolderService(
+            BuildFactory(JsonResponse("""{"error":"invalid_access_token"}""", HttpStatusCode.Unauthorized)),
+            NullLogger<DropboxFolderService>.Instance);
+
+        var result = await sut.ListFoldersAsync("token", "/folder");
+
+        result.Success.Should().BeFalse();
+        result.IsPathNotFound.Should().BeFalse();
+    }
+
     // ── 例外 ──────────────────────────────────────────────────────────────
 
     [Fact]
