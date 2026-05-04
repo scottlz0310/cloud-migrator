@@ -11,11 +11,19 @@
 
 ## [0.7.1] - 2026-05-04
 
+### Changed
+
+- **MSI インストーラーをユーザー/システムインストール選択制に変更 (`WixUI_Advanced`)**
+  - `WixUI_InstallDir` から `WixUI_Advanced` へ移行。インストール開始時にスコープ選択ダイアログが表示されるようになった
+  - 「現在のユーザーのみ」（既定）を選択すると UAC 昇格なしで `%LOCALAPPDATA%\Programs\CloudMigrator\` にインストール
+  - 「すべてのユーザー」を選択すると UAC 昇格を経て `%ProgramFiles%\CloudMigrator\` にインストール
+  - `Scope="perUser"` を削除し、インストールスコープ管理を Windows インストーラー標準の `MSIINSTALLPERUSER` プロパティに委譲
+
 ### Fixed
 
 - **MSI ウェルカム画面でインストールがブロックされるバグを修正**
   - `SetProperty` で取得した `ENV_USERPROFILE` が `InstallUISequence` の `LaunchConditions` 評価時点で空になり、常にインストールをブロックしていた問題を修正
-  - `Scope="perUser"` により Windows インストーラーが per-user 制限を保証するため、独自の `<Launch>` 条件チェックは不要と判断して削除
+  - `WixUI_Advanced` 移行に伴い、無効な `<Launch>` 条件チェックを削除
 
 ---
 
