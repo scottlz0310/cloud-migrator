@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI: `upload-artifact@v7` / `download-artifact@v8` のバージョン不整合を修正**
+  - ci.yml (3箇所) および release.yml (1箇所) の `upload-artifact` を `v8` に統一
+  - 外部 Renovate プリセット (`renovate-config`) には GitHub Actions を一括グループ管理するルールが既に存在するため、次回以降は同一 PR で揃って更新される
+
 ---
 
 ## [0.7.1] - 2026-05-04

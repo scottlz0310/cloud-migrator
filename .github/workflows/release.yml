@@ -133,7 +133,7 @@ jobs:
 
       - name: Published バイナリをアーティファクトに保存（MSI ビルド用 / win-x64 のみ）
         if: matrix.rid == 'win-x64'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v8
         with:
           name: publish-win-x64
           path: publish/win-x64/
