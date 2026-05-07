@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI: `upload-artifact` / `download-artifact` のバージョン不整合を修正**
+  - `download-artifact@v8` に対して `upload-artifact@v8` は未リリースのため、両方を `v7` に統一
+  - 対象: ci.yml (upload×3, download×1)、release.yml (upload×1, download×1)
+  - 外部 Renovate プリセット (`renovate-config`) の GitHub Actions 一括グループルールにより、将来 `upload-artifact@v8` がリリースされた際は同一 PR でペア更新される
+
 ---
 
 ## [0.7.1] - 2026-05-04

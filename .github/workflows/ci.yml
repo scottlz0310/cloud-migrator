@@ -175,7 +175,7 @@ jobs:
           wix extension add -g WixToolset.Util.wixext/5.0.2
 
       - name: バイナリをダウンロード
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v7
         with:
           name: ci-publish-win-x64
           path: published/win-x64
