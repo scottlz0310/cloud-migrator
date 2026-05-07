@@ -65,7 +65,7 @@ jobs:
           verbose: true
 
       - name: テスト結果のアップロード
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-${{ matrix.os }}-dotnet${{ matrix.dotnet }}
@@ -143,7 +143,7 @@ jobs:
             -p:Version=0.0.0-ci --output "publish/win-x64"
 
       - name: バイナリをアーティファクトに保存（MSI ビルド検証用）
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7
         with:
           name: ci-publish-win-x64
           path: publish/win-x64/
@@ -175,7 +175,7 @@ jobs:
           wix extension add -g WixToolset.Util.wixext/5.0.2
 
       - name: バイナリをダウンロード
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v7
         with:
           name: ci-publish-win-x64
           path: published/win-x64
@@ -200,7 +200,7 @@ jobs:
             -o cloud-migrator-ci.msi
 
       - name: MSI をアーティファクトに保存
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7
         with:
           name: msi-ci
           path: cloud-migrator-ci.msi
