@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
     <PackageReference Include="Microsoft.Graph" Version="5.105.0" />
+    <PackageReference Include="Microsoft.Graph.Core" Version="4.0.1" />
     <PackageReference Include="Microsoft.Identity.Client" Version="4.84.0" />
     <PackageReference Include="Microsoft.Kiota.Http.HttpClientLibrary" Version="2.0.0" />
   </ItemGroup>
