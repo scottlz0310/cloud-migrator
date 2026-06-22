@@ -7,7 +7,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **NuGet 中央パッケージ管理 (CPM) を導入し依存バージョンを一元化**
+  - `Directory.Packages.props` を新設し、各 csproj に分散していた `PackageReference` の `Version` を `PackageVersion` として集約
+  - 各 csproj は `Version` 属性を持たず、バージョン定義は単一ファイルに集約。Renovate の更新対象が一元化され、同一パッケージのバージョン不整合リスクを解消
+
 ### Fixed
+
+- **CI: SQLitePCLRaw の脆弱性 (CVE-2025-6965) を修正しビルド失敗を解消**
+  - `Microsoft.Data.Sqlite` 10.0.9 がトランジティブに引く `SQLitePCLRaw.lib.e_sqlite3` 2.1.11 に高深刻度の脆弱性 (GHSA-2m69-gcr7-jv3q) があり、NuGet audit (NU1903) が `TreatWarningsAsErrors` によりビルドを失敗させていた
+  - `CloudMigrator.Core` に `SQLitePCLRaw.bundle_e_sqlite3` 3.0.3 を直接参照追加し、ネイティブ SQLite を修正済みの 3.50.x 系へ引き上げて脆弱な `lib.e_sqlite3` 2.1.11 を依存ツリーから排除
+  - `Microsoft.Data.Sqlite` 自体は 10.0.9 が最新のため据え置き（修正版バンドルを引く新リリースが出れば直接参照は撤去可能）
 
 - **CI: `upload-artifact` / `download-artifact` のバージョン不整合を修正**
   - `download-artifact@v8` に対して `upload-artifact@v8` は未リリースのため、両方を `v7` に統一
