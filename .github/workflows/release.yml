@@ -32,7 +32,7 @@ jobs:
             archive_ext: tar.gz
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v5
@@ -147,7 +147,7 @@ jobs:
       LEFTHOOK: 0
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v5
