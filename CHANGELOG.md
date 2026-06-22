@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **NuGet 中央パッケージ管理 (CPM) を導入し依存バージョンを一元化**
+  - `Directory.Packages.props` を新設し、各 csproj に分散していた `PackageReference` の `Version` を `PackageVersion` として集約
+  - 各 csproj は `Version` 属性を持たず、バージョン定義は単一ファイルに集約。Renovate の更新対象が一元化され、同一パッケージのバージョン不整合リスクを解消
+
 ### Fixed
 
 - **CI: SQLitePCLRaw の脆弱性 (CVE-2025-6965) を修正しビルド失敗を解消**
