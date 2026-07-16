@@ -9,6 +9,10 @@
 
 ### Changed
 
+- **Git フック管理のパッケージマネージャーを pnpm から bun に移行**
+  - [package.json](file:///C:/Users/jojob/src/cloud-migrator/package.json) の `packageManager` を `bun@1.3.14` に変更し、`pnpm-lock.yaml` を削除して `bun.lock` を新設
+  - Renovate での `pnpm` 更新時に発生する `renovate/artifacts` エラーを解消し、より軽量な Bun で `lefthook` などのローカル開発支援ツールを動作させる
+
 - **NuGet 中央パッケージ管理 (CPM) を導入し依存バージョンを一元化**
   - `Directory.Packages.props` を新設し、各 csproj に分散していた `PackageReference` の `Version` を `PackageVersion` として集約
   - 各 csproj は `Version` 属性を持たず、バージョン定義は単一ファイルに集約。Renovate の更新対象が一元化され、同一パッケージのバージョン不整合リスクを解消
