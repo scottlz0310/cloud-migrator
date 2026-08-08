@@ -139,6 +139,75 @@ jobs:
           path: publish/win-x64/
           retention-days: 1
 
+  msix:
+    name: MSIX パッケージビルド
+    runs-on: windows-latest
+    needs: publish
+    env:
+      LEFTHOOK: 0
+
+    steps:
+      - name: リポジトリを checkout
+        uses: actions/checkout@v7
+
+      - name: .NET SDK セットアップ
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: tag と manifest Version を照合
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "無効なリリースタグ形式です。SemVer 形式のタグを使用してください: $tag"
+          }
+
+          $tagVersion = $Matches['version']
+          if ($tagVersion -match '^\d+\.\d+\.\d+$') {
+            $tagVersion = "$tagVersion.0"
+          }
+          [xml]$manifest = Get-Content -LiteralPath "installer/msix/Package.appxmanifest" -Raw
+          $manifestVersion = $manifest.Package.Identity.Version
+          if ($tagVersion -ne $manifestVersion) {
+            throw "tag Version ($tagVersion) と manifest Version ($manifestVersion) が一致しません。"
+          }
+          "version=$manifestVersion" >> $env:GITHUB_OUTPUT
+
+      - name: MSIX を生成
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\installer\msix\Build-MsixPackage.ps1 `
+            -Configuration Release `
+            -Version "${{ steps.version.outputs.version }}"
+
+      - name: MSIX manifest・アセットを静的検査
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\scripts\ValidateMsixPackage.ps1 `
+            -PackagePath ".\installer\msix\AppPackages\CloudMigrator_${{ steps.version.outputs.version }}_x64.msix"
+
+      - name: MSIX をリリースにアップロード
+        shell: pwsh
+        run: |
+          gh release upload "${{ github.ref_name }}" `
+            ".\installer\msix\AppPackages\CloudMigrator_${{ steps.version.outputs.version }}_x64.msix" `
+            ".\installer\msix\AppPackages\CloudMigrator_${{ steps.version.outputs.version }}_x64_bundle.msixupload" `
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: MSIX をアーティファクトに保存
+        uses: actions/upload-artifact@v7
+        with:
+          name: msix-release-${{ github.run_id }}
+          path: |
+            installer/msix/AppPackages/CloudMigrator_*_x64.msix
+            installer/msix/AppPackages/CloudMigrator_*_x64_bundle.msixupload
+          if-no-files-found: error
+          retention-days: 30
+
   msi:
     name: MSI インストーラービルド
     runs-on: windows-latest

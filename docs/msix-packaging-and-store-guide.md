@@ -375,7 +375,7 @@ Submission options で、次を確認します。
 
 ### 6.3 GitHub Release との境界
 
-現在の `.github/workflows/release.yml` は `v*` タグで GitHub Release と MSI 等のアセットを公開しますが、MSIX Store package や Partner Center の認定状態を確認するゲートではありません。したがって、Store の公開保留を GitHub Release の Draft と同一視しません。GitHub Release を Store 認定後に公開する運用へ変更する場合は、ワークフローとリリース方針を別途変更・検証します。
+現在の `.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSI、MSIX (`.msix` / `.msixupload`) のアセットを公開しますが、MSIX の WACK 完了や Partner Center の認定状態を確認するゲートではありません。したがって、Store の公開保留を GitHub Release の Draft と同一視しません。
 
 ---
 
@@ -404,16 +404,56 @@ Add-AppxPackage -Path .\installer\msix\AppPackages\CloudMigrator_0.7.1.0_x64.msi
 
 ## 8. CI/CD との責務分離（#268）
 
-現在の `.github/workflows/ci.yml` は .NET の format/build/test、品質チェック、Windows publish、MSI 検証を行います。現在の `.github/workflows/release.yml` も CLI/Dashboard のアーカイブと MSI を扱うだけで、MSIX の生成や WACK のフル実行を保証しません。
+[#268](https://github.com/scottlz0310/cloud-migrator/issues/268) では、GitHub-hosted runner での静的検査と、WACK 導入済み self-hosted runner でのフル WACK を分離しています。GitHub-hosted runner の UAC ダイアログには依存しません。
 
-[#268](https://github.com/scottlz0310/cloud-migrator/issues/268) では次を別途設計・実装します。
+### 8.1 PR／main の MSIX 静的検査
 
-- PR ごとの MSIX 生成、manifest・Identity・Version・x64・アセットの静的検査。
-- WACK 導入済みの self-hosted Windows runner で、管理者権限とアクティブセッションを前提にしたフル WACK。
-- Full WACK は明示された package を検査する。Required failure は CI failure、Optional failure はレポートと記録にする。
-- GitHub-hosted runner の UAC ダイアログに依存しない。
+`.github/workflows/ci.yml` の `MSIX パッケージ検証` job は、PR と `main` への push で `windows-latest` 上に MSIX を生成し、[scripts/ValidateMsixPackage.ps1](../scripts/ValidateMsixPackage.ps1) で次を検査します。
 
-#267 の手順書へ、未実装の GitHub Actions YAML を「現在の自動化」として追加しません。CI 組み込み後は、実際の workflow と本書のコマンドを再確認して更新します。
+- package 内 manifest の Identity Name、Publisher、Version、ProcessorArchitecture (`x64`)
+- DisplayName、PublisherDisplayName、Resources の言語、Capabilities、Executable
+- manifest が参照する 4 画像と `resources.pri`
+- package の SHA-256
+
+生成した `.msix` と `.msixupload` は `msix-ci-<run_id>` artifact に保存されます。MSIX は Windows SDK の `makeappx.exe` で展開して検査します。WACK はこの job では実行しません。
+
+### 8.2 self-hosted runner の準備
+
+WACK 用 runner は、リポジトリの **Settings > Actions > Runners** から追加し、次の条件を満たすラベルを付けます。
+
+| 条件 | 要件 |
+| --- | --- |
+| labels | `self-hosted`、`windows`、`wack` |
+| Windows | Windows 10/11 の対話ユーザーセッション |
+| 権限 | runner を起動するユーザーが Administrators グループに所属 |
+| セッション | `Environment.UserInteractive` が true になるアクティブセッション。Windows サービス／Session 0 では実行しない |
+| SDK | Windows SDK と Windows App Certification Kit (`appcert.exe`) |
+| PowerShell | PowerShell 7 (`pwsh`) |
+
+runner は、GitHub Actions の self-hosted runner をログオン済みユーザーの対話プロセスとして起動します。管理者権限・アクティブセッション・WACK の存在は、WACK job の開始時にも再検査します。runner に保存した資格情報や OAuth token を workflow のログへ出力しません。
+
+### 8.3 Full WACK の実行
+
+`.github/workflows/wack.yml` は次の入口を持ちます。
+
+- `workflow_dispatch`: Actions 画面から対象 branch と manifest Version を選択して実行する
+- `v*` tag push: リリース候補として実行する。tag の Version（`v0.8.0` は `0.8.0.0` に正規化）と manifest Version が一致しない場合は開始前に失敗する
+
+workflow は最初に `windows-latest` で同一 commit の MSIX を生成・静的検査し、その package を artifact 経由で `self-hosted / windows / wack` runner へ渡します。WACK runner は artifact 内の 1 個の `.msix` を `-PackagePath` で明示し、次の既存スクリプトを実行します。
+
+~~~powershell
+pwsh -NoProfile -File .\scripts\run-wack-test.ps1 `
+  -PackagePath .\wack-input\CloudMigrator_<version>_x64.msix `
+  -ReportDirectory scripts/wack_reports
+~~~
+
+`run-wack-test.ps1` は WACK の XML/HTML を回収し、`AnalyzeWackReport.ps1 -FailOnRequiredFailure` で判定します。Required failure またはレポート異常は job failure、Optional failure のみの場合は job を成功とし、XML/HTML と WACK ログを `wack-reports-<run_id>` artifact に保存します。Optional failure の審査影響は artifact と [WACK 検証結果](wack-validation-results.md) に記録してください。
+
+WACK の UAC は通常の開発者実機でのみ使用します。CI の WACK runner は開始時点で管理者権限を持つため、UAC ダイアログの表示・自動操作には依存しません。runner の管理者権限または対話セッションが不足する場合は、WACK を開始せず失敗させます。
+
+### 8.4 CI と Store 提出の境界
+
+CI artifact と GitHub Release の MSIX asset は検証・受け渡し用であり、Partner Center へ自動提出しません。Store への `.msixupload` の提出、認定用送信、公開保留、`Publish now` は手動手順の停止点として残します。GitHub Pages のプライバシーポリシー URL の有効化も、この workflow の成功とは別に確認します。
 
 ---
 

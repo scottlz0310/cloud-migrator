@@ -17,6 +17,11 @@
   - `docs/msix-packaging-and-store-guide.md` に、生成物・manifest・SHA-256 の確認、UAC を含む WACK 実行と Required/Optional 判定、`runFullTrust` の審査ノートを集約
   - Partner Center の package/listing/submission options、公開保留、更新・差戻し時の再 WACK、提出証跡の記録方法を明記
   - MSIX の per-user / per-machine 相当の差異と、#268 で扱う self-hosted WACK CI との責務境界を記載
+- **MSIX 静的検査と self-hosted WACK workflow を追加（#268 / #101-E）**
+  - `ci.yml` の PR／main 向け MSIX 生成・manifest／Identity／Version／x64／アセット検査と artifact 保存を追加
+  - `wack.yml` の手動／`v*` tag 実行、管理者・対話 self-hosted runner 前提、Required failure の CI failure、Optional failure の XML/HTML artifact 保存を追加
+  - `scripts/ValidateMsixPackage.ps1` で `makeappx.exe` 展開後の package 内容を source manifest と比較
+  - `release.yml` の `v*` tag 実行で `.msix` / `.msixupload` を GitHub Release へ添付
 - **MSIX パッケージ化構成および `Package.appxmanifest` を追加（#264 / #101-A）**
   - `src/CloudMigrator.Dashboard/Package.appxmanifest` および `installer/msix/` を新設し、Identity (`scottlz0310.CloudMigrator`)、Capabilities (`internetClient`, `runFullTrust`)、およびビジュアルアセット参照を定義
   - `CloudMigrator.Dashboard.csproj` に MSIX パッケージングプロパティ (`EnableMsixTooling`, `WindowsPackageType`, `AppxBundle` 等) を追加

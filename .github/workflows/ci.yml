@@ -205,3 +205,55 @@ jobs:
           name: msi-ci
           path: cloud-migrator-ci.msi
           retention-days: 7
+
+  msix-check:
+    name: MSIX パッケージ検証
+    runs-on: windows-latest
+    needs: build-test
+    if: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+    env:
+      LEFTHOOK: 0
+
+    steps:
+      - name: リポジトリを checkout
+        uses: actions/checkout@v7
+
+      - name: .NET SDK セットアップ
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0"
+
+      - name: manifest Version を取得
+        id: manifest
+        shell: pwsh
+        run: |
+          [xml]$manifest = Get-Content -LiteralPath "installer/msix/Package.appxmanifest" -Raw
+          $version = $manifest.Package.Identity.Version
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Package.appxmanifest の Identity Version が空です。"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: MSIX を生成
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\installer\msix\Build-MsixPackage.ps1 `
+            -Configuration Release `
+            -Version "${{ steps.manifest.outputs.version }}"
+
+      - name: MSIX manifest・アセットを静的検査
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\scripts\ValidateMsixPackage.ps1 `
+            -PackagePath ".\installer\msix\AppPackages\CloudMigrator_${{ steps.manifest.outputs.version }}_x64.msix"
+
+      - name: MSIX 生成物をアーティファクトに保存
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: msix-ci-${{ github.run_id }}
+          path: |
+            installer/msix/AppPackages/CloudMigrator_*_x64.msix
+            installer/msix/AppPackages/CloudMigrator_*_x64_bundle.msixupload
+          if-no-files-found: warn
+          retention-days: 7
