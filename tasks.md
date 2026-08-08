@@ -32,7 +32,7 @@
 | 2 | [#208](https://github.com/scottlz0310/cloud-migrator/issues/208) | refactor | #196-B: SettingsPage のセクション表示・バリデーション判定を RouteDescriptor.SettingsSections 経由に置換 | #207 の後。IsSharePointRoute/IsDropboxRoute 30箇所以上の置換。中程度の変更量。 |
 | 3 | [#209](https://github.com/scottlz0310/cloud-migrator/issues/209) | refactor | #196-C: App.xaml.cs の移行パイプライン実行ロジックをルート対応ファクトリに切り出す | #207・#208 の後。最大変更。IMigrationPipelineFactory 新設が含まれる。 |
 | 4 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
-| 保留 | [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) | epic / installer | MSIX パッケージング・Microsoft Store 公開 | MSI 配布 #97 の運用実績、Partner Center、Store 提出素材が前提。現フェーズでは計画保持のみ。 |
+| 5 | [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) | epic / installer | MSIX パッケージング・Microsoft Store 公開 | サブ ISSUE #264〜#268 起票・再開済み。WACK/ListingData/マニュアル準備と合わせて段階的実行可能。 |
 
 ---
 
@@ -119,17 +119,26 @@ Renovate が検出した依存関係更新を、機能修正後の安定した�
 
 ---
 
-## 保留: #101 MSIX パッケージング・Microsoft Store 公開
+## 6. #101: MSIX パッケージング・Microsoft Store 公開 (epic)
 
-### 保留理由
+### 目的
 
-MSI 配布 #97 の安定運用、Microsoft Partner Center、Store 提出素材、プライバシーポリシー URL などが前提条件のため、現フェーズでは着手しない。
+MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージングと Microsoft Store 公開をサポートする。
 
-### 再開条件
+### 前提・状態
 
-- [ ] MSI 配布 #97 の運用実績が十分に積まれている。
-- [ ] Partner Center アカウントと Store 提出要件が準備済み。
-- [ ] MSIX / Store 配布の目的と対象ユーザーが明確になっている。
+- サブ ISSUE 群（#264〜#268）起票・再開済み。
+- MSI 配布 (#97) の運用実績確認と並行して、WACK 検査スクリプト・Listing Data・マニュアルドキュメントの準備を進める。
+
+### サブ ISSUE（中断再開性の確保）
+
+| Issue | 種別 | タイトル | 中断再開性のポイント |
+|-------|------|----------|----------------------|
+| [#264](https://github.com/scottlz0310/cloud-migrator/issues/264) | installer / feat | #101-A: MSIX パッケージング設定・Package.appxmanifest およびアセットの整備 | ✅ 完了（PR 作成中） |
+| [#265](https://github.com/scottlz0310/cloud-migrator/issues/265) | installer / test | #101-B: WACK 実行手順の策定・検証スクリプトおよびチェックリストの作成 | スクリプト1行で WACK 検査を再現 |
+| [#266](https://github.com/scottlz0310/cloud-migrator/issues/266) | installer / doc | #101-C: Partner Center Store Listing Data・提出アセット・プライバシーポリシーの整備 | 入力テンプレートをリポジトリ内に永続化 |
+| [#267](https://github.com/scottlz0310/cloud-migrator/issues/267) | doc / installer | #101-D: MSIX パッケージング・WACK 検査・Partner Center 提出マニュアルの作成 | 手順書により第三者でもいつでも再開可能 |
+| [#268](https://github.com/scottlz0310/cloud-migrator/issues/268) | ci / installer | #101-E: GitHub Actions CI による MSIX ビルドおよびリリースアタッチの自動化 | CI 経由のパッケージ生成を自動化 |
 
 ---
 

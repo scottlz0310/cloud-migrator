@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **MSIX パッケージ化構成および `Package.appxmanifest` を追加（#264 / #101-A）**
+  - `src/CloudMigrator.Dashboard/Package.appxmanifest` および `installer/msix/` を新設し、Identity (`scottlz0310.CloudMigrator`)、Capabilities (`internetClient`, `runFullTrust`)、およびビジュアルアセット参照を定義
+  - `CloudMigrator.Dashboard.csproj` に MSIX パッケージングプロパティ (`EnableMsixTooling`, `WindowsPackageType`, `AppxBundle` 等) を追加
+  - `installer/msix/Build-MsixPackage.ps1` を追加し、`makeappx.exe` による MSIX および Store アップロードパッケージ (`.msixupload`) の生成を自動化
+
 ### Changed
 
 - **Git フック管理のパッケージマネージャーを pnpm から bun に移行**
