@@ -49,7 +49,7 @@ Partner Center に提出する `msixupload` パッケージ、および WACK 検
   <Identity
     Name="scottlz0310.CloudMigrator"
     Publisher="CN=..." 
-    Version="0.8.0.0" />
+    Version="0.7.1.0" />
 
   <Properties>
     <DisplayName>CloudMigrator</DisplayName>
@@ -171,12 +171,12 @@ Microsoft Store 提出時にはプライバシーポリシー URL の提示が�
 初回公開および今後のアップデート時には、Store 審査での指摘・差戻し（Rejection）リスクに対応するため、以下の運用ルールを徹底します。
 
 1. **リリース順序の制御（Store 審査通過後の正式公開）**:
-   - Store 提出用パッケージ (`0.8.0.0`) を Partner Center にアップロード後、Store 側の審査が通過して「公開済み (Published)」になるまで、GitHub 側の Release は **Draft (下書き)** に留めます。
+   - Store 提出用パッケージ（リリース時例: `0.8.0.0`）を Partner Center にアップロード後、Store 側の審査が通過して「公開済み (Published)」になるまで、GitHub 側の Release は **Draft (下書き)** に留めます。
    - 審査通過を確認した段階で、GitHub Release を正式公開（Tag 確定）とします。
 
 2. **差戻し時の Revision (4桁目) 繰り上げ規則**:
-   - Store 審査にて修正指摘・差戻しが発生した場合は、主バージョン (`0.8.0`) は変更せず、Manifest の Revision 桁 (`0.8.0.1`, `0.8.0.2` ...) をバンプして再ビルド・再提出します。
-   - これにより、GitHub 上のリリース計画 (`0.8.0`) との整合性を崩さずに Store 側の更新要求を吸収できます。
+   - Store 審査にて修正指摘・差戻しが発生した場合は、主バージョン（例: `0.8.0`）は変更せず、Manifest の Revision 桁（例: `0.8.0.1`, `0.8.0.2` ...）をバンプして再ビルド・再提出します。
+   - これにより、GitHub 上のリリースタグ（例: `v0.8.0`）との整合性を崩さずに Store 側の更新要求を吸収できます。
 
 ---
 
