@@ -10,22 +10,15 @@
 
 ### 1.1 Store 提出用パッケージビルド
 
-Partner Center に提出する `msixupload` パッケージ、および WACK 検証用の `msixbundle` を生成するには、以下の `dotnet publish` コマンドを実行します。
+Partner Center に提出する `msixupload` パッケージ、および WACK 検証用の `msix` ファイルを生成するには、以下の PowerShell スクリプトを実行します。
 
 ```powershell
-dotnet publish src/CloudMigrator.Dashboard/CloudMigrator.Dashboard.csproj -c Release -p:Platform=x64 `
-  -p:WindowsPackageType=MSIX `
-  -p:GenerateAppxPackageOnBuild=true `
-  -p:UapAppxPackageBuildMode=StoreUpload `
-  -p:AppxBundle=Always `
-  -p:AppxBundlePlatforms=x64 `
-  -p:AppxPackageSigningEnabled=false `
-  -p:AppxSymbolPackageEnabled=false
+.\installer\msix\Build-MsixPackage.ps1
 ```
 
-#### 生成物 (AppPackages 配下):
+#### 生成物 (`installer/msix/AppPackages/` 配下):
 - **`CloudMigrator_<version>_x64_bundle.msixupload`**: Partner Center 提出用ファイル
-- **`CloudMigrator_<version>_x64.msixbundle`**: ローカル WACK テストおよびサイドローディング確認用ファイル
+- **`CloudMigrator_<version>_x64.msix`**: ローカル WACK テストおよびサイドローディング確認用ファイル
 
 ---
 
