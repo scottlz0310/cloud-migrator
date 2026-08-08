@@ -25,13 +25,14 @@ Partner Center に提出する `msixupload` パッケージ、および WACK 検
 ### 1.2 バージョン整合性規則（1:1 対応）
 
 リリース時および Partner Center 提出時には、以下の 4 箇所でバージョン表記が **100% 完全一致** している必要があります。
+※ 開発中（各機能 PR）の段階では `main` の `Directory.Build.props`（現 `0.7.1`）を維持し、正式な `0.8.0` へのバンプは Epic #101 の全サブ ISSUE が揃った**「リリース直前の専用 PR」**で一括して実施します。
 
-| 対象ファイル / 箇所 | 設定項目 | 例 |
-|----------------------|----------|----|
-| **Git タグ** | Release Tag | `v0.8.0` |
-| **`Package.appxmanifest`** | `<Identity Version="..." />` | `0.8.0.0` |
-| **`.csproj`** | `<Version>`, `<AssemblyVersion>`, `<FileVersion>` | `0.8.0`, `0.8.0.0`, `0.8.0.0` |
-| **`CHANGELOG.md`** | バージョン見出し | `## [0.8.0]` |
+| 対象ファイル / 箇所 | 設定項目 | 開発中表記例 | リリース直前バンプ例 |
+|----------------------|----------|--------------|----------------------|
+| **Git タグ** | Release Tag | - | `v0.8.0` |
+| **`Package.appxmanifest`** | `<Identity Version="..." />` | `0.7.1.0` | `0.8.0.0` |
+| **`.csproj` / `Directory.Build.props`** | `<Version>` | `0.7.1` | `0.8.0` |
+| **`CHANGELOG.md`** | バージョン見出し | `[Unreleased]` | `## [0.8.0]` |
 
 ---
 
