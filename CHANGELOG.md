@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **MSIX パッケージ化構成および `Package.appxmanifest` を追加（#264 / #101-A）**
+  - `src/CloudMigrator.Dashboard/Package.appxmanifest` を新設し、Identity (`scottlz0310.CloudMigrator`)、Capabilities (`internetClient`, `runFullTrust`)、およびビジュアルアセット参照を定義
+  - `CloudMigrator.Dashboard.csproj` に MSIX パッケージングプロパティ (`EnableMsixTooling`, `WindowsPackageType`, `AppxBundle` 等) を追加
+  - `src/CloudMigrator.Dashboard/Assets/` 配下にストア掲載およびパッケージ用の各サイズビジュアルアセットを追加
+
 ### Changed
 
 - **Git フック管理のパッケージマネージャーを pnpm から bun に移行**

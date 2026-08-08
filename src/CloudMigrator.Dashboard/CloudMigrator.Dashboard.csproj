@@ -11,10 +11,27 @@
     <ApplicationIcon>..\..\assets\CloudMigrator.ico</ApplicationIcon>
     <!-- AdaptiveConcurrencyController/Adapter は [Obsolete] 化済みだが後方互換のため継続使用。v0.6.0 で削除予定。 -->
     <NoWarn>CS0618</NoWarn>
+    <!-- MSIX Packaging Configuration -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType Condition="'$(WindowsPackageType)'==''">None</WindowsPackageType>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    <AppxBundle>Always</AppxBundle>
+    <AppxBundlePlatforms>x64</AppxBundlePlatforms>
+    <DefaultLanguage>ja-JP</DefaultLanguage>
+    <Languages>ja-JP;en-US</Languages>
+    <AppxDefaultResourceQualifiers>Language=ja-JP;en-US</AppxDefaultResourceQualifiers>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <AppxSymbolPackageEnabled>false</AppxSymbolPackageEnabled>
   </PropertyGroup>
 
   <ItemGroup>
     <Resource Include="Assets\CloudMigrator.png" />
+    <Content Include="Assets\StoreLogo.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Square150x150Logo.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Square44x44Logo.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Wide310x150Logo.jpg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
