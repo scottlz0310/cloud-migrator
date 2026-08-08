@@ -1,0 +1,155 @@
+name: WACK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "検証する manifest Version（省略時は対象 commit の manifest から取得）"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-msix:
+    name: MSIX build for WACK
+    runs-on: windows-latest
+    env:
+      LEFTHOOK: 0
+    outputs:
+      version: ${{ steps.manifest.outputs.version }}
+
+    steps:
+      - name: リポジトリを checkout
+        uses: actions/checkout@v7
+
+      - name: .NET SDK セットアップ
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0"
+
+      - name: manifest Version と tag/input の整合性を確認
+        id: manifest
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ github.event.inputs.version || '' }}
+        run: |
+          [xml]$manifest = Get-Content -LiteralPath "installer/msix/Package.appxmanifest" -Raw
+          $manifestVersion = $manifest.Package.Identity.Version
+          if ([string]::IsNullOrWhiteSpace($manifestVersion)) {
+            throw "Package.appxmanifest の Identity Version が空です。"
+          }
+
+          $tagVersion = ""
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $tag = $env:GITHUB_REF_NAME
+            if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+              throw "無効な WACK 用 tag 形式です。SemVer 形式の tag を使用してください: $tag"
+            }
+            $tagVersion = $Matches['version']
+            if ($tagVersion -match "^\d+\.\d+\.\d+$") {
+              $tagVersion = "$tagVersion.0"
+            }
+            if ($tagVersion -ne $manifestVersion) {
+              throw "tag Version ($tagVersion) と manifest Version ($manifestVersion) が一致しません。"
+            }
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($env:REQUESTED_VERSION)) {
+            $requestedVersion = $env:REQUESTED_VERSION
+            if ($requestedVersion -match "^\d+\.\d+\.\d+$") {
+              $requestedVersion = "$requestedVersion.0"
+            }
+            if ($requestedVersion -ne $manifestVersion) {
+              throw "workflow_dispatch の version ($requestedVersion) と manifest Version ($manifestVersion) が一致しません。"
+            }
+          }
+
+          "version=$manifestVersion" >> $env:GITHUB_OUTPUT
+          "対象 Version: $manifestVersion"
+
+      - name: MSIX を生成
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\installer\msix\Build-MsixPackage.ps1 `
+            -Configuration Release `
+            -Version "${{ steps.manifest.outputs.version }}"
+
+      - name: MSIX 静的検査
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .\scripts\ValidateMsixPackage.ps1 `
+            -PackagePath ".\installer\msix\AppPackages\CloudMigrator_${{ steps.manifest.outputs.version }}_x64.msix"
+
+      - name: WACK 入力 package を保存
+        uses: actions/upload-artifact@v7
+        with:
+          name: msix-wack-input-${{ github.run_id }}
+          path: installer/msix/AppPackages/CloudMigrator_*_x64.msix
+          if-no-files-found: error
+          retention-days: 7
+
+  wack:
+    name: WACK（self-hosted / Windows / wack）
+    needs: build-msix
+    runs-on: [self-hosted, windows, wack]
+    env:
+      LEFTHOOK: 0
+
+    steps:
+      - name: リポジトリを checkout
+        uses: actions/checkout@v7
+
+      - name: WACK 入力 package を取得
+        uses: actions/download-artifact@v8
+        with:
+          name: msix-wack-input-${{ github.run_id }}
+          path: wack-input
+
+      - name: runner の管理者権限・対話セッションを確認
+        shell: pwsh
+        run: |
+          if ($env:OS -ne "Windows_NT") {
+            throw "WACK runner は Windows である必要があります。"
+          }
+          if (-not [Environment]::UserInteractive) {
+            throw "WACK runner はアクティブなユーザーセッションで実行してください。サービス Session 0 は使用できません。"
+          }
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+          if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            throw "WACK runner は管理者権限で実行してください。GitHub-hosted runner の UAC 昇格には依存しません。"
+          }
+          $appCertPath = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\App Certification Kit\appcert.exe"
+          if (-not (Test-Path -LiteralPath $appCertPath -PathType Leaf)) {
+            throw "Windows App Certification Kit の appcert.exe が見つかりません: $appCertPath"
+          }
+
+      - name: WACK を実行
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath "wack-input" -File -Filter "*.msix")
+          if ($packages.Count -ne 1) {
+            throw "WACK 入力 package は 1 個である必要があります。検出数: $($packages.Count)"
+          }
+          & pwsh -NoProfile -File .\scripts\run-wack-test.ps1 `
+            -PackagePath $packages[0].FullName `
+            -ReportDirectory "scripts/wack_reports"
+          if ($LASTEXITCODE -ne 0) {
+            throw "WACK または Required failure の検査に失敗しました（exit=$LASTEXITCODE）。"
+          }
+
+      - name: WACK レポートを保存
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wack-reports-${{ github.run_id }}
+          path: |
+            scripts/wack_reports/
+            scripts/wack_work/logs/
+          if-no-files-found: warn
+          retention-days: 30
