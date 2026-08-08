@@ -11,8 +11,12 @@
 
 - **Partner Center Store Listing Data・提出アセット・プライバシーポリシーを整備（#266 / #101-C）**
   - `docs/assets/store/listingData.csv` を UTF-8 BOM / CRLF の相対パス形式で追加し、英語・日本語の説明文、機能一覧、検索語、スクリーンショット、Store logo を登録可能化
-  - `docs/assets/store/README.md` にインポート手順、サポート URL、画像仕様、未参照プロモーション素材の扱いを記載
+  - `docs/assets/store-source/README.md` にインポート手順、サポート URL、画像仕様、未参照プロモーション素材の扱いを記載
   - `docs/privacy-policy.html` を追加し、OneDrive / SharePoint Online / Dropbox へのユーザー指示による転送と、開発者側の分析・広告・移行データ収集を行わないことを明記
+- **MSIX/WACK/Partner Center 手動提出ガイドを整備（#267 / #101-D）**
+  - `docs/msix-packaging-and-store-guide.md` に、生成物・manifest・SHA-256 の確認、UAC を含む WACK 実行と Required/Optional 判定、`runFullTrust` の審査ノートを集約
+  - Partner Center の package/listing/submission options、公開保留、更新・差戻し時の再 WACK、提出証跡の記録方法を明記
+  - MSIX の per-user / per-machine 相当の差異と、#268 で扱う self-hosted WACK CI との責務境界を記載
 - **MSIX パッケージ化構成および `Package.appxmanifest` を追加（#264 / #101-A）**
   - `src/CloudMigrator.Dashboard/Package.appxmanifest` および `installer/msix/` を新設し、Identity (`scottlz0310.CloudMigrator`)、Capabilities (`internetClient`, `runFullTrust`)、およびビジュアルアセット参照を定義
   - `CloudMigrator.Dashboard.csproj` に MSIX パッケージングプロパティ (`EnableMsixTooling`, `WindowsPackageType`, `AppxBundle` 等) を追加
@@ -34,6 +38,14 @@
   - 各 csproj は `Version` 属性を持たず、バージョン定義は単一ファイルに集約。Renovate の更新対象が一元化され、同一パッケージのバージョン不整合リスクを解消
 
 ### Fixed
+
+- **Partner Center の listingData フォルダーインポート用相対パスを修正（#266 / #101-C）**
+  - 新規画像を含む初回インポートで必要なルートフォルダー名 `store/` を、スクリーンショットと Store logo の CSV パスへ追加
+  - Partner Center に直接渡す `docs/assets/store` と、管理用 README・ロゴ原本・未参照ドラフトを置く `docs/assets/store-source` を分離し、UTF-8 BOM / CRLF の維持を README・提出ガイドへ明記
+
+- **MSIX の Store package validation で言語・リソースが欠落する問題を修正（#264 / #101-A）**
+  - 2 つの `Package.appxmanifest` に `ja-JP` / `en-US` の `Resources` 宣言を追加し、`ja-JP` を既定言語として明示
+  - `Build-MsixPackage.ps1` が `makepri.exe` で `resources.pri` を生成し、PublisherDisplayName・言語・manifest 参照画像を MSIX 化前に検証するよう更新
 
 - **CI: SQLitePCLRaw の脆弱性 (CVE-2025-6965) を修正しビルド失敗を解消**
   - `Microsoft.Data.Sqlite` 10.0.9 がトランジティブに引く `SQLitePCLRaw.lib.e_sqlite3` 2.1.11 に高深刻度の脆弱性 (GHSA-2m69-gcr7-jv3q) があり、NuGet audit (NU1903) が `TreatWarningsAsErrors` によりビルドを失敗させていた

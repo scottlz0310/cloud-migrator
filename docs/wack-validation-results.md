@@ -26,7 +26,7 @@
 
 ## `[45]` / `[63]` 修正内容
 
-- `[45] アプリ リソース`: `docs/assets/store/app_logo.jpg` をソースにして、`StoreLogo`、`Square44x44Logo`、`Square150x150Logo` を高品質に再生成した。`Wide310x150Logo` は専用のワイドソースから生成済みである。各ファイルは 204,800 bytes 未満である。
+- `[45] アプリ リソース`: `docs/assets/store-source/app_logo.jpg` をソースにして、`StoreLogo`、`Square44x44Logo`、`Square150x150Logo` を高品質に再生成した。`Wide310x150Logo` は専用のワイドソースから生成済みである。各ファイルは 204,800 bytes 未満である。
 - `[63] プラットフォームに適したファイル`: `installer/msix/Package.appxmanifest` と `src/CloudMigrator.Dashboard/Package.appxmanifest` の `Identity` に `ProcessorArchitecture="x64"` を追加し、x64 パッケージを再生成した。
 - 修正後パッケージ: `installer/msix/AppPackages/CloudMigrator_0.7.1.0_x64.msix`
 - 再検証コマンド: `.\scripts\run-wack-test.ps1 -PackagePath .\installer\msix\AppPackages\CloudMigrator_0.7.1.0_x64.msix`
