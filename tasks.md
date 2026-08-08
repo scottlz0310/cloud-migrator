@@ -136,7 +136,7 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 |-------|------|----------|----------------------|
 | [#264](https://github.com/scottlz0310/cloud-migrator/issues/264) | installer / feat | #101-A: MSIX パッケージング設定・Package.appxmanifest およびアセットの整備 | ✅ 完了（PR 作成中） |
 | [#265](https://github.com/scottlz0310/cloud-migrator/issues/265) | installer / test | #101-B: WACK 実行手順の策定・検証スクリプトおよびチェックリストの作成 | [45]/[63] 修正済み。高解像度ロゴ再生成後の現行パッケージも実機 WACK PASS（Required 0 / Optional 1 `[88]`）。[88] は許容方針 |
-| [#266](https://github.com/scottlz0310/cloud-migrator/issues/266) | installer / doc | #101-C: Partner Center Store Listing Data・提出アセット・プライバシーポリシーの整備 | 入力テンプレートをリポジトリ内に永続化 |
+| [#266](https://github.com/scottlz0310/cloud-migrator/issues/266) | installer / doc | #101-C: Partner Center Store Listing Data・提出アセット・プライバシーポリシーの整備 | ✅ 完了（`docs/assets/store/listingData.csv`、提出アセット仕様、`docs/privacy-policy.html`） |
 | [#267](https://github.com/scottlz0310/cloud-migrator/issues/267) | doc / installer | #101-D: MSIX パッケージング・WACK 検査・Partner Center 提出マニュアルの作成 | 手順書により第三者でもいつでも再開可能 |
 | [#268](https://github.com/scottlz0310/cloud-migrator/issues/268) | ci / installer | #101-E: GitHub Actions CI による MSIX ビルドおよびリリースアタッチの自動化 | CI 経由のパッケージ生成を自動化 |
 

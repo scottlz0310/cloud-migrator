@@ -9,6 +9,10 @@
 
 ### Added
 
+- **Partner Center Store Listing Data・提出アセット・プライバシーポリシーを整備（#266 / #101-C）**
+  - `docs/assets/store/listingData.csv` を UTF-8 BOM / CRLF の相対パス形式で追加し、英語・日本語の説明文、機能一覧、検索語、スクリーンショット、Store logo を登録可能化
+  - `docs/assets/store/README.md` にインポート手順、サポート URL、画像仕様、未参照プロモーション素材の扱いを記載
+  - `docs/privacy-policy.html` を追加し、OneDrive / SharePoint Online / Dropbox へのユーザー指示による転送と、開発者側の分析・広告・移行データ収集を行わないことを明記
 - **MSIX パッケージ化構成および `Package.appxmanifest` を追加（#264 / #101-A）**
   - `src/CloudMigrator.Dashboard/Package.appxmanifest` および `installer/msix/` を新設し、Identity (`scottlz0310.CloudMigrator`)、Capabilities (`internetClient`, `runFullTrust`)、およびビジュアルアセット参照を定義
   - `CloudMigrator.Dashboard.csproj` に MSIX パッケージングプロパティ (`EnableMsixTooling`, `WindowsPackageType`, `AppxBundle` 等) を追加
