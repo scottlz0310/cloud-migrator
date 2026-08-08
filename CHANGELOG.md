@@ -13,6 +13,11 @@
   - `src/CloudMigrator.Dashboard/Package.appxmanifest` および `installer/msix/` を新設し、Identity (`scottlz0310.CloudMigrator`)、Capabilities (`internetClient`, `runFullTrust`)、およびビジュアルアセット参照を定義
   - `CloudMigrator.Dashboard.csproj` に MSIX パッケージングプロパティ (`EnableMsixTooling`, `WindowsPackageType`, `AppxBundle` 等) を追加
   - `installer/msix/Build-MsixPackage.ps1` を追加し、`makeappx.exe` による MSIX および Store アップロードパッケージ (`.msixupload`) の生成を自動化
+- **WACK 検証スクリプトと判定チェックリストを追加（#265 / #101-B）**
+  - `scripts/run-wack-test.ps1` で UAC 昇格、最新 MSIX の自動選択、WACK の実行環境隔離、XML/HTML レポート生成と XML 解析を再現可能化
+  - MSIX ロゴの WACK 寸法・容量要件と `ProcessorArchitecture="x64"` を反映し、Optional [45]/[63] の再検証対象を修正
+  - `scripts/AnalyzeWackReport.ps1` で Required/Optional failure を要約し、`docs/wack-validation-results.md` に実行履歴を記録可能化
+  - `docs/wack-validation-checklist.md` に Required/Optional failure、ライフサイクル、非推奨 API、ファイル権限、manifest/UTF-8 の確認項目を追加
 
 ### Changed
 

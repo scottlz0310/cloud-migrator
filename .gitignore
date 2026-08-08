@@ -82,3 +82,7 @@ configs/config.json
 *.trx
 TestResults/
 LocalQualityResults/
+
+# WACK の実行時作業領域・レポート
+scripts/wack_reports/
+scripts/wack_work/
