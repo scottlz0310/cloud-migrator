@@ -89,14 +89,37 @@ WACK は、Microsoft Store 提出に必要な互換性・セキュリティ・�
 
 ### 2.1 ローカルでの WACK 検査手順
 
-1. 節 1.1 のコマンドで `CloudMigrator_<version>_x64.msixbundle` を生成。
-2. Windows 検索で **「Windows アプリ認定キット (WACK)」** (`appcert.exe`) を起動。
-3. 「ストア アプリ」プロファイルを選択し、`.msixbundle` を指定してテストを実行。
-4. **合格判定基準**:
-   - `Required failure == 0` であること。
-   - Optional 失敗（例: [88] ブロック済みの実行可能ファイル等）は Partner Center 提出に影響しません。
+WACK は PowerShell 7 (`pwsh`) のアクティブなユーザーセッションで実行します。Windows SDK の Windows App Certification Kit が必要です。非管理者で起動した場合、スクリプトが UAC で昇格した `pwsh` を起動し、対象パッケージ・レポート出力先・`appcert.exe` の指定を引き継ぎます。UAC をキャンセルした場合は失敗として終了します。スクリプトは `scripts/wack_work/` に TEMP、ユーザープロファイル、TAEF ログを隔離します。これにより、WACK が通常のユーザープロファイルへ作業ファイルを混在させることを防ぎます。
 
-### 2.2 審査ノート (Notes for Certification) の記載
+パッケージを生成した後、次の 1 行で WACK を実行します。無指定時は `AppPackages/` 配下の最終更新時刻が新しい MSIX/AppX を自動選択します。
+
+```powershell
+.\scripts\run-wack-test.ps1
+```
+
+検証対象を固定する場合は `-PackagePath` を指定します。
+
+```powershell
+.\scripts\run-wack-test.ps1 -PackagePath .\installer\msix\AppPackages\CloudMigrator_0.8.0.0_x64.msix
+```
+
+自動選択は再生成直後の確認に使用し、リリース記録へ残す検証では対象パスを明示してください。
+
+スクリプトは `appcert.exe reset`、`appcert.exe test -appxpackagepath ... -reportoutputpath ...` を順に実行し、`scripts/wack_reports/` に XML と HTML/HTM レポートを保存します。WACK が `LOCALAPPDATA\Microsoft\AppCertKit` に生成する HTML は、スクリプトが隔離作業領域からレポート出力先へ回収します。実行後には XML の Required/Optional failure も要約します。
+
+WACK の終了コード 0 だけでは合格を意味しないため、合否は [WACK 検証チェックリスト](wack-validation-checklist.md)、[WACK 検証結果](wack-validation-results.md)、XML/HTML レポートで判定します。
+
+### 2.2 WACK レポートの判定基準
+
+- `Required failure == 0` であること。
+- `Optional failure` がある場合は、Store 提出への影響と対応方針を記録すること。
+- XML レポートを機械的な記録、HTML レポートを詳細確認用として保存すること。
+- `scripts/AnalyzeWackReport.ps1` の要約で Required failure が 0 件であることを確認すること。
+- レポートが生成されない場合や対象パッケージが不明確な場合は、合格扱いにせず実行環境と入力を修正すること。
+
+サスペンド / レジューム、非推奨 API、ファイル権限、manifest / UTF-8 の確認項目と修正記録は、[WACK 検証チェックリスト](wack-validation-checklist.md) を使用します。
+
+### 2.3 審査ノート (Notes for Certification) の記載
 CloudMigrator はファイルシステム操作およびネットワーク通信のために `runFullTrust` 権限を使用します。Partner Center 提出時には、審査ノートに以下の理由を記載します。
 
 > **審査ノート記載例**:

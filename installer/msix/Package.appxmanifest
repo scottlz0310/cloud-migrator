@@ -8,7 +8,8 @@
   <Identity
     Name="scottlz0310.CloudMigrator"
     Publisher="CN=39FB3D39-1F1A-4B82-B081-47469FD12CA6"
-    Version="0.7.1.0" />
+    Version="0.7.1.0"
+    ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>CloudMigrator</DisplayName>
