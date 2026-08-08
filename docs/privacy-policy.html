@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CloudMigrator privacy policy">
+  <link rel="canonical" href="https://scottlz0310.github.io/cloud-migrator/privacy-policy.html">
+  <title>CloudMigrator Privacy Policy / プライバシーポリシー</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #101827; --panel: #172338; --text: #edf3ff; --muted: #b6c4da; --link: #8ec5ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.7 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 20px 56px; }
+    header, section { background: var(--panel); border: 1px solid #2a3a55; border-radius: 12px; padding: 22px 24px; margin: 16px 0; }
+    h1, h2 { line-height: 1.3; margin-top: 0; }
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.35rem; border-bottom: 1px solid #38506f; padding-bottom: 8px; }
+    h3 { margin-bottom: 4px; }
+    p, ul { margin: 10px 0; }
+    li + li { margin-top: 6px; }
+    a { color: var(--link); }
+    .meta, .note { color: var(--muted); }
+    .lang { margin-top: 22px; }
+    code { background: #0d1422; border-radius: 4px; padding: 2px 5px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>CloudMigrator Privacy Policy<br>CloudMigrator プライバシーポリシー</h1>
+    <p class="meta">Effective date / 発効日: 2026-08-08</p>
+    <p>このポリシーは、CloudMigrator の CLI、Dashboard、および MSIX 版に適用されます。</p>
+    <p>This policy applies to the CloudMigrator CLI, Dashboard, and MSIX package.</p>
+  </header>
+
+  <section>
+    <h2>1. 開発者が収集しない情報 / Information We Do Not Collect</h2>
+    <div class="lang">
+      <h3>日本語</h3>
+      <p>CloudMigrator の開発者は、移行データを受け取る開発者運営のバックエンドを提供していません。アプリにアカウント登録、広告、行動分析、テレメトリー、または販売目的のデータ収集機能はありません。</p>
+      <p>サポートやリリース情報の GitHub ページは、ユーザーがリンクを選択したときにブラウザーで開きます。GitHub 側の処理には GitHub のプライバシーポリシーが適用されます。</p>
+    </div>
+    <div class="lang">
+      <h3>English</h3>
+      <p>The CloudMigrator developer does not operate a backend that receives migration data. The app does not provide account registration, advertising, behavioral analytics, telemetry, or data sales.</p>
+      <p>Support and release pages on GitHub are opened in a browser when the user chooses a link. GitHub's privacy policy applies to GitHub's processing.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. アプリが扱う情報 / Information Processed by the App</h2>
+    <div class="lang">
+      <h3>日本語</h3>
+      <ul>
+        <li>移行元として設定した OneDrive のファイル名、パス、サイズ、更新日時などのメタデータ。</li>
+        <li>移行先として選択した SharePoint Online または Dropbox へ送信するファイルと、転送に必要なメタデータ。</li>
+        <li>ローカル設定、転送状態データベース、スキップリスト、キャッシュ、進捗・エラーログ。</li>
+      </ul>
+      <p>これらは移行を実行するためにユーザーの端末上で処理されます。ローカルに保存される場所はアプリの設定に従います。認証情報は Windows Credential Manager または環境変数から読み取られ、ログへ意図的に出力しない設計です。</p>
+    </div>
+    <div class="lang">
+      <h3>English</h3>
+      <ul>
+        <li>File names, paths, sizes, modified times, and other metadata from the configured OneDrive source.</li>
+        <li>Files and metadata required to send the migration to the selected SharePoint Online or Dropbox destination.</li>
+        <li>Local configuration, transfer state databases, skip lists, caches, progress data, and error logs.</li>
+      </ul>
+      <p>This information is processed on the user's device to perform the migration and is stored in locations controlled by the app configuration. Credentials are read from Windows Credential Manager or environment variables and are not intentionally written to logs.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. 外部サービスへの送信 / Transfers to Third-Party Services</h2>
+    <div class="lang">
+      <h3>日本語</h3>
+      <p>ユーザーが移行を開始した場合、アプリは設定された認証情報を使って Microsoft Graph 経由で OneDrive を読み取り、選択された SharePoint Online または Dropbox へファイルを送信します。これはアプリの中心機能であり、開発者への送信ではありません。各サービスによるデータの取り扱いには、各サービスのポリシーが適用されます。</p>
+      <ul>
+        <li><a href="https://privacy.microsoft.com/privacystatement" rel="noopener noreferrer">Microsoft Privacy Statement</a></li>
+        <li><a href="https://www.dropbox.com/privacy" rel="noopener noreferrer">Dropbox Privacy Policy</a></li>
+        <li><a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement" rel="noopener noreferrer">GitHub Privacy Statement</a></li>
+      </ul>
+    </div>
+    <div class="lang">
+      <h3>English</h3>
+      <p>When the user starts a migration, the app uses the configured credentials to read the OneDrive source through Microsoft Graph and send files to the selected SharePoint Online or Dropbox destination. This is the app's core function and is not a transfer to the developer. The policies of each service govern its handling of the data.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. 保存期間と削除 / Retention and Deletion</h2>
+    <div class="lang">
+      <h3>日本語</h3>
+      <p>開発者は移行データを保持しません。端末上の設定、状態 DB、キャッシュ、ログの保存期間はユーザーの設定・運用に委ねられます。移行完了後に不要なローカルデータを削除する場合は、アプリを停止してから設定したデータディレクトリを確認してください。送信先サービス上のデータは、ユーザーまたは組織が各サービスの機能で管理します。</p>
+    </div>
+    <div class="lang">
+      <h3>English</h3>
+      <p>The developer does not retain migration data. Retention of local configuration, state databases, caches, and logs is controlled by the user's configuration and operations. After stopping the app, users may review and delete unneeded local data. Data in the destination service is managed by the user or organization through that service.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>5. セキュリティ / Security</h2>
+    <div class="lang">
+      <h3>日本語</h3>
+      <p>認証情報をソースコードや Store Listing に含めないでください。Windows Credential Manager または環境変数を使用し、ログやスクリーンショットに秘密情報を表示しないでください。外部サービスのアクセス権、保持期間、監査設定は利用する Microsoft 365 / Dropbox 環境の管理者が確認してください。</p>
+    </div>
+    <div class="lang">
+      <h3>English</h3>
+      <p>Do not put credentials in source code or Store listing data. Use Windows Credential Manager or environment variables, and keep secrets out of logs and screenshots. Administrators of the Microsoft 365 or Dropbox environment should review access, retention, and audit settings for the services they use.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>6. 変更とお問い合わせ / Changes and Contact</h2>
+    <div class="lang">
+      <h3>日本語</h3>
+      <p>このポリシーを変更した場合は、このページの発効日を更新します。お問い合わせや問題報告は <a href="https://github.com/scottlz0310/cloud-migrator/issues" rel="noopener noreferrer">GitHub Issues</a> から送信してください。</p>
+    </div>
+    <div class="lang">
+      <h3>English</h3>
+      <p>If this policy changes, the effective date on this page will be updated. For questions or issue reports, contact us through <a href="https://github.com/scottlz0310/cloud-migrator/issues" rel="noopener noreferrer">GitHub Issues</a>.</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

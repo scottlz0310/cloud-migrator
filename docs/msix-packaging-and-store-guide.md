@@ -131,47 +131,46 @@ CloudMigrator はファイルシステム操作およびネットワーク通信
 
 ### 3.1 アセット画像・スクリーンショット仕様
 
-リポジトリ内の確定アセット一覧です。 Partner Center 登録時に使用します。
+提出用 CSV と画像は [`docs/assets/store/README.md`](assets/store/README.md) に集約しています。Partner Center のフォルダーインポートには、CSV と CSV が参照する画像を同じフォルダーから渡します。
 
-| アセット種別 | リポジトリ内格納パス | 仕様 | 用途 |
+| アセット種別 | リポジトリ内格納パス | 仕様 | CSV での扱い |
 |--------------|----------------------|------|------|
-| **アプリロゴ** | `docs/assets/store/app_logo.jpg` | 700x700 px (1:1) | メインアイコン・StoreLogo |
-| **プロモバナー** | `docs/assets/store/store_promo_header.jpg` | 16:9 | Store ヘッダー掲載バナー |
-| **スクリーンショット 1** | `docs/assets/store/screenshot_dashboard.png` | 1920x1080 (16:9) | 実際のダッシュボード画面 |
-| **スクリーンショット 2** | `docs/assets/store/screenshot_settings.png` | 1920x1080 (16:9) | 実際の設定・ルート選択画面 |
-| **スクリーンショット 3** | `docs/assets/store/screenshot_logs.png` | 1920x1080 (16:9) | 実際の移行監査ログ画面 |
+| **ロゴ原本** | `docs/assets/store/app_logo.jpg` | 700x700 px (1:1) | 派生画像の原本 |
+| **Store logo** | `docs/assets/store/store_logo_300x300.png` | 300x300 px (1:1) | `StoreLogo300x300` から参照 |
+| **スクリーンショット 1** | `docs/assets/store/screenshot_dashboard.png` | 1920x1080 (16:9) | `DesktopScreenshot1` から参照 |
+| **スクリーンショット 2** | `docs/assets/store/screenshot_settings.png` | 1920x1080 (16:9) | `DesktopScreenshot2` から参照 |
+| **スクリーンショット 3** | `docs/assets/store/screenshot_logs.png` | 1920x1080 (16:9) | `DesktopScreenshot3` から参照 |
+| **プロモバナー（ドラフト）** | `docs/assets/store/store_promo_header.jpg` | 1376x768 (約1.79:1、16:9ではない) | 解像度・文言確認が終わるまで未参照 |
+
+Microsoft の MSI/EXE 向けガイダンスでは、スクリーンショットは 1 枚以上が必須、4 枚以上が推奨、最大 10 枚です。現在は 3 枚を登録可能な状態にし、公開前に 4 枚目を追加できるか確認します。プロモバナーは現在の解像度が掲載用の目安を満たさず、対応ルートと再確認が必要な文言もあるため、低解像度のまま拡大して提出しません。
 
 ---
 
 ### 3.2 `listingData.csv` 管理規則（一括登録時）
 
-Partner Center で「フォルダー単位のインポート」を行う場合の厳格なフォーマット規則です。
+`docs/assets/store/listingData.csv` は、英語 (`en-us`) と日本語 (`ja-jp`) を 1 ファイルに保持する提出入力テンプレートです。
 
 - **ファイル形式**: **UTF-8 (BOMあり) + CRLF**
-  - ※ LF 改行や BOM なし UTF-8 の場合、 Partner Center インポート時に行連結・文字化けエラーが発生します。
-  - ※ Excel で開いてそのまま保存しないでください（フォーマットが崩れる原因になります）。
-- **配置構造**:
-  ```text
-  propose/
-  ├── listingData-ja-JP.csv
-  ├── app_logo.jpg
-  ├── screenshot_dashboard.png
-  ├── screenshot_settings.png
-  └── screenshot_logs.png
-  ```
+  - `Field`、`ID`、`Type (種類)` の列名・行は削除、改名しないでください。
+  - Excel で開いてそのまま保存せず、UTF-8 BOM と CRLF を維持してください。
+- **相対パス**: CSV と同じフォルダーにある画像はファイル名だけを指定します。
+- **初回提出**: Partner Center からアプリ固有の最新 CSV をエクスポートし、項目の差分を確認してから本文を移します。アプリ固有の URL や ID はリポジトリへ固定しません。
+- **サポート連絡先**: `https://github.com/scottlz0310/cloud-migrator/issues`
+- **プライバシーポリシー**: GitHub Pages 有効化後に `https://scottlz0310.github.io/cloud-migrator/privacy-policy.html` を使用します。
+
+詳細な入力手順、未参照アセット、連絡先の扱いは [`docs/assets/store/README.md`](assets/store/README.md) を参照してください。
 
 ---
 
 ## 4. プライバシーポリシーの準備（GitHub Pages 運用）
 
-Microsoft Store 提出時にはプライバシーポリシー URL の提示が必須です。
+提出用本文を [`docs/privacy-policy.html`](privacy-policy.html) に追加しました。CloudMigrator が扱う OneDrive、SharePoint Online、Dropbox のデータ転送と、開発者が分析・広告・移行データ収集を行わないことを明記しています。
 
 ### 4.1 GitHub Pages での公開手順
-1. 本リポジトリの `docs/privacy-policy.html`（または GitHub Pages 設定）をメインブランチに配置。
-2. GitHub リポジトリ設定 (Settings > Pages) で `docs/` フォルダを公開設定。
-3. 公開 URL 例:
-   `https://<owner>.github.io/cloud-migrator/privacy-policy.html`
-4. Partner Center の「プライバシーポリシー URL」欄に上記 URL を登録。
+1. `docs/privacy-policy.html` をメインブランチへ反映する。
+2. GitHub リポジトリ設定 (Settings > Pages) で、公開元を `main` ブランチの `/docs` フォルダーに設定する。
+3. `https://scottlz0310.github.io/cloud-migrator/privacy-policy.html` をブラウザーで開き、HTTPS で表示できることを確認する。
+4. Partner Center の「プライバシーポリシー URL」欄に確認済みの URL を登録する。Pages 有効化前の URL は確定値として使用しない。
 
 ---
 
