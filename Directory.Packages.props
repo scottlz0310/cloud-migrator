@@ -8,16 +8,16 @@
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="FluentAssertions" Version="8.10.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.90" />
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Graph" Version="6.5.0" />
     <PackageVersion Include="Microsoft.Graph.Core" Version="4.0.1" />
     <PackageVersion Include="Microsoft.Identity.Client" Version="4.87.0" />
@@ -33,7 +33,7 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <!-- CVE-2025-6965 対策。ネイティブ SQLite を修正済み 3.50.x へ固定する。CloudMigrator.Core が直接参照（詳細は同 csproj のコメント参照） -->
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
-    <PackageVersion Include="System.CommandLine" Version="3.0.0-preview.6.26359.118" />
+    <PackageVersion Include="System.CommandLine" Version="3.0.0-preview.7.26381.103" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
