@@ -129,7 +129,7 @@ jobs:
   wack:
     name: WACK（self-hosted / Windows / wack）
     needs: prepare_wack_input
-    if: ${{ needs.prepare_wack_input.result == 'success' }}
+    if: ${{ always() && needs.prepare_wack_input.result == 'success' }}
     runs-on: [self-hosted, windows, wack]
     env:
       LEFTHOOK: 0
