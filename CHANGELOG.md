@@ -10,8 +10,8 @@
 ### Fixed
 
 - **Microsoft Store submission の listing JSON 解析を堅牢化（#276 / #101-F）**
-  - Store listing の説明文に不正な `\u` 断片が含まれていても、正しい escape と package metadata を保持したまま既存 submission の status 確認を継続できるよう修正
-  - 合成 listing JSON を使った PowerShell 解析テストを CI に追加
+  - Store listing の説明文に JSON 仕様外の escape が含まれていても、正規の escape と package metadata を保持したまま既存 submission の status 確認を継続できるよう修正
+  - 合成 listing JSON を使った PowerShell 解析テストを CI に追加し、Store job が module を利用できるよう checkout を追加
 
 ## [0.7.2] - 2026-08-16
 

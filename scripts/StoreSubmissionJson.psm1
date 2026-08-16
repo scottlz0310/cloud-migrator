@@ -3,14 +3,82 @@
     Microsoft Store submission JSON から公開判定に必要なメタデータを取得する。
 
 .DESCRIPTION
-    Store listing の説明文に不正な `\u` 断片が含まれる場合でも、JSON 全体を
-    解析できる形へ限定的に補正して Status と package 名を取得する。補正対象は
-    4 桁の hexadecimal ではない Unicode escape だけで、正しい escape と、
-    JSON 上の文字列としての `\\u` は変更しない。
+    Store listing の説明文に JSON 仕様外の escape が含まれる場合でも、JSON 全体を
+    解析できる形へ限定的に補正して Status と package 名を取得する。正規の JSON
+    escape と、JSON 上の文字列としての `\\u` は変更しない。
 #>
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Repair-InvalidJsonEscapes {
+    param(
+        [Parameter(Mandatory)]
+        [string]$JsonText
+    )
+
+    $builder = [System.Text.StringBuilder]::new($JsonText.Length)
+    $insideString = $false
+    $repairedInvalidEscapeCount = 0
+    $backslash = [char]0x5c
+
+    for ($index = 0; $index -lt $JsonText.Length; $index++) {
+        $current = $JsonText[$index]
+        if (-not $insideString) {
+            [void]$builder.Append($current)
+            if ($current -eq [char]0x22) {
+                $insideString = $true
+            }
+            continue
+        }
+
+        if ($current -eq [char]0x22) {
+            [void]$builder.Append($current)
+            $insideString = $false
+            continue
+        }
+
+        if ($current -ne $backslash) {
+            [void]$builder.Append($current)
+            continue
+        }
+
+        $nextIndex = $index + 1
+        if ($nextIndex -ge $JsonText.Length) {
+            [void]$builder.Append($backslash)
+            [void]$builder.Append($backslash)
+            $repairedInvalidEscapeCount++
+            continue
+        }
+
+        $next = $JsonText[$nextIndex]
+        if ([string]$next -in @('"', '\', '/', 'b', 'f', 'n', 'r', 't')) {
+            [void]$builder.Append($current)
+            [void]$builder.Append($next)
+            $index = $nextIndex
+            continue
+        }
+
+        if ($next -eq 'u' -and $nextIndex + 4 -lt $JsonText.Length) {
+            $unicodeDigits = $JsonText.Substring($nextIndex + 1, 4)
+            if ($unicodeDigits -match '^[0-9A-Fa-f]{4}$') {
+                [void]$builder.Append($current)
+                [void]$builder.Append($JsonText.Substring($nextIndex, 5))
+                $index = $nextIndex + 4
+                continue
+            }
+        }
+
+        [void]$builder.Append($backslash)
+        [void]$builder.Append($backslash)
+        $repairedInvalidEscapeCount++
+    }
+
+    return [pscustomobject]@{
+        JsonText                  = $builder.ToString()
+        RepairedInvalidEscapeCount = $repairedInvalidEscapeCount
+    }
+}
 
 function Read-StoreSubmissionMetadata {
     [CmdletBinding()]
@@ -34,11 +102,8 @@ function Read-StoreSubmissionMetadata {
         throw "既存 submission の JSON を CLI 出力から取得できませんでした。パス: $JsonPath"
     }
 
-    $invalidUnicodePattern = '(?<prefix>(?<!\\)(?:\\\\)*)\\u(?![0-9A-Fa-f]{4})'
-    $repairedInvalidUnicodeEscapeCount = [regex]::Matches($jsonText, $invalidUnicodePattern).Count
-    if ($repairedInvalidUnicodeEscapeCount -gt 0) {
-        $jsonText = [regex]::Replace($jsonText, $invalidUnicodePattern, '${prefix}\\u')
-    }
+    $repairedJson = Repair-InvalidJsonEscapes -JsonText $jsonText
+    $jsonText = $repairedJson.JsonText
 
     try {
         $submission = $jsonText | ConvertFrom-Json
@@ -70,7 +135,7 @@ function Read-StoreSubmissionMetadata {
     return [pscustomobject]@{
         Status                                  = [string]$statusProperty.Value
         PackageNames                            = $packageNames
-        RepairedInvalidUnicodeEscapeCount      = $repairedInvalidUnicodeEscapeCount
+        RepairedInvalidEscapeCount              = $repairedJson.RepairedInvalidEscapeCount
     }
 }
 

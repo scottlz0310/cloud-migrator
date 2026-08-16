@@ -282,6 +282,9 @@ jobs:
       actions: read
 
     steps:
+      - name: リポジトリを checkout
+        uses: actions/checkout@v7
+
       - name: MSIX artifact を取得
         uses: actions/download-artifact@v8
         with:
@@ -385,7 +388,7 @@ jobs:
           $samePackage = $packageNames -contains $expectedPackage
           "既存 submission status: $status" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           "既存 submission package 一致: $samePackage" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
-          "listing JSON の不正な Unicode escape 補正件数: $($submission.RepairedInvalidUnicodeEscapeCount)" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "listing JSON の不正な escape 補正件数: $($submission.RepairedInvalidEscapeCount)" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
           'already_published=false' >> $env:GITHUB_OUTPUT
           'polled_existing=false' >> $env:GITHUB_OUTPUT

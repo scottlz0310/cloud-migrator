@@ -42,7 +42,7 @@ function Invoke-ParserTest {
         $metadata = Read-StoreSubmissionMetadata -JsonPath $temporaryFile.FullName
 
         Assert-Equal -Expected 'CommitStarted' -Actual $metadata.Status -Name "$Name / Status"
-        Assert-Equal -Expected $ExpectedRepairCount -Actual $metadata.RepairedInvalidUnicodeEscapeCount -Name "$Name / 補正件数"
+        Assert-Equal -Expected $ExpectedRepairCount -Actual $metadata.RepairedInvalidEscapeCount -Name "$Name / 補正件数"
         if ('CloudMigrator_0.7.2.0_x64.msix' -notin @($metadata.PackageNames)) {
             throw "テスト '$Name' が失敗しました。期待する package 名を取得できません。"
         }
@@ -92,6 +92,22 @@ Invoke-ParserTest -Name '正しい Unicode escape' -ExpectedRepairCount 0 -Json 
     "ja-jp": {
       "BaseListing": {
         "Description": "\u3042"
+      }
+    }
+  },
+  "ApplicationPackages": [
+    { "FileName": "CloudMigrator_0.7.2.0_x64.msix" }
+  ]
+}
+'@
+
+Invoke-ParserTest -Name 'その他の不正な escape' -ExpectedRepairCount 3 -Json @'
+{
+  "Status": "CommitStarted",
+  "Listings": {
+    "ja-jp": {
+      "BaseListing": {
+        "Description": "C:\store\app path\ file"
       }
     }
   },
