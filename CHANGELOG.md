@@ -78,6 +78,7 @@
 
 - **Microsoft Store の既存 submission JSON 解析を修正（#276 / #101-F）**
   - `msstore submission get` が返す複数行 JSON 全体を解析し、先頭の `{` 行だけを渡して失敗する問題を解消
+  - submission 取得・JSON 出力読み込み・解析の失敗時に、stderr／一時ファイルのパスや元の例外メッセージを示して診断性を改善
 
 ---
 
