@@ -101,18 +101,18 @@ jobs:
   prepare_wack_input:
     name: WACK 入力 artifact の準備
     needs: build-msix
-    if: ${{ always() && (github.event_name == 'workflow_call' || needs.build-msix.result == 'success') }}
+    if: ${{ always() && (inputs.artifact_name != '' || needs.build-msix.result == 'success') }}
     runs-on: windows-latest
     steps:
       - name: リリースの MSIX artifact を取得
-        if: ${{ github.event_name == 'workflow_call' }}
+        if: ${{ inputs.artifact_name != '' }}
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_name }}
           path: wack-input
 
       - name: 手動実行の MSIX artifact を取得
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ inputs.artifact_name == '' && needs.build-msix.result == 'success' }}
         uses: actions/download-artifact@v8
         with:
           name: msix-wack-input-${{ github.run_id }}
