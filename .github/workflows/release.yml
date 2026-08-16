@@ -371,20 +371,24 @@ jobs:
             throw "Store 入力の MSIX は 1 個である必要があります。検出数: $($packages.Count)"
           }
           $expectedPackage = $packages[0].Name
-          $output = @(& msstore submission get $env:STORE_PRODUCT_ID 2>&1)
+          $jsonPath = Join-Path $env:RUNNER_TEMP "store-submission-$env:GITHUB_RUN_ID.json"
+          $errorPath = Join-Path $env:RUNNER_TEMP "store-submission-$env:GITHUB_RUN_ID.err"
+          & msstore submission get $env:STORE_PRODUCT_ID 1> $jsonPath 2> $errorPath
           if ($LASTEXITCODE -ne 0) {
             throw "既存 submission の取得に失敗しました。Product ID と Partner Center 権限を確認してください。"
           }
 
-          $jsonLine = $output |
-            ForEach-Object { [regex]::Replace([string]$_, '\x1b\[[0-?]*[ -/]*[@-~]', '') } |
-            Where-Object { $_.TrimStart().StartsWith('{') } |
-            Select-Object -Last 1
-          if ([string]::IsNullOrWhiteSpace([string]$jsonLine)) {
+          $jsonText = Get-Content -LiteralPath $jsonPath -Raw
+          $jsonText = [regex]::Replace([string]$jsonText, '\x1b\[[0-?]*[ -/]*[@-~]', '')
+          if ([string]::IsNullOrWhiteSpace($jsonText)) {
             throw '既存 submission の JSON を CLI 出力から取得できませんでした。'
           }
 
-          $submission = $jsonLine | ConvertFrom-Json
+          try {
+            $submission = $jsonText | ConvertFrom-Json
+          } catch {
+            throw '既存 submission の複数行 JSON を解析できませんでした。CLI の出力形式を確認してください。'
+          }
           $status = [string]$submission.Status
           $packageNames = @($submission.ApplicationPackages | ForEach-Object { [string]$_.FileName })
           $samePackage = $packageNames -contains $expectedPackage

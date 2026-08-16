@@ -76,6 +76,9 @@
   - reusable workflow の上流 job が skip されても WACK 本体を暗黙に skip しないようにし、self-hosted WACK の完了を Store 公開の前提にする
   - 初回 runner でも Partner Center credentials の設定後に CLI telemetry を無効化するよう手順を修正
 
+- **Microsoft Store の既存 submission JSON 解析を修正（#276 / #101-F）**
+  - `msstore submission get` が返す複数行 JSON 全体を解析し、先頭の `{` 行だけを渡して失敗する問題を解消
+
 ---
 
 ## [0.7.1] - 2026-05-04
