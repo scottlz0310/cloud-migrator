@@ -10,6 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  store-submission-json:
+    name: Store submission JSON 解析検証
+    runs-on: windows-latest
+    env:
+      LEFTHOOK: 0
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: PowerShell 解析テスト
+        shell: pwsh
+        run: pwsh -NoProfile -File .\scripts\Test-StoreSubmissionJson.ps1
+
   build-test:
     name: Build & Test (${{ matrix.os }} / .NET ${{ matrix.dotnet }})
     runs-on: ${{ matrix.os }}

@@ -282,6 +282,9 @@ jobs:
       actions: read
 
     steps:
+      - name: リポジトリを checkout
+        uses: actions/checkout@v7
+
       - name: MSIX artifact を取得
         uses: actions/download-artifact@v8
         with:
@@ -378,26 +381,14 @@ jobs:
             throw "既存 submission の取得に失敗しました。Product ID と Partner Center 権限を確認してください。stderr: $errorPath"
           }
 
-          try {
-            $jsonText = Get-Content -LiteralPath $jsonPath -Raw -ErrorAction Stop
-          } catch {
-            throw "既存 submission の JSON 出力を読み込めませんでした。パス: $jsonPath。$($_.Exception.Message)"
-          }
-          $jsonText = [regex]::Replace([string]$jsonText, '\x1b\[[0-?]*[ -/]*[@-~]', '')
-          if ([string]::IsNullOrWhiteSpace($jsonText)) {
-            throw "既存 submission の JSON を CLI 出力から取得できませんでした。パス: $jsonPath"
-          }
-
-          try {
-            $submission = $jsonText | ConvertFrom-Json
-          } catch {
-            throw "既存 submission の複数行 JSON を解析できませんでした。CLI の出力形式を確認してください。$($_.Exception.Message)"
-          }
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/StoreSubmissionJson.psm1') -Force
+          $submission = Read-StoreSubmissionMetadata -JsonPath $jsonPath
           $status = [string]$submission.Status
-          $packageNames = @($submission.ApplicationPackages | ForEach-Object { [string]$_.FileName })
+          $packageNames = @($submission.PackageNames)
           $samePackage = $packageNames -contains $expectedPackage
           "既存 submission status: $status" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           "既存 submission package 一致: $samePackage" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "listing JSON の不正な escape 補正件数: $($submission.RepairedInvalidEscapeCount)" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
           'already_published=false' >> $env:GITHUB_OUTPUT
           'polled_existing=false' >> $env:GITHUB_OUTPUT
