@@ -99,3 +99,23 @@ CloudMigrator.Cli
 - unit テストは XPlat Code Coverage で Cobertura XML を生成します。
 - pull request では `quality-gate` ジョブが `quality-metrics` と `security-scan` を実行します。
 - Codecov への送信は Ubuntu ジョブで一度だけ行い、生成済み Cobertura XML をそのまま利用します。
+
+## リリースフロー（MSIX / Microsoft Store）
+
+MSIX のリリースは `v*` tag push を入口とし、GitHub Release の生成、同一 MSIX artifact の WACK、Microsoft Store 自動公開を順に実行します。
+
+```text
+v* tag push
+  -> release.yml: CLI / Dashboard / MSI / MSIX を生成し GitHub Release へ添付
+  -> msix-release-<run_id>: .msix / .msixupload / SHA-256 証跡を保存
+  -> wack.yml (workflow_call): 同じ artifact の .msix を self-hosted WACK runner で検証
+  -> store-production: WACK 成功後だけ同じ artifact の .msixupload を Store へ提出・公開
+```
+
+- `release.yml` は tag と manifest Version、tag commit の main 系列、package の SHA-256 を確認します。
+- リリース経路の `wack.yml` は `workflow_call` で artifact を受け取り、tag 時に MSIX を再ビルドしません。`workflow_dispatch` による個別 WACK は別途維持します。
+- Store job は `store-production` Environment、`STORE_PRODUCT_ID` variable、Entra ID / Partner Center の Environment secrets を使用します。Environment の deployment policy は `v*` tag に限定し、Product 単位の concurrency で submission を直列化します。
+- Store job は既存 submission の status と package を確認し、同じ package の処理中 submission は poll して再利用します。別 Version の submission は上書きせず停止します。
+- GitHub Release の公開完了は Store 公開完了を意味しません。WACK と Store の job 結果、artifact 証跡、submission status を別々に確認します。
+
+Environment の初期設定と中断・再実行を含む詳細手順は、[MSIX パッケージング・WACK 検査・Microsoft Store 提出ガイド](msix-packaging-and-store-guide.md)の [Store 自動公開と初期設定](msix-packaging-and-store-guide.md#84-store-自動公開と初期設定-276) に集約します。

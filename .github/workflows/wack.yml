@@ -7,16 +7,21 @@ on:
         description: "検証する manifest Version（省略時は対象 commit の manifest から取得）"
         required: false
         type: string
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: "WACK に渡す MSIX artifact 名"
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-msix:
     name: MSIX build for WACK
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: windows-latest
     env:
       LEFTHOOK: 0
@@ -93,9 +98,38 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  prepare_wack_input:
+    name: WACK 入力 artifact の準備
+    needs: build-msix
+    if: ${{ always() && (github.event_name == 'workflow_call' || needs.build-msix.result == 'success') }}
+    runs-on: windows-latest
+    steps:
+      - name: リリースの MSIX artifact を取得
+        if: ${{ github.event_name == 'workflow_call' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: wack-input
+
+      - name: 手動実行の MSIX artifact を取得
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: msix-wack-input-${{ github.run_id }}
+          path: wack-input
+
+      - name: WACK 入力 artifact を再保存
+        uses: actions/upload-artifact@v7
+        with:
+          name: wack-input-${{ github.run_id }}
+          path: wack-input/*
+          if-no-files-found: error
+          retention-days: 7
+
   wack:
     name: WACK（self-hosted / Windows / wack）
-    needs: build-msix
+    needs: prepare_wack_input
+    if: ${{ needs.prepare_wack_input.result == 'success' }}
     runs-on: [self-hosted, windows, wack]
     env:
       LEFTHOOK: 0
@@ -107,7 +141,7 @@ jobs:
       - name: WACK 入力 package を取得
         uses: actions/download-artifact@v8
         with:
-          name: msix-wack-input-${{ github.run_id }}
+          name: wack-input-${{ github.run_id }}
           path: wack-input
 
       - name: runner の管理者権限・対話セッションを確認
