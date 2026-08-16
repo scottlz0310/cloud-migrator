@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param (
     [string]$Configuration = "Release",
-    [string]$Version = "0.7.1.0",
+    [string]$Version = "0.7.2.0",
     [string]$OutputDirectory = "installer/msix/AppPackages"
 )
 
