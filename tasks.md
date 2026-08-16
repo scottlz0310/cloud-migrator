@@ -139,9 +139,20 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 | [#266](https://github.com/scottlz0310/cloud-migrator/issues/266) | installer / doc | #101-C: Partner Center Store Listing Data・提出アセット・プライバシーポリシーの整備 | ✅ 完了（`docs/assets/store/listingData.csv`、`store/...` 相対パスのフォルダーインポート手順、提出アセット仕様、`docs/privacy-policy.html`） |
 | [#267](https://github.com/scottlz0310/cloud-migrator/issues/267) | doc / installer | #101-D: MSIX パッケージング・WACK 検査・Partner Center 提出マニュアルの作成 | ✅ 完了（MSIX/WACK/Partner Center の手動手順、提出前停止条件、更新・差戻し、インストールスコープ、#268 との CI 境界を `docs/msix-packaging-and-store-guide.md` に集約） |
 | [#268](https://github.com/scottlz0310/cloud-migrator/issues/268) | ci / installer | #101-E: GitHub Actions CI による MSIX ビルドおよびリリースアタッチの自動化 | ✅ 完了（PR/main の MSIX 静的検査、self-hosted WACK workflow、Required/Optional 判定、artifact 保存を追加。runner の登録・管理は環境作業） |
+| [#276](https://github.com/scottlz0310/cloud-migrator/issues/276) | ci / release | #101-F: Partner Center Submission API による Microsoft Store 提出・公開の自動化 | 🚧 実装中（tag push 後に同一 artifact を WACK → Store へ渡す workflow、Environment secret 設定スクリプト、`.env.example` を追加。実環境 secret 設定と初回 tag 実行は未実施） |
+
+### #276 の受け入れ条件
+
+- [x] tag と manifest/package Version、commit SHA、`.msix` / `.msixupload` の SHA-256 を照合する。
+- [x] `release.yml` の同一 artifact を WACK と Store 公開へ渡し、tag 時の再ビルドを行わない。
+- [x] WACK 成功後だけ Store 公開 job を開始し、`store-production` Environment の secret を使用する。
+- [x] `Configure-StorePublishing.ps1` と `.env.example` を用意し、`.env` を Git 管理対象外にする。
+- [x] `docs/architecture.md` と `docs/msix-packaging-and-store-guide.md` が tag → WACK → Store の現行フローを同じ手順として説明する。
+- [ ] Partner Center 用 Entra ID アプリ、Environment、secret を実環境へ設定する。
+- [ ] 新 Version の tag で WACK、Store submission、認定・公開完了までの E2E を実行し、証跡を記録する。
 
 ---
 
 ## 次の推奨着手
 
-[#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）から開始する。DashboardPage の `isDropbox` 分岐を RouteDescriptor 経由に置換。
+[#276](https://github.com/scottlz0310/cloud-migrator/issues/276) の実環境設定と初回 tag E2E を完了する。完了後は [#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）の DashboardPage 改修へ戻る。

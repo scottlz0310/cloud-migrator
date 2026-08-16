@@ -1,8 +1,8 @@
 # MSIX パッケージング・WACK 検査・Microsoft Store 提出ガイド
 
-本書は、CloudMigrator の MSIX パッケージを生成し、Windows App Certification Kit (WACK) で検証し、Microsoft Partner Center で提出・公開するための手動ランブックです。Epic [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) の #264〜#268 を横断する再開用の正本として扱います。
+本書は、CloudMigrator の MSIX パッケージを生成し、Windows App Certification Kit (WACK) で検証し、Microsoft Partner Center へ提出・公開するための準備・手動確認・自動公開運用ガイドです。Epic [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) の #264〜#268 と #276 を横断する再開用の正本として扱います。
 
-本書で扱うのは、再現可能な準備・検証・提出画面の確認までです。Partner Center の「認定用に提出」および「Publish now」は外部状態を変更するため、実行者が内容を確認し、明示的に承認した後にだけ実行してください。GitHub Actions への MSIX/WACK 組み込みは [#268](https://github.com/scottlz0310/cloud-migrator/issues/268) の責務です。
+初回 listing の登録、手動確認、または自動公開が利用できない場合は本書の手動手順を使用します。通常の更新では `v*` tag push 後に、[8.4 Store 自動公開と初期設定](#84-store-自動公開と初期設定-276) の GitHub Actions が同一 artifact を WACK から Store まで搬送します。手動の「認定用に提出」および「Publish now」は、自動経路を使わない場合の明示的な回復手順として扱います。
 
 すべての相対パスはリポジトリルート（CloudMigrator）からのパスです。
 
@@ -320,13 +320,13 @@ Submission options で、次を確認します。
 - `runFullTrust` の用途とユーザー操作との関係を 2.5 のノートに沿って説明する。
 - 審査用テストアカウントが必要なら、実際に使用できるアカウントと安全な手順を、Partner Center が提供する審査向け欄へ入力する。公開リポジトリや通常の issue コメントへ資格情報を書かない。
 - Restricted capability の理由を要求された場合は、ローカルファイル・設定・ログを扱う Windows デスクトップ実行と、ユーザー指示の移行処理に限定して説明する。
-- 初回は公開を自動化せず、公開保留（`Don't publish this submission until I select Publish now` 相当）の設定を選択する。認定通過と公開操作を分離する。
+- 手動提出を行う場合だけ、公開保留（`Don't publish this submission until I select Publish now` 相当）の要否を選択する。#276 の自動経路では `store-production` job が submission status を poll し、認定後の公開まで実行する。
 
 ### 5.5 最終確認と提出
 
-概要ページで、package、listing、価格・市場、プライバシーポリシー、審査ノート、公開保留設定を確認します。次の停止点で提出操作を止め、実行者の明示的な承認を得ます。
+手動提出を行う場合は、概要ページで package、listing、価格・市場、プライバシーポリシー、審査ノート、公開保留設定を確認します。次の停止点で提出操作を止め、実行者の明示的な承認を得ます。#276 の自動経路では、この画面操作を通常手順にしません。
 
-> **停止点:** 本書の #267 作業だけでは「Submit for certification」または「Publish now」をクリックしない。画面の入力内容と証跡を共有し、提出・公開を実行する人の承認を得てから操作する。
+> **手動経路の停止点:** 本書の手動確認だけでは「Submit for certification」または「Publish now」をクリックしない。画面の入力内容と証跡を共有し、提出・公開を実行する人の承認を得てから操作する。自動経路では tag push と workflow の成功条件を使用する。
 
 承認後に認定へ提出した場合は、次を記録します。
 
@@ -343,9 +343,9 @@ Submission options で、次を確認します。
 | Required / Optional failure |  |
 | privacy URL の確認日時・HTTP 結果 |  |
 | 認定ステータス・差戻し内容 |  |
-| 公開保留を選択したか、Publish now の承認者 |  |
+| 公開経路（自動 workflow / 手動公開保留）と承認者 |  |
 
-認定を通過して公開保留中の場合も、公開ボタンを自動的に押しません。Store listing の公開確認と GitHub Release の公開は別の操作として記録します。
+手動経路で認定を通過して公開保留中の場合は、公開ボタンを自動的に押しません。自動経路では Store job が submission status を poll して公開完了を判定します。いずれの場合も Store の公開状態と GitHub Release の公開は別の操作として記録します。
 
 ---
 
@@ -357,9 +357,9 @@ Submission options で、次を確認します。
 2. manifest の Version は既存の Store package より大きくし、4 桁の値を package ファイル名の `-Version` と一致させる。
 3. 新しい `.msix` / `.msixupload` を生成し、ファイル名、package 内 manifest、SHA-256 を確認する。
 4. 新しい package で WACK を再実行し、Required/Optional の記録を更新する。
-5. Partner Center で新しい submission を作成し、Package、Store listing、Release notes、審査ノートを確認する。
-6. 初回と同様に公開保留を選択し、認定結果と公開操作を分離する。
-7. 公開後に Store listing、インストール、起動、ログイン、少量の転送、アンインストールを確認し、Submission ID と結果を記録する。
+5. `v<manifest Version>` の tag を push し、GitHub Actions の release workflow を開始する。
+6. workflow が同一 artifact の静的検査、WACK、`.msixupload` の Store submission と公開状態の poll を実行する。
+7. 公開後に Store listing、インストール、起動、ログイン、少量の転送、アンインストールを確認し、workflow の実行 URL と Submission ID を記録する。
 
 同じ submission の入力を上書きして証跡を失わないでください。修正して再提出する場合は、新しい package と新しい SHA-256 を記録します。
 
@@ -373,9 +373,9 @@ Submission options で、次を確認します。
 
 単なる再ビルドで同じ Version・同じ入力を再提出しません。Revision の 4 桁目だけを増やすか、主バージョンを進めるかは、変更内容と Partner Center の要求に応じてリリース準備時に決定します。4 桁目の増加をすべての差戻しに対する自動規則とはしません。
 
-### 6.3 GitHub Release との境界
+### 6.3 GitHub Release と Store 自動公開の境界
 
-現在の `.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSI、MSIX (`.msix` / `.msixupload`) のアセットを公開しますが、MSIX の WACK 完了や Partner Center の認定状態を確認するゲートではありません。したがって、Store の公開保留を GitHub Release の Draft と同一視しません。
+`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSI、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の self-hosted WACK に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
 
 ---
 
@@ -437,9 +437,9 @@ runner は、GitHub Actions の self-hosted runner をログオン済みユー�
 `.github/workflows/wack.yml` は次の入口を持ちます。
 
 - `workflow_dispatch`: Actions 画面から対象 branch と manifest Version を選択して実行する
-- `v*` tag push: リリース候補として実行する。tag の Version（`v0.8.0` は `0.8.0.0` に正規化）と manifest Version が一致しない場合は開始前に失敗する
+- `workflow_call`: `release.yml` が生成した MSIX artifact を受け取り、tag push 時の再ビルドを行わずに実行する
 
-workflow は最初に `windows-latest` で同一 commit の MSIX を生成・静的検査し、その package を artifact 経由で `self-hosted / windows / wack` runner へ渡します。WACK runner は artifact 内の 1 個の `.msix` を `-PackagePath` で明示し、次の既存スクリプトを実行します。
+手動実行では `windows-latest` で MSIX を生成・静的検査してから artifact に保存します。リリース実行では `release.yml` が生成した artifact（`.msix`、`.msixupload`、SHA-256 証跡 JSON）をそのまま `self-hosted / windows / wack` runner へ渡します。WACK runner は artifact 内の 1 個の `.msix` を `-PackagePath` で明示し、次の既存スクリプトを実行します。
 
 ~~~powershell
 pwsh -NoProfile -File .\scripts\run-wack-test.ps1 `
@@ -451,9 +451,40 @@ pwsh -NoProfile -File .\scripts\run-wack-test.ps1 `
 
 WACK の UAC は通常の開発者実機でのみ使用します。CI の WACK runner は開始時点で管理者権限を持つため、UAC ダイアログの表示・自動操作には依存しません。runner の管理者権限または対話セッションが不足する場合は、WACK を開始せず失敗させます。
 
-### 8.4 CI と Store 提出の境界
+### 8.4 Store 自動公開と初期設定（#276）
 
-CI artifact と GitHub Release の MSIX asset は検証・受け渡し用であり、Partner Center へ自動提出しません。Store への `.msixupload` の提出、認定用送信、公開保留、`Publish now` は手動手順の停止点として残します。GitHub Pages のプライバシーポリシー URL の有効化も、この workflow の成功とは別に確認します。
+タグ push 後の Store 公開は、次の順序で実行します。
+
+1. `release.yml` が tag と manifest Version を照合し、MSIX／MSIXUPLOAD と SHA-256 証跡を作成する。
+2. GitHub Release に添付したものと同じ artifact を WACK runner へ渡す。
+3. WACK が成功した場合だけ `store-production` Environment の job を開始する。
+4. Microsoft Store Developer CLI で Entra ID の client credentials を設定し、`.msixupload` を Product ID `9NG134LB022L` へ送信する。
+5. 既存 submission の status と package 名を確認し、同じ package の処理中 submission は poll して再利用する。別 Version の submission が処理中なら上書きせず停止する。
+6. submission status が `PUBLISHED` になるまで poll し、失敗時は workflow を失敗させる。
+
+初回設定はリポジトリ root で行います。`.env` はローカルだけに置き、実値を Git、Issue、ログへ出力しません。
+
+~~~powershell
+Copy-Item .env.example .env
+# .env に Entra ID / Partner Center の値を記入
+pwsh -NoProfile -File .\scripts\Configure-StorePublishing.ps1 -WhatIf
+pwsh -NoProfile -File .\scripts\Configure-StorePublishing.ps1
+~~~
+
+設定スクリプトは `store-production` Environment を作成または更新し、`v*` tag の deployment policy、`STORE_PRODUCT_ID` variable、次の Environment secrets を設定します。
+
+- `AZURE_AD_APPLICATION_CLIENT_ID`
+- `AZURE_AD_APPLICATION_SECRET`
+- `AZURE_AD_TENANT_ID`
+- `SELLER_ID`
+
+Entra ID アプリには Microsoft Store Submission API を利用できる client credentials と、対象アプリを更新できる Partner Center 権限を付与します。Microsoft Store Developer CLI の GitHub Actions 更新は現行ドキュメント上、free product が前提です。Product ID は `.env` の `STORE_PRODUCT_ID` で確認しますが、secret にはしません。現在はユーザー判断により required reviewer を設定せず、`v*` tag 制限だけを Environment 保護ルールとして使います。承認を再導入する場合は GitHub Environment 側で追加設定します。
+
+Store 公開 job は Product 単位の concurrency で直列化します。GitHub Actions の timeout 後に再実行する場合は、新しい tag や手動再ビルドを作らず、同じ run の再実行で既存 submission の status を確認します。submission が別 Version の処理中または失敗状態で残っている場合も自動で上書きせず、Partner Center で状態を確認してから対応します。
+
+### 8.5 Listing Data との責務分離
+
+`docs/assets/store/listingData.csv` は listing の登録・更新用の入力であり、Store 公開 workflow の package artifact には含めません。Partner Center から export した CSV に含まれる一時的な絶対 asset URL や submission 識別子もリポジトリへコピーしません。listing の変更は別途確認してから package の新 Version と一緒に提出します。
 
 ---
 

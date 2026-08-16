@@ -7,6 +7,11 @@ on:
 
 permissions:
   contents: write
+  actions: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -149,6 +154,17 @@ jobs:
     steps:
       - name: リポジトリを checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: tag commit が main 系列上にあることを確認
+        shell: pwsh
+        run: |
+          git fetch origin main --no-tags
+          & git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "リリース tag の commit ($env:GITHUB_SHA) が origin/main の系列上にありません。"
+          }
 
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v6
@@ -188,6 +204,42 @@ jobs:
           pwsh -NoProfile -File .\scripts\ValidateMsixPackage.ps1 `
             -PackagePath ".\installer\msix\AppPackages\CloudMigrator_${{ steps.version.outputs.version }}_x64.msix"
 
+      - name: MSIX artifact の SHA-256 証跡を作成
+        shell: pwsh
+        run: |
+          $packageFiles = @(Get-ChildItem -Path "installer/msix/AppPackages/CloudMigrator_*_x64.msix" -File)
+          $uploadFiles = @(Get-ChildItem -Path "installer/msix/AppPackages/CloudMigrator_*_x64_bundle.msixupload" -File)
+          if ($packageFiles.Count -ne 1 -or $uploadFiles.Count -ne 1) {
+            throw "MSIX artifact は .msix と .msixupload を各 1 個だけ含む必要があります。msix=$($packageFiles.Count), msixupload=$($uploadFiles.Count)"
+          }
+
+          $package = $packageFiles[0]
+          $upload = $uploadFiles[0]
+          $evidence = [ordered]@{
+            schemaVersion = 1
+            tag = $env:GITHUB_REF_NAME
+            commit = $env:GITHUB_SHA
+            version = "${{ steps.version.outputs.version }}"
+            packageFile = $package.Name
+            packageSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $package.FullName).Hash.ToLowerInvariant()
+            uploadFile = $upload.Name
+            uploadSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $upload.FullName).Hash.ToLowerInvariant()
+            createdAtUtc = [DateTime]::UtcNow.ToString('O')
+          } | ConvertTo-Json -Depth 5
+
+          $artifactDirectory = Join-Path $env:GITHUB_WORKSPACE 'msix-artifact'
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            Remove-Item -LiteralPath $artifactDirectory -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory | Out-Null
+          Copy-Item -LiteralPath $package.FullName -Destination $artifactDirectory
+          Copy-Item -LiteralPath $upload.FullName -Destination $artifactDirectory
+          [IO.File]::WriteAllText(
+            (Join-Path $artifactDirectory 'msix-artifact-evidence.json'),
+            $evidence,
+            [Text.UTF8Encoding]::new($false))
+          Write-Host $evidence
+
       - name: MSIX をリリースにアップロード
         shell: pwsh
         run: |
@@ -202,11 +254,184 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: msix-release-${{ github.run_id }}
-          path: |
-            installer/msix/AppPackages/CloudMigrator_*_x64.msix
-            installer/msix/AppPackages/CloudMigrator_*_x64_bundle.msixupload
+          path: msix-artifact/*
           if-no-files-found: error
           retention-days: 30
+
+  wack:
+    name: WACK（同一 MSIX artifact）
+    needs: msix
+    uses: ./.github/workflows/wack.yml
+    with:
+      artifact_name: msix-release-${{ github.run_id }}
+
+  store:
+    name: Microsoft Store 自動公開
+    needs: [msix, wack]
+    if: ${{ needs.msix.result == 'success' && needs.wack.result == 'success' }}
+    runs-on: windows-latest
+    timeout-minutes: 360
+    environment:
+      name: store-production
+      url: https://partner.microsoft.com/dashboard/products/${{ vars.STORE_PRODUCT_ID }}
+    concurrency:
+      group: store-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: MSIX artifact を取得
+        uses: actions/download-artifact@v8
+        with:
+          name: msix-release-${{ github.run_id }}
+          path: store-input
+
+      - name: MSIX artifact と証跡を照合
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath 'store-input' -File -Filter '*.msix')
+          $uploads = @(Get-ChildItem -LiteralPath 'store-input' -File -Filter '*.msixupload')
+          $evidencePath = Join-Path $env:GITHUB_WORKSPACE 'store-input/msix-artifact-evidence.json'
+          if ($packages.Count -ne 1 -or $uploads.Count -ne 1 -or -not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
+            throw "Store 入力 artifact は .msix、.msixupload、証跡 JSON を各 1 個含む必要があります。msix=$($packages.Count), msixupload=$($uploads.Count)"
+          }
+
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $package = $packages[0]
+          $upload = $uploads[0]
+          $expectedPackage = "CloudMigrator_$($evidence.version)_x64.msix"
+          $expectedUpload = "CloudMigrator_$($evidence.version)_x64_bundle.msixupload"
+          if ($evidence.tag -ne $env:GITHUB_REF_NAME -or $evidence.commit -ne $env:GITHUB_SHA) {
+            throw "MSIX artifact の tag/commit 証跡が現在の release と一致しません。"
+          }
+          if ($package.Name -ne $expectedPackage -or $upload.Name -ne $expectedUpload) {
+            throw "MSIX artifact のファイル名が manifest Version と一致しません。"
+          }
+
+          $packageHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $package.FullName).Hash.ToLowerInvariant()
+          $uploadHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $upload.FullName).Hash.ToLowerInvariant()
+          if ($packageHash -ne $evidence.packageSha256 -or $uploadHash -ne $evidence.uploadSha256) {
+            throw "MSIX artifact の SHA-256 が生成時の証跡と一致しません。"
+          }
+
+          @(
+            '### Store 公開 artifact',
+            "- tag: $env:GITHUB_REF_NAME",
+            "- commit: $env:GITHUB_SHA",
+            "- package: $($package.Name) ($packageHash)",
+            "- upload: $($upload.Name) ($uploadHash)"
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Microsoft Store Developer CLI をセットアップ
+        id: msstore_cli
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+
+      - name: CLI telemetry を無効化
+        shell: pwsh
+        run: msstore settings --enableTelemetry false
+
+      - name: Partner Center credentials を設定
+        shell: pwsh
+        env:
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+        run: |
+          $required = @{
+            AZURE_AD_APPLICATION_CLIENT_ID = $env:AZURE_AD_APPLICATION_CLIENT_ID
+            AZURE_AD_APPLICATION_SECRET = $env:AZURE_AD_APPLICATION_SECRET
+            AZURE_AD_TENANT_ID = $env:AZURE_AD_TENANT_ID
+            SELLER_ID = $env:SELLER_ID
+          }
+          foreach ($entry in $required.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace($entry.Value)) {
+              throw "GitHub Environment secret が未設定です: $($entry.Key)"
+            }
+          }
+          msstore reconfigure `
+            --tenantId $env:AZURE_AD_TENANT_ID `
+            --sellerId $env:SELLER_ID `
+            --clientId $env:AZURE_AD_APPLICATION_CLIENT_ID `
+            --clientSecret $env:AZURE_AD_APPLICATION_SECRET
+
+      - name: 既存 submission を確認し必要なら再開
+        id: submission
+        shell: pwsh
+        env:
+          STORE_PRODUCT_ID: ${{ vars.STORE_PRODUCT_ID }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:STORE_PRODUCT_ID)) {
+            throw 'GitHub Environment variable STORE_PRODUCT_ID が未設定です。Configure-StorePublishing.ps1 を実行してください。'
+          }
+          $packages = @(Get-ChildItem -LiteralPath 'store-input' -File -Filter '*.msix')
+          if ($packages.Count -ne 1) {
+            throw "Store 入力の MSIX は 1 個である必要があります。検出数: $($packages.Count)"
+          }
+          $expectedPackage = $packages[0].Name
+          $output = @(& msstore submission get $env:STORE_PRODUCT_ID 2>&1)
+          if ($LASTEXITCODE -ne 0) {
+            throw "既存 submission の取得に失敗しました。Product ID と Partner Center 権限を確認してください。"
+          }
+
+          $jsonLine = $output |
+            ForEach-Object { [regex]::Replace([string]$_, '\x1b\[[0-?]*[ -/]*[@-~]', '') } |
+            Where-Object { $_.TrimStart().StartsWith('{') } |
+            Select-Object -Last 1
+          if ([string]::IsNullOrWhiteSpace([string]$jsonLine)) {
+            throw '既存 submission の JSON を CLI 出力から取得できませんでした。'
+          }
+
+          $submission = $jsonLine | ConvertFrom-Json
+          $status = [string]$submission.Status
+          $packageNames = @($submission.ApplicationPackages | ForEach-Object { [string]$_.FileName })
+          $samePackage = $packageNames -contains $expectedPackage
+          "既存 submission status: $status" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "既存 submission package 一致: $samePackage" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+          'already_published=false' >> $env:GITHUB_OUTPUT
+          'polled_existing=false' >> $env:GITHUB_OUTPUT
+          if ($status -in @('CommitStarted', 'CommitFailed') -and -not $samePackage) {
+            throw "別 Version の submission が残っています。現在の submission を上書きせず停止します。"
+          }
+          if ($status -eq 'CommitStarted') {
+            & msstore submission poll $env:STORE_PRODUCT_ID
+            if ($LASTEXITCODE -ne 0) {
+              throw '既存 submission の poll に失敗しました。'
+            }
+            'polled_existing=true' >> $env:GITHUB_OUTPUT
+          } elseif ($status -eq 'Published' -and $samePackage) {
+            'already_published=true' >> $env:GITHUB_OUTPUT
+          }
+
+      - name: .msixupload を Store submission へ送信
+        if: steps.submission.outputs.already_published != 'true' && steps.submission.outputs.polled_existing != 'true'
+        shell: pwsh
+        env:
+          STORE_PRODUCT_ID: ${{ vars.STORE_PRODUCT_ID }}
+        run: |
+          $upload = Get-ChildItem -LiteralPath 'store-input' -File -Filter '*.msixupload' | Select-Object -First 1
+          & msstore publish $upload.FullName --appId $env:STORE_PRODUCT_ID
+          if ($LASTEXITCODE -ne 0) {
+            throw '.msixupload の Store submission に失敗しました。'
+          }
+
+      - name: submission status を最終確認
+        if: ${{ always() && steps.msstore_cli.outcome == 'success' }}
+        shell: pwsh
+        env:
+          STORE_PRODUCT_ID: ${{ vars.STORE_PRODUCT_ID }}
+        run: |
+          $output = @(& msstore submission status $env:STORE_PRODUCT_ID 2>&1)
+          $statusExit = $LASTEXITCODE
+          $output |
+            Where-Object { ([string]$_) -match '(?i)status' } |
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          if ($statusExit -ne 0) {
+            throw 'Store submission の最終 status 取得に失敗しました。'
+          }
 
   msi:
     name: MSI インストーラービルド

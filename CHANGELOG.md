@@ -9,6 +9,10 @@
 
 ### Added
 
+- **タグ push 後の Microsoft Store 自動公開を追加（#276 / #101-F）**
+  - `release.yml` が生成した同一 MSIX artifact を WACK と Store 公開へ渡し、tag、manifest Version、SHA-256 を照合
+  - WACK 成功後に `store-production` Environment から Microsoft Store Developer CLI を実行し、submission status を poll
+  - `.env.example`、`Configure-StorePublishing.ps1`、Environment の `v*` tag policy と `STORE_PRODUCT_ID` variable を追加し、`.gitignore` で記入済み `.env` を除外
 - **Partner Center Store Listing Data・提出アセット・プライバシーポリシーを整備（#266 / #101-C）**
   - `docs/assets/store/listingData.csv` を UTF-8 BOM / CRLF の相対パス形式で追加し、英語・日本語の説明文、機能一覧、検索語、スクリーンショット、Store logo を登録可能化
   - `docs/assets/store-source/README.md` にインポート手順、サポート URL、画像仕様、未参照プロモーション素材の扱いを記載
