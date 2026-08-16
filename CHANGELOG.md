@@ -72,6 +72,10 @@
   - `workflow_call` で呼び出された場合も caller の `github.event_name` が見えるため、`artifact_name` input を基準にリリース artifact を選択するよう変更
   - tag release で WACK と Microsoft Store 自動公開の job が skip される問題を解消
 
+- **WACK 実行と Microsoft Store CLI 初期化の release gate を修正**
+  - reusable workflow の上流 job が skip されても WACK 本体を暗黙に skip しないようにし、self-hosted WACK の完了を Store 公開の前提にする
+  - 初回 runner でも Partner Center credentials の設定後に CLI telemetry を無効化するよう手順を修正
+
 ---
 
 ## [0.7.1] - 2026-05-04

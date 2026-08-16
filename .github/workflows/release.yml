@@ -328,10 +328,6 @@ jobs:
         id: msstore_cli
         uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
 
-      - name: CLI telemetry を無効化
-        shell: pwsh
-        run: msstore settings --enableTelemetry false
-
       - name: Partner Center credentials を設定
         shell: pwsh
         env:
@@ -356,6 +352,10 @@ jobs:
             --sellerId $env:SELLER_ID `
             --clientId $env:AZURE_AD_APPLICATION_CLIENT_ID `
             --clientSecret $env:AZURE_AD_APPLICATION_SECRET
+
+      - name: CLI telemetry を無効化
+        shell: pwsh
+        run: msstore settings --enableTelemetry false
 
       - name: 既存 submission を確認し必要なら再開
         id: submission
