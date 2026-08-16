@@ -6,6 +6,19 @@
 
 本番の `release.yml`、`wack.yml`、`scripts/run-wack-test.ps1` の gate は変更しません。Microsoft Store への提出も行いません。
 
+## 実行結果
+
+2026-08-16 に [WACK Hosted Runner Spike #31950498930](https://github.com/scottlz0310/cloud-migrator/actions/runs/31950498930) を実行しました。
+
+- source release: run #31944768934、tag `v0.7.2`、commit `1c724bcbbd54a75ca0d1d3f99737959423baa953`
+- Hosted image: `win25-vs2026`（Windows Server 2025）
+- AppCertKit: `appcert.exe` を検出し、導入不要。version `10.0.26100.8249`
+- artifact integrity: `.msix` と `.msixupload` のファイル名・SHA-256 が source artifact と一致
+- WACK: XML／HTML レポート生成、Required failure なし、解析 exit code 0
+- classification: `hosted-candidate`
+
+この結果に基づき、本番 `wack.yml` の WACK job を別の移行PRで `windows-latest` へ変更します。既存の self-hosted runner の停止・登録解除は、移行後のリリース成功確認を終えてから行う環境作業です。
+
 ## 実行手順
 
 1. GitHub Actions の **WACK Hosted Runner Spike** を開く。
@@ -20,7 +33,7 @@
 
 | workflow 結果 | 判定 |
 |---|---|
-| 成功（`hosted-candidate`） | Hosted 移行候補。別 PR で本番 workflow と運用手順を変更する |
+| 成功（`hosted-candidate`） | Hosted 移行可。本番 workflow と運用手順を別 PR で変更する |
 | 失敗・`appcert-setup-unverified` | Hosted runner に Kit がなく、再現可能な導入を試していないため判定保留 |
 | 失敗・`capability-recording-failed` | Hosted runner の能力記録に失敗したため判定保留 |
 | 失敗・`package-failure` | WACK レポート生成後の package 判定失敗。Hosted runner 能力不足とは分離して package を調査 |

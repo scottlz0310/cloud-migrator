@@ -2,7 +2,7 @@
 
 前フェーズ履歴: [docs/archive/tasks-archive-20260501.md](docs/archive/tasks-archive-20260501.md)
 
-## 現在の状態: v0.7.2 リリース済み / #284 Hosted WACK Spike 実装中
+## 現在の状態: v0.7.2 リリース済み / #284 Hosted WACK 移行PR 作成中
 
 - 確認日: 2026-08-16
 - 対象リポジトリ: `scottlz0310/cloud-migrator`
@@ -20,7 +20,7 @@
 | [#204](https://github.com/scottlz0310/cloud-migrator/pull/204) | [#191](https://github.com/scottlz0310/cloud-migrator/issues/191) | DashboardPage タブバーを MudTabs に戻す・UI 改善 | 2026-05-03 |
 | [#205](https://github.com/scottlz0310/cloud-migrator/pull/205) | [#195](https://github.com/scottlz0310/cloud-migrator/issues/195) | CloudMigrator.Routes プロジェクト新規作成・RouteDescriptor 定義 | 2026-05-04 |
 
-> 次の推奨着手: **[#284](https://github.com/scottlz0310/cloud-migrator/issues/284)** (#101-G) — GitHub-hosted runner 上で同一 MSIX artifact の WACK 実行可否を検証
+> 次の推奨着手: **[#284](https://github.com/scottlz0310/cloud-migrator/issues/284)** (#101-G) — Spike 結果に基づく GitHub-hosted WACK gate への移行
 
 ---
 
@@ -32,7 +32,7 @@
 | 2 | [#208](https://github.com/scottlz0310/cloud-migrator/issues/208) | refactor | #196-B: SettingsPage のセクション表示・バリデーション判定を RouteDescriptor.SettingsSections 経由に置換 | #207 の後。IsSharePointRoute/IsDropboxRoute 30箇所以上の置換。中程度の変更量。 |
 | 3 | [#209](https://github.com/scottlz0310/cloud-migrator/issues/209) | refactor | #196-C: App.xaml.cs の移行パイプライン実行ロジックをルート対応ファクトリに切り出す | #207・#208 の後。最大変更。IMigrationPipelineFactory 新設が含まれる。 |
 | 4 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
-| 5 | [#284](https://github.com/scottlz0310/cloud-migrator/issues/284) | spike / ci | #101-G: GitHub-hosted runner で WACK を実行し self-hosted runner を廃止できるか検証 | #101 のリリース経路を変更せず、同一 MSIX artifact と Hosted runner の能力を手動検証する。 |
+| 5 | [#284](https://github.com/scottlz0310/cloud-migrator/issues/284) | ci / migration | #101-G: GitHub-hosted runner で WACK を実行し self-hosted runner を廃止できるか検証 | Spike 成功を受け、同一 MSIX artifact を GitHub-hosted WACK gate へ移行する。 |
 
 ---
 
@@ -128,7 +128,7 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 ### 前提・状態
 
 - #101 の MSIX パッケージング、WACK、提出アセット、CI、Store 自動公開は完了し、`v0.7.2` のリリースで実環境 E2E を確認済み。
-- #101 はクローズ済み。self-hosted WACK runner の廃止可否は後続の #284 Spike で、本番 gate と分離して検証する。
+- #101 はクローズ済み。#284 の Spike で Hosted runner 上の WACK 成功を確認し、本番 gate の Hosted 移行を進める。
 
 ### サブ ISSUE（中断再開性の確保）
 
@@ -140,7 +140,7 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 | [#267](https://github.com/scottlz0310/cloud-migrator/issues/267) | doc / installer | #101-D: MSIX パッケージング・WACK 検査・Partner Center 提出マニュアルの作成 | ✅ 完了（MSIX/WACK/Partner Center の手動手順、提出前停止条件、更新・差戻し、インストールスコープ、#268 との CI 境界を `docs/msix-packaging-and-store-guide.md` に集約） |
 | [#268](https://github.com/scottlz0310/cloud-migrator/issues/268) | ci / installer | #101-E: GitHub Actions CI による MSIX ビルドおよびリリースアタッチの自動化 | ✅ 完了（PR/main の MSIX 静的検査、self-hosted WACK workflow、Required/Optional 判定、artifact 保存を追加。runner の登録・管理は環境作業） |
 | [#276](https://github.com/scottlz0310/cloud-migrator/issues/276) | ci / release | #101-F: Partner Center Submission API による Microsoft Store 提出・公開の自動化 | ✅ 完了（`v0.7.2` で同一 artifact の WACK → Store submission → 認定・公開完了を確認） |
-| [#284](https://github.com/scottlz0310/cloud-migrator/issues/284) | ci / spike | #101-G: GitHub-hosted runner で WACK を実行し self-hosted runner を廃止できるか検証 | 🚧 実装中（本番 gate と分離した手動 workflow、同一 artifact の SHA-256 照合、Hosted capability と WACK 証跡を追加） |
+| [#284](https://github.com/scottlz0310/cloud-migrator/issues/284) | ci / migration | #101-G: GitHub-hosted runner で WACK を実行し self-hosted runner を廃止できるか検証 | 🚧 移行PR作成中（Spike #31950498930 の `hosted-candidate` を受け、`wack.yml` と運用手順を Hosted 前提へ更新） |
 
 ### #276 の受け入れ条件
 
@@ -159,10 +159,10 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 - [x] Hosted runner の OS、image、`UserInteractive`、管理者権限、`appcert.exe` の状態を記録する。
 - [x] WACK XML／HTML／TAEF／AppCertKit ログと Required/Optional 判定を artifact として保存する。
 - [x] AppCertKit 導入未検証、WACK 実行失敗、package 判定失敗を別分類し、入力検証の早期失敗でも結果証跡を保存する。
-- [ ] 実行結果に基づき、Hosted 移行または self-hosted 継続を決定する。
+- [x] 実行結果（run #31950498930、`hosted-candidate`）に基づき、Hosted 移行を決定する。
 
 ---
 
 ## 次の推奨着手
 
-[#284](https://github.com/scottlz0310/cloud-migrator/issues/284) を手動実行し、Hosted runner 上の WACK 可否を判定する。移行可否の結論後は [#286](https://github.com/scottlz0310/cloud-migrator/issues/286)（MSI 廃止検討）または [#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）の優先度を再評価する。
+[#284](https://github.com/scottlz0310/cloud-migrator/issues/284) の Hosted 移行PRをレビュー・マージし、リリース経路での WACK 成功を確認する。確認後は既存 self-hosted runner の停止・登録解除を手動で行い、[#286](https://github.com/scottlz0310/cloud-migrator/issues/286)（MSI 廃止検討）または [#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）の優先度を再評価する。

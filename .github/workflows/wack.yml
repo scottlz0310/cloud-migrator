@@ -127,10 +127,10 @@ jobs:
           retention-days: 7
 
   wack:
-    name: WACK（self-hosted / Windows / wack）
+    name: WACK（GitHub-hosted / Windows）
     needs: prepare_wack_input
     if: ${{ always() && needs.prepare_wack_input.result == 'success' }}
-    runs-on: [self-hosted, windows, wack]
+    runs-on: windows-latest
     env:
       LEFTHOOK: 0
 
@@ -144,7 +144,7 @@ jobs:
           name: wack-input-${{ github.run_id }}
           path: wack-input
 
-      - name: runner の管理者権限・対話セッションを確認
+      - name: GitHub-hosted runner の管理者権限・対話セッションを確認
         shell: pwsh
         run: |
           if ($env:OS -ne "Windows_NT") {
@@ -156,12 +156,26 @@ jobs:
           $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
           $principal = New-Object Security.Principal.WindowsPrincipal($identity)
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-            throw "WACK runner は管理者権限で実行してください。GitHub-hosted runner の UAC 昇格には依存しません。"
+            throw "WACK runner は管理者権限で実行してください。GitHub-hosted runner の自動 UAC 昇格には依存しません。"
           }
-          $appCertPath = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\App Certification Kit\appcert.exe"
-          if (-not (Test-Path -LiteralPath $appCertPath -PathType Leaf)) {
-            throw "Windows App Certification Kit の appcert.exe が見つかりません: $appCertPath"
+          $appCertCandidates = @()
+          if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+            $appCertCandidates += Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\App Certification Kit\appcert.exe"
           }
+          if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+            $appCertCandidates += Join-Path $env:ProgramFiles "Windows Kits\10\App Certification Kit\appcert.exe"
+          }
+          $appCertCommand = Get-Command appcert.exe -ErrorAction SilentlyContinue
+          if ($null -ne $appCertCommand -and -not [string]::IsNullOrWhiteSpace($appCertCommand.Source)) {
+            $appCertCandidates += $appCertCommand.Source
+          }
+          $appCertPath = $appCertCandidates |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+          if ([string]::IsNullOrWhiteSpace($appCertPath)) {
+            throw "Windows App Certification Kit の appcert.exe が見つかりません。確認候補: $($appCertCandidates -join ', ')"
+          }
+          "AppCertKit: $appCertPath"
 
       - name: WACK を実行
         shell: pwsh

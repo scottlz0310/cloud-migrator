@@ -13,7 +13,14 @@
   - 成功済み `release.yml` の同一 MSIX artifact を取得し、tag、commit、ファイル名、SHA-256 を照合してから `windows-latest` で検証できるようにした
   - Hosted runner の OS、image、対話セッション、管理者権限、`appcert.exe` の状態と、WACK XML／HTML／TAEF／AppCertKit ログを証跡として保存する
   - AppCertKit 導入未検証、WACK 実行失敗、package 判定失敗を分離し、入力検証が早期失敗した場合も Spike 結果を保存する
-  - 本番の `release.yml`、`wack.yml`、Store 公開 gate は変更しない
+  - Spike 自体は本番の `release.yml`、`wack.yml`、Store 公開 gate を変更せず、移行判断に必要な証跡だけを保存する
+
+### Changed
+
+- **本番 WACK gate を GitHub-hosted Windows runner へ移行（#284 / #101-G）**
+  - `wack.yml` の同一 MSIX artifact 検証を `windows-latest` で実行し、AppCertKit、管理者権限、対話セッションの検査を維持する
+  - Hosted Spike #31950498930 の `hosted-candidate` 判定と、v0.7.2 artifact の SHA-256 一致を移行根拠として記録する
+  - self-hosted runner への暗黙 fallback は行わず、Hosted 環境の能力不足は WACK job の失敗として扱う
 
 ### Fixed
 
