@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **GitHub-hosted runner 上の WACK 実行可否を検証する手動 Spike を追加（#284 / #101-G）**
+  - 成功済み `release.yml` の同一 MSIX artifact を取得し、tag、commit、ファイル名、SHA-256 を照合してから `windows-latest` で検証できるようにした
+  - Hosted runner の OS、image、対話セッション、管理者権限、`appcert.exe` の状態と、WACK XML／HTML／TAEF／AppCertKit ログを証跡として保存する
+  - 本番の `release.yml`、`wack.yml`、Store 公開 gate は変更しない
+
 ### Fixed
 
 - **Microsoft Store submission の listing JSON 解析を堅牢化（#276 / #101-F）**

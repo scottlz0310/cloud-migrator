@@ -119,3 +119,5 @@ v* tag push
 - GitHub Release の公開完了は Store 公開完了を意味しません。WACK と Store の job 結果、artifact 証跡、submission status を別々に確認します。
 
 Environment の初期設定と中断・再実行を含む詳細手順は、[MSIX パッケージング・WACK 検査・Microsoft Store 提出ガイド](msix-packaging-and-store-guide.md)の [Store 自動公開と初期設定](msix-packaging-and-store-guide.md#84-store-自動公開と初期設定-276) に集約します。
+
+self-hosted WACK runner を GitHub-hosted runner へ移行できるかは、本番 gate と分離した [GitHub-hosted WACK Spike 手順](wack-hosted-runner-spike.md)で検証します。Spike が成功するまで、リリースフローの WACK runner は self-hosted のままです。
