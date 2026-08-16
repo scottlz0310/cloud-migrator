@@ -1,0 +1,365 @@
+name: WACK Hosted Runner Spike
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: "MSIX artifact を生成した release workflow の run ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: wack-hosted-spike-${{ inputs.release_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  hosted-wack-spike:
+    name: WACK（GitHub-hosted / Windows）Spike
+    runs-on: windows-latest
+    env:
+      LEFTHOOK: 0
+
+    steps:
+      - name: リポジトリを checkout
+        uses: actions/checkout@v7
+
+      - name: release run と artifact の対象を検証
+        id: source
+        shell: pwsh
+        env:
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $releaseRunId = $env:RELEASE_RUN_ID.Trim()
+          if ($releaseRunId -notmatch '^\d+$') {
+            throw "release run ID は数字で指定してください: $releaseRunId"
+          }
+
+          $runJson = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$releaseRunId"
+          if ($LASTEXITCODE -ne 0) {
+            throw "release run のメタデータ取得に失敗しました: $releaseRunId"
+          }
+          $run = $runJson | ConvertFrom-Json
+
+          if ($run.status -ne "completed" -or $run.conclusion -ne "success") {
+            throw "対象 release run は成功済みである必要があります。status=$($run.status), conclusion=$($run.conclusion)"
+          }
+          if ($run.path -notmatch "(^|/)release\.yml$") {
+            throw "対象 run は release.yml である必要があります: $($run.path)"
+          }
+          if ($run.event -ne "push") {
+            throw "対象 release run は tag push である必要があります: event=$($run.event)"
+          }
+          if ([string]::IsNullOrWhiteSpace($run.head_sha) -or
+              [string]::IsNullOrWhiteSpace($run.head_branch) -or
+              $run.head_branch -notmatch '^v\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "対象 run は v* tag push である必要があります。ref=$($run.head_branch), sha=$($run.head_sha)"
+          }
+
+          $artifactName = "msix-release-$releaseRunId"
+          $metadata = [ordered]@{
+            schemaVersion = 1
+            sourceRunId = [int64]$releaseRunId
+            workflowPath = $run.path
+            status = $run.status
+            conclusion = $run.conclusion
+            event = $run.event
+            tag = $run.head_branch
+            commit = $run.head_sha
+            artifactName = $artifactName
+            recordedAtUtc = [DateTime]::UtcNow.ToString("O")
+          }
+          New-Item -ItemType Directory -Force -Path "spike-evidence" | Out-Null
+          [IO.File]::WriteAllText(
+            (Join-Path $env:GITHUB_WORKSPACE "spike-evidence/source-run.json"),
+            ($metadata | ConvertTo-Json -Depth 6),
+            [Text.UTF8Encoding]::new($false))
+
+          "artifact_name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "source_head_sha=$($run.head_sha)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "source_tag=$($run.head_branch)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: release artifact を取得
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ steps.source.outputs.artifact_name }}
+          path: wack-input
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.release_run_id }}
+
+      - name: MSIX artifact の SHA-256 と証跡を照合
+        id: integrity
+        shell: pwsh
+        env:
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          SOURCE_HEAD_SHA: ${{ steps.source.outputs.source_head_sha }}
+          SOURCE_TAG: ${{ steps.source.outputs.source_tag }}
+        run: |
+          $inputDirectory = Join-Path $env:GITHUB_WORKSPACE "wack-input"
+          $packages = @(Get-ChildItem -LiteralPath $inputDirectory -File -Filter "*.msix")
+          $uploads = @(Get-ChildItem -LiteralPath $inputDirectory -File -Filter "*.msixupload")
+          $evidencePath = Join-Path $inputDirectory "msix-artifact-evidence.json"
+
+          if ($packages.Count -ne 1 -or $uploads.Count -ne 1) {
+            throw "release artifact は .msix と .msixupload を各 1 個含む必要があります。msix=$($packages.Count), msixupload=$($uploads.Count)"
+          }
+          if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
+            throw "MSIX artifact の SHA-256 証跡が見つかりません: $evidencePath"
+          }
+
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $packageHash = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $uploadHash = (Get-FileHash -LiteralPath $uploads[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedPackageFile = [string]$evidence.packageFile
+          $expectedUploadFile = [string]$evidence.uploadFile
+          $expectedPackageHash = ([string]$evidence.packageSha256).ToLowerInvariant()
+          $expectedUploadHash = ([string]$evidence.uploadSha256).ToLowerInvariant()
+
+          $checks = [ordered]@{
+            schemaVersion = 1
+            sourceRunId = [int64]$env:RELEASE_RUN_ID
+            sourceTag = $env:SOURCE_TAG
+            sourceCommit = $env:SOURCE_HEAD_SHA
+            evidenceTag = [string]$evidence.tag
+            evidenceCommit = [string]$evidence.commit
+            packageFile = $packages[0].Name
+            evidencePackageFile = $expectedPackageFile
+            packageSha256 = $packageHash
+            evidencePackageSha256 = $expectedPackageHash
+            uploadFile = $uploads[0].Name
+            evidenceUploadFile = $expectedUploadFile
+            uploadSha256 = $uploadHash
+            evidenceUploadSha256 = $expectedUploadHash
+            verifiedAtUtc = [DateTime]::UtcNow.ToString("O")
+          }
+
+          if ([string]$evidence.tag -ne $env:SOURCE_TAG -or
+              [string]$evidence.commit -ne $env:SOURCE_HEAD_SHA -or
+              $packages[0].Name -ne $expectedPackageFile -or
+              $uploads[0].Name -ne $expectedUploadFile -or
+              $packageHash -ne $expectedPackageHash -or
+              $uploadHash -ne $expectedUploadHash) {
+            [IO.File]::WriteAllText(
+              (Join-Path $env:GITHUB_WORKSPACE "spike-evidence/artifact-integrity.json"),
+              ($checks | ConvertTo-Json -Depth 6),
+              [Text.UTF8Encoding]::new($false))
+            throw "release artifact の tag、commit、または SHA-256 が証跡と一致しません。"
+          }
+
+          [IO.File]::WriteAllText(
+            (Join-Path $env:GITHUB_WORKSPACE "spike-evidence/artifact-integrity.json"),
+            ($checks | ConvertTo-Json -Depth 6),
+            [Text.UTF8Encoding]::new($false))
+          "package_name=$($packages[0].Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Hosted runner の能力を記録
+        id: capability
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem |
+            Select-Object Caption, Version, BuildNumber, OSArchitecture, LastBootUpTime
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+          $isAdministrator = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          $isInteractive = [Environment]::UserInteractive
+
+          $candidates = @()
+          if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+            $candidates += Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\App Certification Kit\appcert.exe"
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+            $candidates += Join-Path $env:ProgramFiles "Windows Kits\10\App Certification Kit\appcert.exe"
+          }
+          $command = Get-Command appcert.exe -ErrorAction SilentlyContinue
+          if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
+            $candidates += $command.Source
+          }
+
+          $appCertPath = $null
+          foreach ($candidate in ($candidates | Select-Object -Unique)) {
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+              $appCertPath = (Resolve-Path -LiteralPath $candidate).Path
+              break
+            }
+          }
+
+          $appCertVersion = $null
+          if ($null -ne $appCertPath) {
+            $appCertVersion = (Get-Item -LiteralPath $appCertPath).VersionInfo.FileVersion
+          }
+          $appCertSetup = if ($null -eq $appCertPath) {
+            [ordered]@{
+              attempted = $false
+              status = "not-attempted"
+              reason = "再現可能な Windows SDK/AppCertKit 導入手順をこの Spike では試していないため、self-hosted 判定を保留します。"
+            }
+          } else {
+            [ordered]@{
+              attempted = $false
+              status = "not-required"
+              reason = "Hosted image 上の appcert.exe を検出しました。"
+            }
+          }
+          $status = if ($null -eq $appCertPath) {
+            "appcert-missing"
+          } elseif (-not $isInteractive) {
+            "non-interactive"
+          } elseif (-not $isAdministrator) {
+            "not-administrator"
+          } else {
+            "ready-for-direct-test"
+          }
+
+          $capability = [ordered]@{
+            schemaVersion = 1
+            runner = [ordered]@{
+              os = $env:RUNNER_OS
+              arch = $env:RUNNER_ARCH
+              imageOS = $env:ImageOS
+              imageVersion = $env:ImageVersion
+              imageRelease = $env:ImageRelease
+            }
+            operatingSystem = $os
+            identity = $identity.Name
+            userInteractive = $isInteractive
+            isAdministrator = $isAdministrator
+            appCertCandidates = @($candidates | Select-Object -Unique)
+            appCertPath = $appCertPath
+            appCertVersion = $appCertVersion
+            appCertSetup = $appCertSetup
+            status = $status
+            recordedAtUtc = [DateTime]::UtcNow.ToString("O")
+          }
+          [IO.File]::WriteAllText(
+            (Join-Path $env:GITHUB_WORKSPACE "spike-evidence/hosted-capability.json"),
+            ($capability | ConvertTo-Json -Depth 8),
+            [Text.UTF8Encoding]::new($false))
+
+          $appCertFound = ($null -ne $appCertPath).ToString().ToLowerInvariant()
+          "appcert_found=$appCertFound" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "appcert_setup_status=$($appCertSetup.status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          if ($null -ne $appCertPath) {
+            "appcert_path=$appCertPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+          @(
+            "### Hosted runner capability"
+            "- OS: $($os.Caption) $($os.Version) (build $($os.BuildNumber))"
+            "- Image: $($env:ImageOS) / $($env:ImageVersion)"
+            "- UserInteractive: $isInteractive"
+            "- Administrator: $isAdministrator"
+            "- appcert.exe: $status"
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: WACK を直接実行（Spike 専用 wrapper）
+        id: wack
+        if: ${{ steps.capability.outputs.appcert_found == 'true' }}
+        shell: pwsh
+        env:
+          APPCERT_PATH: ${{ steps.capability.outputs.appcert_path }}
+          PACKAGE_NAME: ${{ steps.integrity.outputs.package_name }}
+        run: |
+          $packagePath = Join-Path $env:GITHUB_WORKSPACE "wack-input\$env:PACKAGE_NAME"
+          $reportDirectory = Join-Path $env:GITHUB_WORKSPACE "spike-evidence\wack-reports"
+          $workDirectory = Join-Path $env:GITHUB_WORKSPACE "spike-evidence\wack-work"
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-wack-hosted-spike.ps1 `
+            -PackagePath $packagePath `
+            -AppCertPath $env:APPCERT_PATH `
+            -ReportDirectory $reportDirectory `
+            -WorkDirectory $workDirectory
+          if ($LASTEXITCODE -ne 0) {
+            throw "Hosted runner 上の WACK 実行に失敗しました（exit=$LASTEXITCODE）。"
+          }
+
+      - name: Spike の判定を記録
+        if: always()
+        shell: pwsh
+        env:
+          SOURCE_OUTCOME: ${{ steps.source.outcome }}
+          INTEGRITY_OUTCOME: ${{ steps.integrity.outcome }}
+          CAPABILITY_OUTCOME: ${{ steps.capability.outcome }}
+          WACK_OUTCOME: ${{ steps.wack.outcome }}
+          APPCERT_FOUND: ${{ steps.capability.outputs.appcert_found }}
+          APPCERT_SETUP_STATUS: ${{ steps.capability.outputs.appcert_setup_status }}
+        run: |
+          $evidenceDirectory = Join-Path $env:GITHUB_WORKSPACE "spike-evidence"
+          New-Item -ItemType Directory -Force -Path $evidenceDirectory | Out-Null
+          $wackResultPath = Join-Path $evidenceDirectory "wack-reports/hosted-wack-result.json"
+          $wackResult = $null
+          if (Test-Path -LiteralPath $wackResultPath -PathType Leaf) {
+            try {
+              $wackResult = Get-Content -LiteralPath $wackResultPath -Raw | ConvertFrom-Json
+            } catch {
+              $wackResult = $null
+            }
+          }
+
+          if ($env:SOURCE_OUTCOME -ne "success" -or $env:INTEGRITY_OUTCOME -ne "success") {
+            $classification = "source-artifact-verification-failed"
+            $reason = "対象 release run または同一 artifact の検証に失敗しました。"
+          } elseif ($env:CAPABILITY_OUTCOME -ne "success") {
+            $classification = "capability-recording-failed"
+            $reason = "Hosted runner の OS、権限、または App Certification Kit の能力記録に失敗しました。"
+          } elseif ($env:APPCERT_FOUND -ne "true") {
+            $classification = "appcert-setup-unverified"
+            $reason = "Hosted runner に appcert.exe がなく、再現可能な AppCertKit 導入を試していないため判定を保留します。"
+          } elseif ($env:WACK_OUTCOME -eq "success") {
+            $classification = "hosted-candidate"
+            $reason = "同一 MSIX artifact の WACK と Required failure 判定が Hosted runner で完了しました。"
+          } elseif ($null -ne $wackResult -and $wackResult.classification -eq "package-failure") {
+            $classification = "package-failure"
+            $reason = "WACK レポート生成後の Required/Optional 判定で package failure が検出されました。Hosted runner 能力不足とは分類しません。"
+          } elseif ($null -ne $wackResult -and $wackResult.classification -eq "wack-execution-failed") {
+            $classification = "wack-execution-failed"
+            $reason = "appcert.exe は検出されましたが、WACK またはレポート生成が完了しませんでした。"
+          } else {
+            $classification = "wack-result-unavailable"
+            $reason = "Hosted WACK wrapper の構造化された実行結果を取得できませんでした。"
+          }
+
+          $result = [ordered]@{
+            schemaVersion = 1
+            classification = $classification
+            reason = $reason
+            sourceOutcome = $env:SOURCE_OUTCOME
+            integrityOutcome = $env:INTEGRITY_OUTCOME
+            capabilityOutcome = $env:CAPABILITY_OUTCOME
+            wackOutcome = $env:WACK_OUTCOME
+            appCertFound = $env:APPCERT_FOUND -eq "true"
+            appCertSetupStatus = $env:APPCERT_SETUP_STATUS
+            wackResultClassification = if ($null -eq $wackResult) { $null } else { [string]$wackResult.classification }
+            wackFailureStage = if ($null -eq $wackResult) { $null } else { [string]$wackResult.wackStage }
+            recordedAtUtc = [DateTime]::UtcNow.ToString("O")
+          }
+          [IO.File]::WriteAllText(
+            (Join-Path $evidenceDirectory "spike-result.json"),
+            ($result | ConvertTo-Json -Depth 6),
+            [Text.UTF8Encoding]::new($false))
+
+          @(
+            "### Spike result"
+            "- 判定: **$classification**"
+            "- 理由: $reason"
+            "- release artifact integrity: $($env:INTEGRITY_OUTCOME)"
+            "- WACK execution: $($env:WACK_OUTCOME)"
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+          if ($classification -ne "hosted-candidate") {
+            throw "WACK Hosted Runner Spike の判定: $classification。$reason"
+          }
+
+      - name: Spike 証跡を artifact に保存
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wack-hosted-spike-${{ github.run_id }}
+          path: |
+            spike-evidence/
+            wack-input/
+          if-no-files-found: warn
+          retention-days: 30

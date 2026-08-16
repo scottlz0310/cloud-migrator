@@ -2,12 +2,12 @@
 
 前フェーズ履歴: [docs/archive/tasks-archive-20260501.md](docs/archive/tasks-archive-20260501.md)
 
-## 現在の状態: v0.7.0 リリース準備中
+## 現在の状態: v0.7.2 リリース済み / #284 Hosted WACK Spike 実装中
 
-- 確認日: 2026-05-04
+- 確認日: 2026-08-16
 - 対象リポジトリ: `scottlz0310/cloud-migrator`
 - 確認方法: `gh issue list --state open --limit 200`
-- open issue 数: 7 件（#196 サブISSUE x3 追加）
+- 最新リリース: `v0.7.2`（MSIX/WACK 後の Microsoft Store 自動公開まで成功）
 
 ### 最近の完了（main マージ済み）
 
@@ -20,7 +20,7 @@
 | [#204](https://github.com/scottlz0310/cloud-migrator/pull/204) | [#191](https://github.com/scottlz0310/cloud-migrator/issues/191) | DashboardPage タブバーを MudTabs に戻す・UI 改善 | 2026-05-03 |
 | [#205](https://github.com/scottlz0310/cloud-migrator/pull/205) | [#195](https://github.com/scottlz0310/cloud-migrator/issues/195) | CloudMigrator.Routes プロジェクト新規作成・RouteDescriptor 定義 | 2026-05-04 |
 
-> 次の推奨着手: **[#207](https://github.com/scottlz0310/cloud-migrator/issues/207)** (#196-A) — DashboardPage のフェーズ判定・表示分岐を RouteDescriptor 経由に置換（最小スコープ）
+> 次の推奨着手: **[#284](https://github.com/scottlz0310/cloud-migrator/issues/284)** (#101-G) — GitHub-hosted runner 上で同一 MSIX artifact の WACK 実行可否を検証
 
 ---
 
@@ -32,7 +32,7 @@
 | 2 | [#208](https://github.com/scottlz0310/cloud-migrator/issues/208) | refactor | #196-B: SettingsPage のセクション表示・バリデーション判定を RouteDescriptor.SettingsSections 経由に置換 | #207 の後。IsSharePointRoute/IsDropboxRoute 30箇所以上の置換。中程度の変更量。 |
 | 3 | [#209](https://github.com/scottlz0310/cloud-migrator/issues/209) | refactor | #196-C: App.xaml.cs の移行パイプライン実行ロジックをルート対応ファクトリに切り出す | #207・#208 の後。最大変更。IMigrationPipelineFactory 新設が含まれる。 |
 | 4 | [#15](https://github.com/scottlz0310/cloud-migrator/issues/15) | maintenance | Dependency Dashboard | 機能修正後に CI が安定した状態で依存関係更新を確認する。Renovate 管理のため通常実装とは別レーン。 |
-| 5 | [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) | epic / installer | MSIX パッケージング・Microsoft Store 公開 | サブ ISSUE #264〜#268 起票・再開済み。WACK/ListingData/マニュアル準備と合わせて段階的実行可能。 |
+| 5 | [#284](https://github.com/scottlz0310/cloud-migrator/issues/284) | spike / ci | #101-G: GitHub-hosted runner で WACK を実行し self-hosted runner を廃止できるか検証 | #101 のリリース経路を変更せず、同一 MSIX artifact と Hosted runner の能力を手動検証する。 |
 
 ---
 
@@ -127,8 +127,8 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 
 ### 前提・状態
 
-- サブ ISSUE 群（#264〜#268）起票・再開済み。
-- MSI 配布 (#97) の運用実績確認と並行して、WACK 検査スクリプト・Listing Data・マニュアルドキュメントの準備を進める。
+- #101 の MSIX パッケージング、WACK、提出アセット、CI、Store 自動公開は完了し、`v0.7.2` のリリースで実環境 E2E を確認済み。
+- #101 はクローズ済み。self-hosted WACK runner の廃止可否は後続の #284 Spike で、本番 gate と分離して検証する。
 
 ### サブ ISSUE（中断再開性の確保）
 
@@ -139,7 +139,8 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 | [#266](https://github.com/scottlz0310/cloud-migrator/issues/266) | installer / doc | #101-C: Partner Center Store Listing Data・提出アセット・プライバシーポリシーの整備 | ✅ 完了（`docs/assets/store/listingData.csv`、`store/...` 相対パスのフォルダーインポート手順、提出アセット仕様、`docs/privacy-policy.html`） |
 | [#267](https://github.com/scottlz0310/cloud-migrator/issues/267) | doc / installer | #101-D: MSIX パッケージング・WACK 検査・Partner Center 提出マニュアルの作成 | ✅ 完了（MSIX/WACK/Partner Center の手動手順、提出前停止条件、更新・差戻し、インストールスコープ、#268 との CI 境界を `docs/msix-packaging-and-store-guide.md` に集約） |
 | [#268](https://github.com/scottlz0310/cloud-migrator/issues/268) | ci / installer | #101-E: GitHub Actions CI による MSIX ビルドおよびリリースアタッチの自動化 | ✅ 完了（PR/main の MSIX 静的検査、self-hosted WACK workflow、Required/Optional 判定、artifact 保存を追加。runner の登録・管理は環境作業） |
-| [#276](https://github.com/scottlz0310/cloud-migrator/issues/276) | ci / release | #101-F: Partner Center Submission API による Microsoft Store 提出・公開の自動化 | 🚧 実装中（tag push 後に同一 artifact を WACK → Store へ渡す workflow、Environment secret 設定スクリプト、`.env.example` を追加。実環境 secret 設定と初回 tag 実行は未実施） |
+| [#276](https://github.com/scottlz0310/cloud-migrator/issues/276) | ci / release | #101-F: Partner Center Submission API による Microsoft Store 提出・公開の自動化 | ✅ 完了（`v0.7.2` で同一 artifact の WACK → Store submission → 認定・公開完了を確認） |
+| [#284](https://github.com/scottlz0310/cloud-migrator/issues/284) | ci / spike | #101-G: GitHub-hosted runner で WACK を実行し self-hosted runner を廃止できるか検証 | 🚧 実装中（本番 gate と分離した手動 workflow、同一 artifact の SHA-256 照合、Hosted capability と WACK 証跡を追加） |
 
 ### #276 の受け入れ条件
 
@@ -148,11 +149,20 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 - [x] WACK 成功後だけ Store 公開 job を開始し、`store-production` Environment の secret を使用する。
 - [x] `Configure-StorePublishing.ps1` と `.env.example` を用意し、`.env` を Git 管理対象外にする。
 - [x] `docs/architecture.md` と `docs/msix-packaging-and-store-guide.md` が tag → WACK → Store の現行フローを同じ手順として説明する。
-- [ ] Partner Center 用 Entra ID アプリ、Environment、secret を実環境へ設定する。
-- [ ] 新 Version の tag で WACK、Store submission、認定・公開完了までの E2E を実行し、証跡を記録する。
+- [x] Partner Center 用 Entra ID アプリ、Environment、secret を実環境へ設定する。
+- [x] `v0.7.2` の tag で WACK、Store submission、認定・公開完了までの E2E を実行し、証跡を記録する。
+
+### #284 の受け入れ条件
+
+- [x] 本番の `release.yml`、`wack.yml`、`scripts/run-wack-test.ps1` を変更せず、手動 Spike として分離する。
+- [x] 成功済み `release.yml` の同一 `.msix` / `.msixupload` artifact、tag、commit、SHA-256 を照合する。
+- [x] Hosted runner の OS、image、`UserInteractive`、管理者権限、`appcert.exe` の状態を記録する。
+- [x] WACK XML／HTML／TAEF／AppCertKit ログと Required/Optional 判定を artifact として保存する。
+- [x] AppCertKit 導入未検証、WACK 実行失敗、package 判定失敗を別分類し、入力検証の早期失敗でも結果証跡を保存する。
+- [ ] 実行結果に基づき、Hosted 移行または self-hosted 継続を決定する。
 
 ---
 
 ## 次の推奨着手
 
-[#276](https://github.com/scottlz0310/cloud-migrator/issues/276) の実環境設定と初回 tag E2E を完了する。完了後は [#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）の DashboardPage 改修へ戻る。
+[#284](https://github.com/scottlz0310/cloud-migrator/issues/284) を手動実行し、Hosted runner 上の WACK 可否を判定する。移行可否の結論後は [#286](https://github.com/scottlz0310/cloud-migrator/issues/286)（MSI 廃止検討）または [#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）の優先度を再評価する。
