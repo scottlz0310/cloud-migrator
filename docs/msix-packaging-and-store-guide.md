@@ -375,7 +375,7 @@ Submission options で、次を確認します。
 
 ### 6.3 GitHub Release と Store 自動公開の境界
 
-`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSI、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の self-hosted WACK に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
+`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSI、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の GitHub-hosted Windows WACK job に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
 
 ---
 
@@ -404,7 +404,7 @@ Add-AppxPackage -Path .\installer\msix\AppPackages\CloudMigrator_0.7.2.0_x64.msi
 
 ## 8. CI/CD との責務分離（#268）
 
-[#268](https://github.com/scottlz0310/cloud-migrator/issues/268) では、GitHub-hosted runner での静的検査と、WACK 導入済み self-hosted runner でのフル WACK を分離しています。GitHub-hosted runner の UAC ダイアログには依存しません。
+[#268](https://github.com/scottlz0310/cloud-migrator/issues/268) では、GitHub-hosted runner での静的検査と、WACK 導入済み self-hosted runner でのフル WACK を分離していました。#284 の Hosted Spike（run #31950498930）で `windows-latest` 上のフル WACK が成功したため、現在はフル WACK も GitHub-hosted runner で実行します。GitHub-hosted runner の UAC ダイアログには依存しません。
 
 ### 8.1 PR／main の MSIX 静的検査
 
@@ -417,20 +417,20 @@ Add-AppxPackage -Path .\installer\msix\AppPackages\CloudMigrator_0.7.2.0_x64.msi
 
 生成した `.msix` と `.msixupload` は `msix-ci-<run_id>` artifact に保存されます。MSIX は Windows SDK の `makeappx.exe` で展開して検査します。WACK はこの job では実行しません。
 
-### 8.2 self-hosted runner の準備
+### 8.2 GitHub-hosted WACK runner の前提
 
-WACK 用 runner は、リポジトリの **Settings > Actions > Runners** から追加し、次の条件を満たすラベルを付けます。
+WACK は `windows-latest` の GitHub-hosted runner で実行します。runner の登録、ラベル付け、Windows SDK の手動インストールは不要です。Hosted image の変更で AppCertKit が利用できなくなった場合に暗黙の self-hosted fallback を行わず、能力検査で job を失敗させます。
 
 | 条件 | 要件 |
 | --- | --- |
-| labels | `self-hosted`、`windows`、`wack` |
-| Windows | Windows 10/11 の対話ユーザーセッション |
-| 権限 | runner を起動するユーザーが Administrators グループに所属 |
-| セッション | `Environment.UserInteractive` が true になるアクティブセッション。Windows サービス／Session 0 では実行しない |
-| SDK | Windows SDK と Windows App Certification Kit (`appcert.exe`) |
+| runner | `windows-latest` |
+| Windows | Hosted image の Windows。Spike では `win25-vs2026` / Windows Server 2025 |
+| 権限 | workflow の開始時に Administrators 権限であることを検査 |
+| セッション | `Environment.UserInteractive` が true であることを検査。非対話 Session 0 では実行しない |
+| SDK | Hosted image に Windows App Certification Kit (`appcert.exe`) が存在することを検査 |
 | PowerShell | PowerShell 7 (`pwsh`) |
 
-runner は、GitHub Actions の self-hosted runner をログオン済みユーザーの対話プロセスとして起動します。管理者権限・アクティブセッション・WACK の存在は、WACK job の開始時にも再検査します。runner に保存した資格情報や OAuth token を workflow のログへ出力しません。
+Hosted runner の image、管理者権限、対話セッション、`appcert.exe` の存在は WACK job の開始時に再検査します。runner に資格情報を保存せず、OAuth token も workflow のログへ出力しません。既存 self-hosted runner の停止・登録解除は、移行後のリリース確認後に行う別の環境作業です。
 
 ### 8.3 Full WACK の実行
 
@@ -439,7 +439,7 @@ runner は、GitHub Actions の self-hosted runner をログオン済みユー�
 - `workflow_dispatch`: Actions 画面から対象 branch と manifest Version を選択して実行する
 - `workflow_call`: `release.yml` が生成した MSIX artifact を受け取り、tag push 時の再ビルドを行わずに実行する
 
-手動実行では `windows-latest` で MSIX を生成・静的検査してから artifact に保存します。リリース実行では `release.yml` が生成した artifact（`.msix`、`.msixupload`、SHA-256 証跡 JSON）をそのまま `self-hosted / windows / wack` runner へ渡します。WACK runner は artifact 内の 1 個の `.msix` を `-PackagePath` で明示し、次の既存スクリプトを実行します。
+手動実行では `windows-latest` で MSIX を生成・静的検査してから artifact に保存します。リリース実行では `release.yml` が生成した artifact（`.msix`、`.msixupload`、SHA-256 証跡 JSON）をそのまま `windows-latest` の WACK job へ渡します。WACK job は artifact 内の 1 個の `.msix` を `-PackagePath` で明示し、次の既存スクリプトを実行します。
 
 ~~~powershell
 pwsh -NoProfile -File .\scripts\run-wack-test.ps1 `
@@ -449,14 +449,14 @@ pwsh -NoProfile -File .\scripts\run-wack-test.ps1 `
 
 `run-wack-test.ps1` は WACK の XML/HTML を回収し、`AnalyzeWackReport.ps1 -FailOnRequiredFailure` で判定します。Required failure またはレポート異常は job failure、Optional failure のみの場合は job を成功とし、XML/HTML と WACK ログを `wack-reports-<run_id>` artifact に保存します。Optional failure の審査影響は artifact と [WACK 検証結果](wack-validation-results.md) に記録してください。
 
-WACK の UAC は通常の開発者実機でのみ使用します。CI の WACK runner は開始時点で管理者権限を持つため、UAC ダイアログの表示・自動操作には依存しません。runner の管理者権限または対話セッションが不足する場合は、WACK を開始せず失敗させます。
+WACK の UAC は通常の開発者実機でのみ使用します。CI の GitHub-hosted runner は開始時点で管理者権限を持つことを検査するため、UAC ダイアログの表示・自動操作には依存しません。runner の管理者権限、対話セッション、AppCertKit が不足する場合は、WACK を開始せず失敗させます。
 
 ### 8.4 Store 自動公開と初期設定（#276）
 
 タグ push 後の Store 公開は、次の順序で実行します。
 
 1. `release.yml` が tag と manifest Version を照合し、MSIX／MSIXUPLOAD と SHA-256 証跡を作成する。
-2. GitHub Release に添付したものと同じ artifact を WACK runner へ渡す。
+2. GitHub Release に添付したものと同じ artifact を `windows-latest` の WACK job へ渡す。
 3. WACK が成功した場合だけ `store-production` Environment の job を開始する。
 4. Microsoft Store Developer CLI で Entra ID の client credentials を設定し、`.msixupload` を Product ID `9NG134LB022L` へ送信する。
 5. 既存 submission の status と package 名を確認し、同じ package の処理中 submission は poll して再利用する。別 Version の submission が処理中なら上書きせず停止する。
