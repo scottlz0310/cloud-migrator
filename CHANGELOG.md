@@ -68,6 +68,10 @@
   - 対象: ci.yml (upload×3, download×1)、release.yml (upload×1, download×1)
   - 外部 Renovate プリセット (`renovate-config`) の GitHub Actions 一括グループルールにより、将来 `upload-artifact@v8` がリリースされた際は同一 PR でペア更新される
 
+- **WACK reusable workflow の caller event 判定を修正**
+  - `workflow_call` で呼び出された場合も caller の `github.event_name` が見えるため、`artifact_name` input を基準にリリース artifact を選択するよう変更
+  - tag release で WACK と Microsoft Store 自動公開の job が skip される問題を解消
+
 ---
 
 ## [0.7.1] - 2026-05-04
