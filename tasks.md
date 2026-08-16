@@ -158,6 +158,7 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 - [x] 成功済み `release.yml` の同一 `.msix` / `.msixupload` artifact、tag、commit、SHA-256 を照合する。
 - [x] Hosted runner の OS、image、`UserInteractive`、管理者権限、`appcert.exe` の状態を記録する。
 - [x] WACK XML／HTML／TAEF／AppCertKit ログと Required/Optional 判定を artifact として保存する。
+- [x] AppCertKit 導入未検証、WACK 実行失敗、package 判定失敗を別分類し、入力検証の早期失敗でも結果証跡を保存する。
 - [ ] 実行結果に基づき、Hosted 移行または self-hosted 継続を決定する。
 
 ---

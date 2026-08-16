@@ -145,8 +145,8 @@ function Write-CommandLog {
         [string]$Name,
         [Parameter(Mandatory)]
         [int]$ExitCode,
-        [Parameter(Mandatory)]
-        [string[]]$Output
+        [AllowEmptyCollection()]
+        [string[]]$Output = @()
     )
 
     $lines = @(
@@ -196,7 +196,12 @@ $wackEnvironment = @{
 
 $resultPath = Join-Path $reportDirectoryFullPath "hosted-wack-result.json"
 $startedAt = Get-Date
+$wackStage = "not-started"
+$reportGenerated = $false
+$analysisAttempted = $false
+$analysisExitCode = $null
 try {
+    $wackStage = "environment-isolation"
     Set-IsolatedEnvironment -Values $wackEnvironment -Directories @(
         $wackTemp,
         $wackLogs,
@@ -205,12 +210,14 @@ try {
         $appVerifierLogs
     )
 
+    $wackStage = "reset"
     $reset = Invoke-AppCert -Arguments @("reset")
     Write-CommandLog -Name "appcert reset" -ExitCode $reset.ExitCode -Output $reset.Output
     if ($reset.ExitCode -ne 0) {
         throw "WACK の reset に失敗しました（exit=$($reset.ExitCode)）。"
     }
 
+    $wackStage = "test"
     $test = Invoke-AppCert -Arguments @(
         "test",
         "-appxpackagepath",
@@ -241,7 +248,9 @@ try {
     if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
         throw "WACK の XML レポートが生成されませんでした: $reportPath"
     }
+    $reportGenerated = $true
 
+    $wackStage = "html-report"
     $htmlCandidates = @()
     if (Test-Path -LiteralPath $wackAppCertDirectory -PathType Container) {
         $htmlCandidates = @(
@@ -265,8 +274,10 @@ try {
     $htmlReportPath = Join-Path $reportDirectoryFullPath "$reportBaseName$($htmlSource.Extension)"
     Copy-Item -LiteralPath $htmlSource.FullName -Destination $htmlReportPath -Force
 
+    $wackStage = "analyze"
     $analyzerPath = Join-Path $PSScriptRoot "AnalyzeWackReport.ps1"
     $pwshPath = Get-PwshExecutable
+    $analysisAttempted = $true
     $analysisOutput = @(
         & $pwshPath -NoProfile -ExecutionPolicy Bypass -File $analyzerPath `
             -ReportPath $reportPath `
@@ -292,6 +303,7 @@ try {
         xmlReport = [System.IO.Path]::GetFileName($reportPath)
         htmlReport = [System.IO.Path]::GetFileName($htmlReportPath)
         analyzerExitCode = $analysisExitCode
+        analysisAttempted = $analysisAttempted
         completedAtUtc = [DateTime]::UtcNow.ToString("O")
     }
     [IO.File]::WriteAllText(
@@ -300,11 +312,21 @@ try {
         [Text.UTF8Encoding]::new($false))
     Write-Host "Hosted runner 上の WACK と Required failure 判定が完了しました。" -ForegroundColor Green
 } catch {
+    $reportExists = $reportGenerated -or (Test-Path -LiteralPath $reportPath -PathType Leaf)
+    $failureClassification = if ($analysisAttempted -and $reportExists) {
+        "package-failure"
+    } else {
+        "wack-execution-failed"
+    }
     $failure = [ordered]@{
         schemaVersion = 1
-        classification = "wack-failed"
+        classification = $failureClassification
         package = $packageName
         packageSha256 = $packageHash
+        wackStage = $wackStage
+        reportGenerated = $reportExists
+        analysisAttempted = $analysisAttempted
+        analyzerExitCode = $analysisExitCode
         error = $_.Exception.Message
         failedAtUtc = [DateTime]::UtcNow.ToString("O")
     }

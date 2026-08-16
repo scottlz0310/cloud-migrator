@@ -192,6 +192,19 @@ jobs:
           if ($null -ne $appCertPath) {
             $appCertVersion = (Get-Item -LiteralPath $appCertPath).VersionInfo.FileVersion
           }
+          $appCertSetup = if ($null -eq $appCertPath) {
+            [ordered]@{
+              attempted = $false
+              status = "not-attempted"
+              reason = "再現可能な Windows SDK/AppCertKit 導入手順をこの Spike では試していないため、self-hosted 判定を保留します。"
+            }
+          } else {
+            [ordered]@{
+              attempted = $false
+              status = "not-required"
+              reason = "Hosted image 上の appcert.exe を検出しました。"
+            }
+          }
           $status = if ($null -eq $appCertPath) {
             "appcert-missing"
           } elseif (-not $isInteractive) {
@@ -218,6 +231,7 @@ jobs:
             appCertCandidates = @($candidates | Select-Object -Unique)
             appCertPath = $appCertPath
             appCertVersion = $appCertVersion
+            appCertSetup = $appCertSetup
             status = $status
             recordedAtUtc = [DateTime]::UtcNow.ToString("O")
           }
@@ -228,6 +242,7 @@ jobs:
 
           $appCertFound = ($null -ne $appCertPath).ToString().ToLowerInvariant()
           "appcert_found=$appCertFound" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "appcert_setup_status=$($appCertSetup.status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           if ($null -ne $appCertPath) {
             "appcert_path=$appCertPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
@@ -270,7 +285,20 @@ jobs:
           CAPABILITY_OUTCOME: ${{ steps.capability.outcome }}
           WACK_OUTCOME: ${{ steps.wack.outcome }}
           APPCERT_FOUND: ${{ steps.capability.outputs.appcert_found }}
+          APPCERT_SETUP_STATUS: ${{ steps.capability.outputs.appcert_setup_status }}
         run: |
+          $evidenceDirectory = Join-Path $env:GITHUB_WORKSPACE "spike-evidence"
+          New-Item -ItemType Directory -Force -Path $evidenceDirectory | Out-Null
+          $wackResultPath = Join-Path $evidenceDirectory "wack-reports/hosted-wack-result.json"
+          $wackResult = $null
+          if (Test-Path -LiteralPath $wackResultPath -PathType Leaf) {
+            try {
+              $wackResult = Get-Content -LiteralPath $wackResultPath -Raw | ConvertFrom-Json
+            } catch {
+              $wackResult = $null
+            }
+          }
+
           if ($env:SOURCE_OUTCOME -ne "success" -or $env:INTEGRITY_OUTCOME -ne "success") {
             $classification = "source-artifact-verification-failed"
             $reason = "対象 release run または同一 artifact の検証に失敗しました。"
@@ -278,14 +306,20 @@ jobs:
             $classification = "capability-recording-failed"
             $reason = "Hosted runner の OS、権限、または App Certification Kit の能力記録に失敗しました。"
           } elseif ($env:APPCERT_FOUND -ne "true") {
-            $classification = "self-hosted-required"
-            $reason = "Hosted runner に appcert.exe がありません。"
+            $classification = "appcert-setup-unverified"
+            $reason = "Hosted runner に appcert.exe がなく、再現可能な AppCertKit 導入を試していないため判定を保留します。"
           } elseif ($env:WACK_OUTCOME -eq "success") {
             $classification = "hosted-candidate"
             $reason = "同一 MSIX artifact の WACK と Required failure 判定が Hosted runner で完了しました。"
+          } elseif ($null -ne $wackResult -and $wackResult.classification -eq "package-failure") {
+            $classification = "package-failure"
+            $reason = "WACK レポート生成後の Required/Optional 判定で package failure が検出されました。Hosted runner 能力不足とは分類しません。"
+          } elseif ($null -ne $wackResult -and $wackResult.classification -eq "wack-execution-failed") {
+            $classification = "wack-execution-failed"
+            $reason = "appcert.exe は検出されましたが、WACK またはレポート生成が完了しませんでした。"
           } else {
-            $classification = "self-hosted-required"
-            $reason = "appcert.exe は検出されましたが、Hosted runner 上の WACK が完了しませんでした。"
+            $classification = "wack-result-unavailable"
+            $reason = "Hosted WACK wrapper の構造化された実行結果を取得できませんでした。"
           }
 
           $result = [ordered]@{
@@ -297,10 +331,13 @@ jobs:
             capabilityOutcome = $env:CAPABILITY_OUTCOME
             wackOutcome = $env:WACK_OUTCOME
             appCertFound = $env:APPCERT_FOUND -eq "true"
+            appCertSetupStatus = $env:APPCERT_SETUP_STATUS
+            wackResultClassification = if ($null -eq $wackResult) { $null } else { [string]$wackResult.classification }
+            wackFailureStage = if ($null -eq $wackResult) { $null } else { [string]$wackResult.wackStage }
             recordedAtUtc = [DateTime]::UtcNow.ToString("O")
           }
           [IO.File]::WriteAllText(
-            (Join-Path $env:GITHUB_WORKSPACE "spike-evidence/spike-result.json"),
+            (Join-Path $evidenceDirectory "spike-result.json"),
             ($result | ConvertTo-Json -Depth 6),
             [Text.UTF8Encoding]::new($false))
 
