@@ -18,7 +18,7 @@
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Graph" Version="6.5.0" />
+    <PackageVersion Include="Microsoft.Graph" Version="6.6.0" />
     <PackageVersion Include="Microsoft.Graph.Core" Version="4.0.1" />
     <PackageVersion Include="Microsoft.Identity.Client" Version="4.88.0" />
     <PackageVersion Include="Microsoft.Kiota.Http.HttpClientLibrary" Version="2.1.2" />
