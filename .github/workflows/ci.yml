@@ -100,7 +100,7 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0"
+          dotnet-version: "10.0.401"
 
       - name: 依存関係の復元
         run: dotnet restore CloudMigrator.slnx
@@ -143,7 +143,7 @@ jobs:
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0"
+          dotnet-version: "10.0.401"
 
       - name: CLI / Dashboard を win-x64 向けにパブリッシュ（MSI ビルド検証用）
         shell: pwsh
@@ -176,7 +176,7 @@ jobs:
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0"
+          dotnet-version: "10.0.401"
 
       - name: WiX Toolset v5 インストール
         run: dotnet tool install wix --version 5.0.2 --global
@@ -234,7 +234,7 @@ jobs:
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0"
+          dotnet-version: "10.0.401"
 
       - name: manifest Version を取得
         id: manifest
