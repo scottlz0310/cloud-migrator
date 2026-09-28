@@ -174,7 +174,7 @@ public sealed class RateLimitAwareHandlerTests
             l => l.Log(
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("45")),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("45")),
                 It.IsAny<Exception?>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
@@ -196,7 +196,7 @@ public sealed class RateLimitAwareHandlerTests
             l => l.Log(
                 LogLevel.Warning,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Retry-After なし")),
+                It.Is<It.IsAnyType>((v, t) => v != null && v.ToString()!.Contains("Retry-After なし")),
                 It.IsAny<Exception?>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);

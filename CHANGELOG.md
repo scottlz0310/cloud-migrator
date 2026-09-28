@@ -24,6 +24,9 @@
 
 ### Fixed
 
+- **Moq の nullable matcher と互換性のない単体テストを修正**
+  - `ILogger.Log` の状態 matcher で nullable 値を確認してから文字列化するようにし、Moq 4.21.0 で `CS8602` がビルドを失敗させる問題を解消
+
 - **Microsoft Store submission の listing JSON 解析を堅牢化（#276 / #101-F）**
   - Store listing の説明文に JSON 仕様外の escape が含まれていても、正規の escape と package metadata を保持したまま既存 submission の status 確認を継続できるよう修正
   - 合成 listing JSON を使った PowerShell 解析テストを CI に追加し、Store job が module を利用できるよう checkout を追加

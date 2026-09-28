@@ -113,7 +113,7 @@ Renovate が検出した依存関係更新を、機能修正後の安定した�
 
 ### 受け入れ条件
 
-- [ ] Renovate PR がある場合、CI 結果と差分を確認する。
+- [x] Renovate PR がある場合、CI 結果と差分を確認する。（#309 を調査し、Moq 4.21.0 の nullable warning を修正）
 - [ ] 破壊的変更がある dependency update は機能修正 PR と混ぜない。
 - [ ] 必要に応じて追加 issue を起票する。
 
