@@ -20,7 +20,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Graph" Version="6.7.0" />
     <PackageVersion Include="Microsoft.Graph.Core" Version="4.0.1" />
-    <PackageVersion Include="Microsoft.Identity.Client" Version="4.90.0" />
+    <PackageVersion Include="Microsoft.Identity.Client" Version="4.90.1" />
     <PackageVersion Include="Microsoft.Kiota.Http.HttpClientLibrary" Version="2.1.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
