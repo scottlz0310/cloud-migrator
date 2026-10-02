@@ -2,7 +2,7 @@
 
 前フェーズ履歴: [docs/archive/tasks-archive-20260501.md](docs/archive/tasks-archive-20260501.md)
 
-## 現在の状態: v0.7.2 リリース済み / #284 Hosted WACK 移行PR 作成中
+## 現在の状態: v0.7.2 リリース済み / #284 本番 WACK は Hosted 化済み（次回 release 確認待ち） / #286 MSI 廃止調査済み
 
 - 確認日: 2026-08-16
 - 対象リポジトリ: `scottlz0310/cloud-migrator`
@@ -165,4 +165,4 @@ MSI 配布 (#97) に続く次世代配布方式として MSIX パッケージン
 
 ## 次の推奨着手
 
-[#284](https://github.com/scottlz0310/cloud-migrator/issues/284) の Hosted 移行PRをレビュー・マージし、リリース経路での WACK 成功を確認する。確認後は既存 self-hosted runner の停止・登録解除を手動で行い、[#286](https://github.com/scottlz0310/cloud-migrator/issues/286)（MSI 廃止検討）または [#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）の優先度を再評価する。
+[#284](https://github.com/scottlz0310/cloud-migrator/issues/284) は移行PR（#289）がマージ済み。次回の tag release で WACK 成功と Store gate を確認し、確認後に既存 self-hosted runner の停止・登録解除を手動で行う。[#286](https://github.com/scottlz0310/cloud-migrator/issues/286) は [docs/msi-deprecation-assessment.md](docs/msi-deprecation-assessment.md) に調査結果と段階廃止案をまとめた。MSIX 版の設定引き継ぎを実機確認したうえで、MSI 削除の専用 PR に進む。並行して [#207](https://github.com/scottlz0310/cloud-migrator/issues/207)（#196-A）の優先度を再評価する。

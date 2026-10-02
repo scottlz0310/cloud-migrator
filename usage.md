@@ -67,11 +67,11 @@ cloud-migrator --help
 
 > **.NET ランタイム不要**: バイナリはセルフコンテインド形式です。.NET SDK / ランタイムのインストールは不要です。
 
-### MSI インストーラーを使う（v0.3.0 以降で提供予定）
+### MSI インストーラーを使う（非推奨）
 
-> **注意**: MSI インストーラーは v0.3.0 リリース時に提供予定です。現時点では上記の「ZIP 展開」でインストールしてください。
+> **非推奨**: MSI インストーラーは今後の release から提供を終了する予定です。新規に導入する場合は、上記の「ZIP 展開」か Microsoft Store 版を使ってください。既存の MSI 利用者の移行手順は [MSI 廃止調査](docs/msi-deprecation-assessment.md) を参照してください。過去 release の MSI は削除しません。
 
-提供開始後は [GitHub Releases](https://github.com/scottlz0310/cloud-migrator/releases) から最新の `CloudMigrator-x.x.x.msi` をダウンロードしてインストーラーを実行します。
+[GitHub Releases](https://github.com/scottlz0310/cloud-migrator/releases) から最新の `CloudMigrator-x.x.x.msi` をダウンロードしてインストーラーを実行します。
 
 - インストール先: `%LOCALAPPDATA%\Programs\CloudMigrator\`
 - インストール後は `cloud-migrator` が PATH に自動追加されます
