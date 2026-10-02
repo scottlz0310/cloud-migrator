@@ -2,7 +2,7 @@
 
 前フェーズ履歴: [docs/archive/tasks-archive-20260501.md](docs/archive/tasks-archive-20260501.md)
 
-## 現在の状態: v0.7.2 リリース済み / #284 本番 WACK は Hosted 化済み（次回 release 確認待ち） / #286 MSI 廃止済み
+## 現在の状態: v0.7.2 リリース済み / v0.7.3（MSI 廃止）リリース準備中 / #284 本番 WACK は Hosted 化済み（次回 release 確認待ち） / #286 MSI 廃止済み
 
 - 確認日: 2026-08-16
 - 対象リポジトリ: `scottlz0310/cloud-migrator`

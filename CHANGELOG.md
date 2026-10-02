@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.7.3] - 2026-10-02
+
 ### Added
 
 - **GitHub-hosted runner 上の WACK 実行可否を検証する手動 Spike を追加（#284 / #101-G）**
@@ -1043,6 +1047,7 @@
 - `README.md` - プロジェクト概要・構成・開発手順
 
 [Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.2...HEAD
+[0.7.3]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...v0.7.0
