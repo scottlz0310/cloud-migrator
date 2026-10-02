@@ -35,7 +35,7 @@ WACK は切断された RDP セッションや、UAC を表示できない非対
 | Identity Name | `scottlz0310.CloudMigrator` |
 | Publisher | `CN=39FB3D39-1F1A-4B82-B081-47469FD12CA6` |
 | PublisherDisplayName | `scottlz0310` |
-| 開発用 Version | `Directory.Build.props` が `0.7.2`、manifest が `0.7.2.0` |
+| 開発用 Version | `Directory.Build.props` が `0.7.3`、manifest が `0.7.3.0` |
 | アーキテクチャ | Windows Desktop / x64 |
 | 対象 OS | MinVersion `10.0.19041.0`、MaxVersionTested `10.0.22621.0` |
 | 言語 | `ja-JP` / `en-US`、既定言語 `ja-JP` |
@@ -68,13 +68,13 @@ Test-Path .\installer\msix\Package.appxmanifest
 リポジトリルートから次を実行します。
 
 ~~~powershell
-.\installer\msix\Build-MsixPackage.ps1 -Configuration Release -Version 0.7.2.0
+.\installer\msix\Build-MsixPackage.ps1 -Configuration Release -Version 0.7.3.0
 ~~~
 
 生成先は `installer/msix/AppPackages/` です。
 
-- `CloudMigrator_0.7.2.0_x64.msix`: WACK・ローカル検査用の MSIX
-- `CloudMigrator_0.7.2.0_x64_bundle.msixupload`: Partner Center のアップロード用ファイル
+- `CloudMigrator_0.7.3.0_x64.msix`: WACK・ローカル検査用の MSIX
+- `CloudMigrator_0.7.3.0_x64_bundle.msixupload`: Partner Center のアップロード用ファイル
 
 ビルドスクリプトは、`Package.appxmanifest` の `PublisherDisplayName`、`Resources/Resource@Language`、manifest が参照する 4 つの画像を検証した後、Windows SDK の `makepri.exe` で `resources.pri` を生成して MSIX に含めます。`Resources` の先頭にある `ja-JP` が既定言語です。`csproj` の `DefaultLanguage` / `Languages` だけでは、手動 `makeappx` 経路の manifest へ自動反映されません。`makepri.exe` の生成方式は Microsoft の [MakePRI による PRI ファイル生成手順](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion#generate-a-package-resource-index-pri-file-using-makepri) に準拠します。
 
@@ -89,7 +89,7 @@ Partner Center で「画像が見つからない」「PublisherDisplayName が�
 生成直後に、対象ファイルと SHA-256 を固定します。
 
 ~~~powershell
-$version = "0.7.2.0"
+$version = "0.7.3.0"
 $packageDirectory = ".\installer\msix\AppPackages"
 $package = Get-Item (Join-Path $packageDirectory ("CloudMigrator_" + $version + "_x64.msix"))
 $upload = Get-Item (Join-Path $packageDirectory ("CloudMigrator_" + $version + "_x64_bundle.msixupload"))
@@ -152,7 +152,7 @@ Windows SDK の [Windows App Certification Kit](https://learn.microsoft.com/en-u
 リリース記録では自動選択を使わず、検査対象を明示します。
 
 ~~~powershell
-$packagePath = ".\installer\msix\AppPackages\CloudMigrator_0.7.2.0_x64.msix"
+$packagePath = ".\installer\msix\AppPackages\CloudMigrator_0.7.3.0_x64.msix"
 .\scripts\run-wack-test.ps1 -PackagePath $packagePath
 ~~~
 
@@ -375,13 +375,13 @@ Submission options で、次を確認します。
 
 ### 6.3 GitHub Release と Store 自動公開の境界
 
-`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSI、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の GitHub-hosted Windows WACK job に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
+`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の GitHub-hosted Windows WACK job に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
 
 ---
 
 ## 7. インストールスコープ（per-user / per-machine）
 
-MSIX の登録スコープは、既存の MSI のインストール先選択とは別の概念です。Microsoft の [MSIX トラブルシューティングガイド](https://learn.microsoft.com/en-us/windows/msix/msix-troubleshooting-guide)、[AppX PowerShell モジュール](https://learn.microsoft.com/en-us/powershell/module/appx/?view=windowsserver2025-ps)、[パッケージアプリの事前展開](https://learn.microsoft.com/en-us/windows/msix/desktop/deploy-preinstalled-apps) を参照してください。
+MSIX の登録スコープは、ZIP 展開のようなインストール先選択とは別の概念です。Microsoft の [MSIX トラブルシューティングガイド](https://learn.microsoft.com/en-us/windows/msix/msix-troubleshooting-guide)、[AppX PowerShell モジュール](https://learn.microsoft.com/en-us/powershell/module/appx/?view=windowsserver2025-ps)、[パッケージアプリの事前展開](https://learn.microsoft.com/en-us/windows/msix/desktop/deploy-preinstalled-apps) を参照してください。
 
 | 観点 | per-user（ユーザー登録） | per-machine 相当（プロビジョニング） |
 | --- | --- | --- |
@@ -395,7 +395,7 @@ MSIX の登録スコープは、既存の MSI のインストール先選択と�
 現在の手動ビルドは未署名なので、次の per-user 例がそのまま成功するとは限りません。
 
 ~~~powershell
-Add-AppxPackage -Path .\installer\msix\AppPackages\CloudMigrator_0.7.2.0_x64.msix
+Add-AppxPackage -Path .\installer\msix\AppPackages\CloudMigrator_0.7.3.0_x64.msix
 ~~~
 
 このコマンドが失敗しても、WACK の Required failure 0 と矛盾するとは限りません。信頼された証明書で署名したテスト package、または Store から取得した package でインストール・起動を確認します。プロビジョニングは管理者向けの企業展開であり、Microsoft Store の通常配布に「per-machine」を追加する manifest スイッチではありません。

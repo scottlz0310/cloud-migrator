@@ -136,13 +136,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Published バイナリをアーティファクトに保存（MSI ビルド用 / win-x64 のみ）
-        if: matrix.rid == 'win-x64'
-        uses: actions/upload-artifact@v7
-        with:
-          name: publish-win-x64
-          path: publish/win-x64/
-          retention-days: 1
 
   msix:
     name: MSIX パッケージビルド
@@ -431,75 +424,3 @@ jobs:
           if ($statusExit -ne 0) {
             throw 'Store submission の最終 status 取得に失敗しました。'
           }
-
-  msi:
-    name: MSI インストーラービルド
-    runs-on: windows-latest
-    needs: publish
-    env:
-      LEFTHOOK: 0
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: .NET セットアップ
-        uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: global.json
-
-      - name: WiX Toolset v5 インストール
-        run: dotnet tool install wix --version 5.0.2 --global
-
-      - name: WiX 拡張インストール（UI / Util）
-        # UI    : ようこそ/ライセンス/インストール先/進捗/完了 ダイアログ
-        # Util  : ExitDialog 起動用 WixShellExec + InternetShortcut（README リンク）
-        # 注意: バージョン未指定だと最新（v7 系）が取得されて WiX 5 本体と不整合になる
-        # $PSNativeCommandUseErrorActionPreference = $true : ネイティブコマンド非0終了で即 step 失敗
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          wix extension add -g WixToolset.UI.wixext/5.0.2
-          wix extension add -g WixToolset.Util.wixext/5.0.2
-
-      - name: win-x64 バイナリをダウンロード
-        uses: actions/download-artifact@v8
-        with:
-          name: publish-win-x64
-          path: published/win-x64
-
-      - name: MSI 用バージョン文字列を抽出
-        id: version
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-
-          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
-            throw "無効なリリースタグ形式です。SemVer 形式のタグ（例: v1.2.3, v1.2.3.4, v1.2.3-rc.1, v1.2.3+build.1）を使用してください: $tag"
-          }
-
-          $version = $Matches['version']
-          "version=$version" >> $env:GITHUB_OUTPUT
-
-      - name: MSI ビルド
-        shell: pwsh
-        run: |
-          # WiX 5.0.2 は Files/Exclude 未サポートのため、BinDir から *.exe / *.pdb を
-          # 除いた DepsDir を作成して DashboardComponents に渡す
-          $binDir  = "${{ github.workspace }}/published/win-x64"
-          $depsDir = "${{ github.workspace }}/published/win-x64-deps"
-          Copy-Item -Path $binDir -Destination $depsDir -Recurse -Force
-          Get-ChildItem $depsDir -Recurse -Filter "*.exe" | Remove-Item -Force
-          Get-ChildItem $depsDir -Recurse -Filter "*.pdb" | Remove-Item -Force
-
-          wix build installer/wix/Product.wxs `
-            -arch x64 `
-            -ext WixToolset.UI.wixext `
-            -ext WixToolset.Util.wixext `
-            -d Version=${{ steps.version.outputs.version }} `
-            -d "BinDir=$binDir" `
-            -d "DepsDir=$depsDir" `
-            -o cloud-migrator-setup.msi
-
-      - name: MSI をリリースにアップロード
-        run: gh release upload ${{ github.ref_name }} cloud-migrator-setup.msi --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

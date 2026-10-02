@@ -5,7 +5,8 @@ OneDrive を転送元として、SharePoint Online または Dropbox へファ�
 ## 現在のステータス
 
 - 最新バージョン: `0.3.0`
-- 配布方式: [GitHub Releases](https://github.com/scottlz0310/cloud-migrator/releases)（MSI インストーラー / Windows ZIP / Linux・macOS tar.gz）
+- 配布方式: [GitHub Releases](https://github.com/scottlz0310/cloud-migrator/releases)（Windows ZIP / MSIX / Linux・macOS tar.gz）と Microsoft Store
+- MSI インストーラーは廃止しました（v0.7.2 までの release asset は残しています）。経緯は [MSI 廃止調査](docs/msi-deprecation-assessment.md) を参照してください
 - 実運用実績: OneDrive -> Dropbox 大容量転送フローは検証済み
 - 実装状況: SharePoint 向け基本機能は実装済み、最適化フェーズは継続中
 

@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.7.3] - 2026-10-02
+
 ### Added
 
 - **GitHub-hosted runner 上の WACK 実行可否を検証する手動 Spike を追加（#284 / #101-G）**
@@ -16,6 +20,11 @@
   - Spike 自体は本番の `release.yml`、`wack.yml`、Store 公開 gate を変更せず、移行判断に必要な証跡だけを保存する
 
 ### Changed
+
+- **MSI インストーラーの配布と関連 CI job を廃止（#286）**
+  - `release.yml` の `msi` job と `publish-win-x64` artifact、`ci.yml` の `publish-win` / `msi-check`、`installer/wix`、`tools/Test-WixBuild.ps1` を削除
+  - Windows 向けは Microsoft Store（MSIX）と ZIP に集約。v0.7.2 までの release に添付した MSI asset は保持
+  - 廃止の判断根拠は `docs/msi-deprecation-assessment.md` に記録
 
 - **本番 WACK gate を GitHub-hosted Windows runner へ移行（#284 / #101-G）**
   - `wack.yml` の同一 MSIX artifact 検証を `windows-latest` で実行し、AppCertKit、管理者権限、対話セッションの検査を維持する
@@ -1038,6 +1047,7 @@
 - `README.md` - プロジェクト概要・構成・開発手順
 
 [Unreleased]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.2...HEAD
+[0.7.3]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/scottlz0310/cloud-migrator/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/scottlz0310/cloud-migrator/compare/v0.6.0...v0.7.0

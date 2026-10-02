@@ -101,9 +101,8 @@ internal static class DashboardLauncher
     /// <summary>CloudMigrator.Dashboard.exe のパスを探す。</summary>
     private static string? FindDashboardExe()
     {
-        // 1. 同一ディレクトリ（publish / MSI インストール本流）
-        //    MSI は cloud-migrator.exe と CloudMigrator.Dashboard.exe を同じ INSTALLFOLDER に配置する。
-        //    ユーザーが WixUI_InstallDir でカスタムパスを選んでもこのチェックでヒットする。
+        // 1. 同一ディレクトリ（publish / ZIP 展開 / 旧 MSI インストール）
+        //    cloud-migrator.exe と CloudMigrator.Dashboard.exe は同じディレクトリに配置される。
         var candidate = Path.Combine(AppContext.BaseDirectory, "CloudMigrator.Dashboard.exe");
         if (File.Exists(candidate))
             return candidate;
