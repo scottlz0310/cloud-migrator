@@ -375,13 +375,13 @@ Submission options で、次を確認します。
 
 ### 6.3 GitHub Release と Store 自動公開の境界
 
-`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSI、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の GitHub-hosted Windows WACK job に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
+`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の GitHub-hosted Windows WACK job に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
 
 ---
 
 ## 7. インストールスコープ（per-user / per-machine）
 
-MSIX の登録スコープは、既存の MSI のインストール先選択とは別の概念です。Microsoft の [MSIX トラブルシューティングガイド](https://learn.microsoft.com/en-us/windows/msix/msix-troubleshooting-guide)、[AppX PowerShell モジュール](https://learn.microsoft.com/en-us/powershell/module/appx/?view=windowsserver2025-ps)、[パッケージアプリの事前展開](https://learn.microsoft.com/en-us/windows/msix/desktop/deploy-preinstalled-apps) を参照してください。
+MSIX の登録スコープは、ZIP 展開のようなインストール先選択とは別の概念です。Microsoft の [MSIX トラブルシューティングガイド](https://learn.microsoft.com/en-us/windows/msix/msix-troubleshooting-guide)、[AppX PowerShell モジュール](https://learn.microsoft.com/en-us/powershell/module/appx/?view=windowsserver2025-ps)、[パッケージアプリの事前展開](https://learn.microsoft.com/en-us/windows/msix/desktop/deploy-preinstalled-apps) を参照してください。
 
 | 観点 | per-user（ユーザー登録） | per-machine 相当（プロビジョニング） |
 | --- | --- | --- |

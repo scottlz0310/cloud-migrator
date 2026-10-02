@@ -106,7 +106,7 @@ MSIX のリリースは `v*` tag push を入口とし、GitHub Release の生成
 
 ```text
 v* tag push
-  -> release.yml: CLI / Dashboard / MSI / MSIX を生成し GitHub Release へ添付
+  -> release.yml: CLI / Dashboard / MSIX を生成し GitHub Release へ添付
   -> msix-release-<run_id>: .msix / .msixupload / SHA-256 証跡を保存
   -> wack.yml (workflow_call): 同じ artifact の .msix を GitHub-hosted Windows runner で検証
   -> store-production: WACK 成功後だけ同じ artifact の .msixupload を Store へ提出・公開

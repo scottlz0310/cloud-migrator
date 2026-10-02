@@ -17,6 +17,11 @@
 
 ### Changed
 
+- **MSI インストーラーの配布と関連 CI job を廃止（#286）**
+  - `release.yml` の `msi` job と `publish-win-x64` artifact、`ci.yml` の `publish-win` / `msi-check`、`installer/wix`、`tools/Test-WixBuild.ps1` を削除
+  - Windows 向けは Microsoft Store（MSIX）と ZIP に集約。v0.7.2 までの release に添付した MSI asset は保持
+  - 廃止の判断根拠は `docs/msi-deprecation-assessment.md` に記録
+
 - **本番 WACK gate を GitHub-hosted Windows runner へ移行（#284 / #101-G）**
   - `wack.yml` の同一 MSIX artifact 検証を `windows-latest` で実行し、AppCertKit、管理者権限、対話セッションの検査を維持する
   - Hosted Spike #31950498930 の `hosted-candidate` 判定と、v0.7.2 artifact の SHA-256 一致を移行根拠として記録する
