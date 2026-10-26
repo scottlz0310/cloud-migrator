@@ -100,7 +100,7 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.402"
+          dotnet-version: "10.0.403"
 
       - name: 依存関係の復元
         run: dotnet restore CloudMigrator.slnx
@@ -144,7 +144,7 @@ jobs:
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.402"
+          dotnet-version: "10.0.403"
 
       - name: manifest Version を取得
         id: manifest
