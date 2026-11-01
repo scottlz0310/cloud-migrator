@@ -102,21 +102,24 @@ CloudMigrator.Cli
 
 ## リリースフロー（MSIX / Microsoft Store）
 
-MSIX のリリースは `v*` tag push を入口とし、GitHub Release の生成、同一 MSIX artifact の WACK、Microsoft Store 自動公開を順に実行します。
+MSIX のリリースは、release-automate のリリース準備 PR（`chore(release): vX.Y.Z`）のマージを入口とし、draft の GitHub Release の生成、同一 MSIX artifact の WACK、Release の公開、Microsoft Store 自動公開を順に実行します。
 
 ```text
-v* tag push
-  -> release.yml: CLI / Dashboard / MSIX を生成し GitHub Release へ添付
+Prepare Release (prepare-release.yml, 手動) -> 準備 PR をレビューして squash マージ
+  -> release.yml (draft): release-automate が tag と draft Release を作成
+  -> release.yml: CLI / Dashboard / MSIX を生成
   -> msix-release-<run_id>: .msix / .msixupload / SHA-256 証跡を保存
   -> wack.yml (workflow_call): 同じ artifact の .msix を GitHub-hosted Windows runner で検証
-  -> store-production: WACK 成功後だけ同じ artifact の .msixupload を Store へ提出・公開
+  -> release.yml: 成果物を draft へ添付し、再取得して SHA-256 を照合
+  -> release.yml (finalize): Release を公開
+  -> store-production: 同じ artifact の .msixupload を Store へ提出・公開
 ```
 
-- `release.yml` は tag と manifest Version、tag commit の main 系列、package の SHA-256 を確認します。
-- リリース経路の `wack.yml` は `workflow_call` で artifact を受け取り、tag 時に MSIX を再ビルドしません。WACK job は `windows-latest` 上で AppCertKit、管理者権限、対話セッションを確認してから実行します。`workflow_dispatch` による個別 WACK は別途維持します。
-- Store job は `store-production` Environment、`STORE_PRODUCT_ID` variable、Entra ID / Partner Center の Environment secrets を使用します。Environment の deployment policy は `v*` tag に限定し、Product 単位の concurrency で submission を直列化します。
+- `release.yml` は tag から manifest Version を設定し、package の SHA-256 を確認します。tag は release-automate が準備 PR のマージコミットに作るため、コミットが main 系列にあることは構造上保証されます。
+- リリース経路の `wack.yml` は `workflow_call` で artifact を受け取り、MSIX を再ビルドしません。WACK job は `windows-latest` 上で AppCertKit、管理者権限、対話セッションを確認してから実行します。`workflow_dispatch` による個別 WACK は別途維持します。
+- Store job は `store-production` Environment、`STORE_PRODUCT_ID` variable、Entra ID / Partner Center の Environment secrets を使用します。Environment の deployment policy は `main` ブランチに限定し、Product 単位の concurrency で submission を直列化します。
 - Store job は既存 submission の status と package を確認し、同じ package の処理中 submission は poll して再利用します。別 Version の submission は上書きせず停止します。
-- GitHub Release の公開完了は Store 公開完了を意味しません。WACK と Store の job 結果、artifact 証跡、submission status を別々に確認します。
+- GitHub Release は Store 提出より先に公開されます。Release の公開完了は Store 公開完了を意味しません。WACK と Store の job 結果、artifact 証跡、submission status を別々に確認します。
 
 Environment の初期設定と中断・再実行を含む詳細手順は、[MSIX パッケージング・WACK 検査・Microsoft Store 提出ガイド](msix-packaging-and-store-guide.md)の [Store 自動公開と初期設定](msix-packaging-and-store-guide.md#84-store-自動公開と初期設定-276) に集約します。
 

@@ -1,0 +1,46 @@
+name: Prepare Release
+
+# リリース準備 PR を起票する（手動起動）。
+# Directory.Build.props の Version と CHANGELOG の [Unreleased] を指定の版で確定し、
+# GitHub App 名義の PR（件名 `chore(release): vX.Y.Z`）を作る。
+# この PR をマージすると、release.yml が tag と draft Release を作り、
+# CLI と MSIX のビルド・WACK・照合を経て Release を公開し、Microsoft Store へ提出する。
+#
+# MSIX の manifest Version は更新しない（release.yml がタグからビルド時に注入する）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: "リリースする SemVer（先頭の v は不要。RC は可、build metadata は不可）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 実行元と版を確認
+        env:
+          TARGET_VERSION: ${{ inputs.target_version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ||
+                ! "$TARGET_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo '::error::既定ブランチから SemVer MAJOR.MINOR.PATCH（RC 可・build metadata 不可）を指定してください'
+            exit 1
+          fi
+
+  prepare:
+    needs: validate
+    uses: scottlz0310/release-automate/.github/workflows/reusable-prepare-release.yml@3c860f1b178eb5b942d87c800153bc47887a7bfd # v3.2.1
+    secrets:
+      RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+    with:
+      target_version: ${{ inputs.target_version }}
+      bump_strategy: dotnet
+      version_file: Directory.Build.props

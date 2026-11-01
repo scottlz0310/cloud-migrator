@@ -153,16 +153,16 @@ if ($PSCmdlet.ShouldProcess("GitHub Environment '$EnvironmentName'", '作成ま�
 
 $policiesEndpoint = "$environmentEndpoint/deployment-branch-policies"
 if ($WhatIfPreference) {
-    Write-Host "WhatIf: Environment '$EnvironmentName' の既存 tag policy は確認せず、'v*' の追加予定を表示します。"
+    Write-Host "WhatIf: Environment '$EnvironmentName' の既存の branch policy は確認せず、'main' の追加予定を表示します。"
 } else {
-    $existingPolicies = @(Invoke-Gh -Arguments (@('api', $policiesEndpoint) + $apiHeaders + @('--jq', '.branch_policies[] | select(.name == "v*" and .type == "tag") | .name')))
+    $existingPolicies = @(Invoke-Gh -Arguments (@('api', $policiesEndpoint) + $apiHeaders + @('--jq', '.branch_policies[] | select(.name == "main" and .type == "branch") | .name')))
     if ($existingPolicies.Count -eq 0) {
-        $policyBody = [ordered]@{ name = 'v*'; type = 'tag' } | ConvertTo-Json -Depth 3
-        if ($PSCmdlet.ShouldProcess("GitHub Environment '$EnvironmentName'", "tag policy 'v*' を追加")) {
+        $policyBody = [ordered]@{ name = 'main'; type = 'branch' } | ConvertTo-Json -Depth 3
+        if ($PSCmdlet.ShouldProcess("GitHub Environment '$EnvironmentName'", "branch policy 'main' を追加")) {
             [void](Invoke-GhJson -Arguments (@('api', $policiesEndpoint, '--method', 'POST') + $apiHeaders + @('--input', '-')) -Json $policyBody)
         }
     } else {
-        Write-Host "tag policy 'v*' は設定済みです。"
+        Write-Host "branch policy 'main' は設定済みです。"
     }
 }
 

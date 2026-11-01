@@ -1,24 +1,46 @@
 name: Release
 
+# リリース準備 PR（prepare-release.yml が作る `chore(release): vX.Y.Z`）を squash マージすると動く。
+# release-automate が draft の Release とタグを作り、続けて次の順に進む。
+#   draft → CLI と MSIX のビルド → WACK → 成果物の添付 → Release から再取得して照合 → Release の公開
+#   → Store への提出（Environment `store-production`）
+# リリース準備 PR 以外の main への push では、draft ジョブが skip され、後続のジョブも動かない。
+#
+# release-automate のタグは GITHUB_TOKEN で作られ、`push: tags` の別のワークフローを起動しない。
+# そのため成果物のビルドは、タグの push ではなく、この workflow の job として行う。
+#
+# MSIX の manifest Version は、コミットされた値ではなく、タグから作業コピーへ注入する
+# （prepare は Directory.Build.props の Version だけを更新し、manifest は更新しないため）。
+#
+# 失敗したときは、同じ実行で「Re-run failed jobs」を使う（新しいタグを切らない）。Release の公開の後に
+# Store の提出だけが失敗した場合も同じで、公開済みの Release は変更しない。
+# 手順と運用は docs/msix-packaging-and-store-guide.md の 6.1 と 8.4。
+
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 permissions:
-  contents: write
-  actions: read
-
-concurrency:
-  group: release-${{ github.ref_name }}
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  publish:
-    name: Publish (${{ matrix.rid }})
+  draft:
+    if: startsWith(github.event.head_commit.message, 'chore(release):')
+    uses: scottlz0310/release-automate/.github/workflows/reusable-publish-release.yml@3c860f1b178eb5b942d87c800153bc47887a7bfd # v3.2.1
+    permissions:
+      contents: write
+    with:
+      draft: true
+
+  cli:
+    name: CLI (${{ matrix.rid }})
+    needs: draft
+    if: needs.draft.outputs.release_state == 'draft'
     runs-on: ${{ matrix.os }}
     env:
       LEFTHOOK: 0
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +60,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.target_sha }}
 
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v6
@@ -47,9 +71,10 @@ jobs:
       - name: バージョン文字列を抽出（v プレフィックス除去）
         id: version
         shell: bash
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
         run: |
-          version="${{ github.ref_name }}"
-          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: 依存関係の復元（RID 付き）
         # self-contained publish に必要な runtime pack を正しく復元するため
@@ -86,101 +111,74 @@ jobs:
       - name: アーカイブ作成（Windows）
         if: matrix.archive_ext == 'zip'
         shell: pwsh
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
         run: |
-          $version  = "${{ github.ref_name }}"
-          $assetName = "cloud-migrator-${version}-${{ matrix.rid }}.zip"
+          $assetName = "cloud-migrator-${env:TAG}-${{ matrix.rid }}.zip"
           Compress-Archive -Path "publish/${{ matrix.rid }}/*" -DestinationPath $assetName
-          "ASSET_NAME=$assetName" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: アーカイブ作成（Unix）
         if: matrix.archive_ext == 'tar.gz'
         shell: bash
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
         run: |
-          version="${{ github.ref_name }}"
-          asset_name="cloud-migrator-${version}-${{ matrix.rid }}.tar.gz"
+          asset_name="cloud-migrator-${TAG}-${{ matrix.rid }}.tar.gz"
           tar -czf "${asset_name}" -C "publish/${{ matrix.rid }}" .
-          echo "ASSET_NAME=${asset_name}" >> "$GITHUB_ENV"
 
-      - name: リリースが存在しない場合は作成（競合耐性あり）
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          RELEASE_EXISTS=false
-          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
-            echo "Release '${{ github.ref_name }}' は既に存在します。"
-            RELEASE_EXISTS=true
-          fi
-
-          if [ "$RELEASE_EXISTS" = "false" ]; then
-            if gh release create "${{ github.ref_name }}" \
-              --title "${{ github.ref_name }}" \
-              --generate-notes; then
-              echo "Release '${{ github.ref_name }}' を作成しました。"
-            elif gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
-              echo "別の並列ジョブが Release '${{ github.ref_name }}' を作成済みのため成功扱いにします。"
-            else
-              echo "Release '${{ github.ref_name }}' の作成に失敗しました。"
-              exit 1
-            fi
-          fi
-
-          # Draft 状態のまま残らないよう、常に公開・Latest に設定する（既存リリースも対象）
-          gh release edit "${{ github.ref_name }}" --draft=false --latest
-          echo "Release '${{ github.ref_name }}' を公開済み・Latest に設定しました。"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: リリースアセットをアップロード
-        run: gh release upload ${{ github.ref_name }} "${{ env.ASSET_NAME }}" --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      - name: アーカイブを artifact に保存
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-${{ matrix.rid }}
+          path: cloud-migrator-${{ needs.draft.outputs.tag_name }}-${{ matrix.rid }}.${{ matrix.archive_ext }}
+          if-no-files-found: error
 
   msix:
     name: MSIX パッケージビルド
+    needs: draft
+    if: needs.draft.outputs.release_state == 'draft'
     runs-on: windows-latest
-    needs: publish
     env:
       LEFTHOOK: 0
+    permissions:
+      contents: read
 
     steps:
       - name: リポジトリを checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-
-      - name: tag commit が main 系列上にあることを確認
-        shell: pwsh
-        run: |
-          git fetch origin main --no-tags
-          & git merge-base --is-ancestor $env:GITHUB_SHA origin/main
-          if ($LASTEXITCODE -ne 0) {
-            throw "リリース tag の commit ($env:GITHUB_SHA) が origin/main の系列上にありません。"
-          }
+          ref: ${{ needs.draft.outputs.target_sha }}
 
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
-      - name: tag と manifest Version を照合
+      # コミットされた manifest の Version は開発用の値。リリースのビルドでは、作業コピーの
+      # installer/msix/Package.appxmanifest の Identity Version を、タグから注入した値にする。
+      - name: タグから manifest Version を設定
         id: version
         shell: pwsh
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:\.\d+)?)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
-            throw "無効なリリースタグ形式です。SemVer 形式のタグを使用してください: $tag"
+          if ($env:TAG -notmatch '^v(?<version>\d+\.\d+\.\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "無効なリリースタグ形式です。SemVer 形式のタグを使用してください: $env:TAG"
           }
+          $manifestVersion = "$($Matches['version']).0"
 
-          $tagVersion = $Matches['version']
-          if ($tagVersion -match '^\d+\.\d+\.\d+$') {
-            $tagVersion = "$tagVersion.0"
+          $path = Join-Path $env:GITHUB_WORKSPACE 'installer/msix/Package.appxmanifest'
+          $content = [IO.File]::ReadAllText($path)
+          $pattern = '(?s)(<Identity\b[^>]*?\sVersion=")[^"]*(")'
+          if ([regex]::Matches($content, $pattern).Count -ne 1) {
+            throw "Package.appxmanifest の Identity Version を 1 か所に特定できません。"
           }
-          [xml]$manifest = Get-Content -LiteralPath "installer/msix/Package.appxmanifest" -Raw
-          $manifestVersion = $manifest.Package.Identity.Version
-          if ($tagVersion -ne $manifestVersion) {
-            throw "tag Version ($tagVersion) と manifest Version ($manifestVersion) が一致しません。"
+          $updated = [regex]::Replace($content, $pattern, "`${1}$manifestVersion`${2}")
+          [IO.File]::WriteAllText($path, $updated, [Text.UTF8Encoding]::new($false))
+
+          [xml]$manifest = Get-Content -LiteralPath $path -Raw
+          if ($manifest.Package.Identity.Version -ne $manifestVersion) {
+            throw "manifest Version の設定に失敗しました。期待: $manifestVersion、実際: $($manifest.Package.Identity.Version)"
           }
           "version=$manifestVersion" >> $env:GITHUB_OUTPUT
 
@@ -199,6 +197,9 @@ jobs:
 
       - name: MSIX artifact の SHA-256 証跡を作成
         shell: pwsh
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
+          TARGET_SHA: ${{ needs.draft.outputs.target_sha }}
         run: |
           $packageFiles = @(Get-ChildItem -Path "installer/msix/AppPackages/CloudMigrator_*_x64.msix" -File)
           $uploadFiles = @(Get-ChildItem -Path "installer/msix/AppPackages/CloudMigrator_*_x64_bundle.msixupload" -File)
@@ -210,8 +211,8 @@ jobs:
           $upload = $uploadFiles[0]
           $evidence = [ordered]@{
             schemaVersion = 1
-            tag = $env:GITHUB_REF_NAME
-            commit = $env:GITHUB_SHA
+            tag = $env:TAG
+            commit = $env:TARGET_SHA
             version = "${{ steps.version.outputs.version }}"
             packageFile = $package.Name
             packageSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $package.FullName).Hash.ToLowerInvariant()
@@ -233,16 +234,6 @@ jobs:
             [Text.UTF8Encoding]::new($false))
           Write-Host $evidence
 
-      - name: MSIX をリリースにアップロード
-        shell: pwsh
-        run: |
-          gh release upload "${{ github.ref_name }}" `
-            ".\installer\msix\AppPackages\CloudMigrator_${{ steps.version.outputs.version }}_x64.msix" `
-            ".\installer\msix\AppPackages\CloudMigrator_${{ steps.version.outputs.version }}_x64_bundle.msixupload" `
-            --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: MSIX をアーティファクトに保存
         uses: actions/upload-artifact@v7
         with:
@@ -253,15 +244,116 @@ jobs:
 
   wack:
     name: WACK（同一 MSIX artifact）
-    needs: msix
+    needs: [draft, msix]
+    if: needs.draft.outputs.release_state == 'draft'
+    # 呼び出し先の wack.yml が `actions: read` を要求するため、同じ権限を渡す。
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/wack.yml
     with:
       artifact_name: msix-release-${{ github.run_id }}
 
+  # Store へ出すものと同じファイルを、Release にも添付する（成果物の同一性）。
+  attach:
+    name: Release へ成果物を添付
+    needs: [draft, cli, msix]
+    if: needs.draft.outputs.release_state == 'draft'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: CLI のアーカイブを取得
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cli-*
+          merge-multiple: true
+          path: artifact
+
+      - name: MSIX を取得
+        uses: actions/download-artifact@v8
+        with:
+          name: msix-release-${{ github.run_id }}
+          path: artifact
+
+      - name: draft の Release へ成果物を添付
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find artifact -type f \( -name 'cloud-migrator-*.zip' -o -name 'cloud-migrator-*.tar.gz' -o -name '*.msix' -o -name '*.msixupload' \))
+          # CLI 4 個（win-x64、linux-x64、osx-x64、osx-arm64）+ .msix + .msixupload
+          if [[ ${#files[@]} -ne 6 ]]; then
+            echo "::error::添付する成果物が 6 つではありません: ${files[*]}"
+            exit 1
+          fi
+          # 再実行で重複しないよう、既存の同名の asset は置き換える。
+          gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+
+  verify:
+    name: Release の成果物を照合
+    needs: [draft, attach]
+    if: needs.draft.outputs.release_state == 'draft'
+    runs-on: ubuntu-latest
+    permissions:
+      # draft の Release は、push 権限のある資格情報でないと取得できない。ここでは読み取りだけを行う。
+      contents: write
+    steps:
+      - name: CLI のアーカイブを取得
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cli-*
+          merge-multiple: true
+          path: expected
+
+      - name: MSIX を取得
+        uses: actions/download-artifact@v8
+        with:
+          name: msix-release-${{ github.run_id }}
+          path: expected
+
+      - name: Release から成果物を再取得して照合
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.draft.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          mkdir actual
+          gh release download "$TAG" --dir actual --repo "$GITHUB_REPOSITORY"
+
+          mapfile -t names < <(find expected -type f \( -name 'cloud-migrator-*.zip' -o -name 'cloud-migrator-*.tar.gz' -o -name '*.msix' -o -name '*.msixupload' \) -printf '%f\n' | sort)
+          mapfile -t attached < <(find actual -type f -printf '%f\n' | sort)
+          if [[ "${names[*]}" != "${attached[*]}" || ${#names[@]} -ne 6 ]]; then
+            echo "::error::Release の asset が、ビルドの成果物と一致しません。期待: ${names[*]}、実際: ${attached[*]}"
+            exit 1
+          fi
+
+          for name in "${names[@]}"; do
+            expected_hash=$(sha256sum "$(find expected -type f -name "$name")" | cut -d' ' -f1)
+            actual_hash=$(sha256sum "actual/$name" | cut -d' ' -f1)
+            if [[ "$expected_hash" != "$actual_hash" ]]; then
+              echo "::error::$name の SHA-256 がビルドの成果物と一致しません"
+              exit 1
+            fi
+          done
+          echo "照合しました: ${names[*]}"
+
+  finalize:
+    needs: [draft, wack, verify]
+    if: needs.draft.outputs.release_state == 'draft'
+    uses: scottlz0310/release-automate/.github/workflows/reusable-finalize-release.yml@3c860f1b178eb5b942d87c800153bc47887a7bfd # v3.2.1
+    permissions:
+      contents: write
+    with:
+      tag_name: ${{ needs.draft.outputs.tag_name }}
+      target_sha: ${{ needs.draft.outputs.target_sha }}
+
+  # Release の公開の後に、WACK を通した同じ .msixupload を Store の submission として送る。
   store:
     name: Microsoft Store 自動公開
-    needs: [msix, wack]
-    if: ${{ needs.msix.result == 'success' && needs.wack.result == 'success' }}
+    needs: [draft, finalize]
+    if: needs.draft.outputs.release_state == 'draft'
     runs-on: windows-latest
     timeout-minutes: 360
     environment:
@@ -277,6 +369,8 @@ jobs:
     steps:
       - name: リポジトリを checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.draft.outputs.target_sha }}
 
       - name: MSIX artifact を取得
         uses: actions/download-artifact@v8
@@ -286,6 +380,9 @@ jobs:
 
       - name: MSIX artifact と証跡を照合
         shell: pwsh
+        env:
+          TAG: ${{ needs.draft.outputs.tag_name }}
+          TARGET_SHA: ${{ needs.draft.outputs.target_sha }}
         run: |
           $packages = @(Get-ChildItem -LiteralPath 'store-input' -File -Filter '*.msix')
           $uploads = @(Get-ChildItem -LiteralPath 'store-input' -File -Filter '*.msixupload')
@@ -299,7 +396,7 @@ jobs:
           $upload = $uploads[0]
           $expectedPackage = "CloudMigrator_$($evidence.version)_x64.msix"
           $expectedUpload = "CloudMigrator_$($evidence.version)_x64_bundle.msixupload"
-          if ($evidence.tag -ne $env:GITHUB_REF_NAME -or $evidence.commit -ne $env:GITHUB_SHA) {
+          if ($evidence.tag -ne $env:TAG -or $evidence.commit -ne $env:TARGET_SHA) {
             throw "MSIX artifact の tag/commit 証跡が現在の release と一致しません。"
           }
           if ($package.Name -ne $expectedPackage -or $upload.Name -ne $expectedUpload) {
@@ -314,8 +411,8 @@ jobs:
 
           @(
             '### Store 公開 artifact',
-            "- tag: $env:GITHUB_REF_NAME",
-            "- commit: $env:GITHUB_SHA",
+            "- tag: $env:TAG",
+            "- commit: $env:TARGET_SHA",
             "- package: $($package.Name) ($packageHash)",
             "- upload: $($upload.Name) ($uploadHash)"
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

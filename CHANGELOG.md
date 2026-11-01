@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- リリース手順を release-automate（v3.2.1）に移行。手動の `Prepare Release`（`prepare-release.yml`）が `Directory.Build.props` の Version と CHANGELOG を確定する準備 PR を作り、そのマージで `release.yml` が draft の Release を作成する。CLI と MSIX のビルド、WACK、成果物の添付と照合を経て Release を公開し、その後に Microsoft Store へ提出する。従来の `v*` タグ push による起動は廃止した
+- MSIX の manifest Version は、コミット上の値ではなく、リリースのビルドで tag（`vX.Y.Z`）から `X.Y.Z.0` として注入する。tag が `X.Y.Z` の 3 桁になるため、4 桁目だけを増やす再提出はできず、パッチ版を進めて再提出する
+- `store-production` Environment の deployment policy を `v*` tag から `main` ブランチに変更するため、`Configure-StorePublishing.ps1` の設定対象を直した。既存の Environment は、マージ後・初回リリース前に設定を更新する必要がある
+- `docs/msix-packaging-and-store-guide.md` と `docs/architecture.md` のリリース手順を新しい経路に合わせた
+
 ---
 
 ## [0.7.3] - 2026-10-02
