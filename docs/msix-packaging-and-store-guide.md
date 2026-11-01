@@ -2,7 +2,7 @@
 
 本書は、CloudMigrator の MSIX パッケージを生成し、Windows App Certification Kit (WACK) で検証し、Microsoft Partner Center へ提出・公開するための準備・手動確認・自動公開運用ガイドです。Epic [#101](https://github.com/scottlz0310/cloud-migrator/issues/101) の #264〜#268 と #276 を横断する再開用の正本として扱います。
 
-初回 listing の登録、手動確認、または自動公開が利用できない場合は本書の手動手順を使用します。通常の更新では `v*` tag push 後に、[8.4 Store 自動公開と初期設定](#84-store-自動公開と初期設定-276) の GitHub Actions が同一 artifact を WACK から Store まで搬送します。手動の「認定用に提出」および「Publish now」は、自動経路を使わない場合の明示的な回復手順として扱います。
+初回 listing の登録、手動確認、または自動公開が利用できない場合は本書の手動手順を使用します。通常の更新では、リリース準備 PR（`chore(release): vX.Y.Z`）のマージ後に、[8.4 Store 自動公開と初期設定](#84-store-自動公開と初期設定-276) の GitHub Actions が同一 artifact を WACK から Store まで搬送します。手動の「認定用に提出」および「Publish now」は、自動経路を使わない場合の明示的な回復手順として扱います。
 
 すべての相対パスはリポジトリルート（CloudMigrator）からのパスです。
 
@@ -43,7 +43,7 @@ WACK は切断された RDP セッションや、UAC を表示できない非対
 | 実行方式 | `CloudMigrator.Dashboard.exe`、framework-dependent |
 | 署名 | 現在の手動ビルドは `AppxPackageSigningEnabled=false` |
 
-`src/CloudMigrator.Dashboard/Package.appxmanifest` と `installer/msix/Package.appxmanifest` は、手動ビルドで使用するファイルを含めて同じ Identity・Version を維持します。Store のアプリ予約後は Identity Name と Publisher を変更しません。
+`src/CloudMigrator.Dashboard/Package.appxmanifest` と `installer/msix/Package.appxmanifest` は、手動ビルドで使用するファイルを含めて同じ Identity を維持します。Version はコミット上では開発用の値で、リリースのビルドでは `release.yml` が tag から `installer/msix/Package.appxmanifest` の Identity Version を注入します（`src/CloudMigrator.Dashboard/Package.appxmanifest` はコミット上の値のままです）。Store のアプリ予約後は Identity Name と Publisher を変更しません。
 
 ---
 
@@ -78,7 +78,7 @@ Test-Path .\installer\msix\Package.appxmanifest
 
 ビルドスクリプトは、`Package.appxmanifest` の `PublisherDisplayName`、`Resources/Resource@Language`、manifest が参照する 4 つの画像を検証した後、Windows SDK の `makepri.exe` で `resources.pri` を生成して MSIX に含めます。`Resources` の先頭にある `ja-JP` が既定言語です。`csproj` の `DefaultLanguage` / `Languages` だけでは、手動 `makeappx` 経路の manifest へ自動反映されません。`makepri.exe` の生成方式は Microsoft の [MakePRI による PRI ファイル生成手順](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion#generate-a-package-resource-index-pri-file-using-makepri) に準拠します。
 
-現行スクリプトは `-Version` をファイル名に使用しますが、manifest の Identity Version は書き換えません。リリースバージョンに変更する場合は、専用のリリース準備 PR で `Directory.Build.props` と 2 つの manifest の値を先に更新し、その 4 桁の値を `-Version` に渡します。たとえば Store の `0.8.0` リリースでは manifest を `0.8.0.0` にし、ファイル名にも `0.8.0.0` を使用します。`-OutputDirectory` パラメーターは現行実装では生成先に反映されないため、本書では使用しません。
+現行スクリプトは `-Version` をファイル名に使用しますが、manifest の Identity Version は書き換えません。リリースのビルド（`release.yml`）は、tag `vX.Y.Z` から作業コピーの manifest の Identity Version を `X.Y.Z.0` に書き換えてから、その 4 桁の値を `-Version` に渡します。たとえば Store の `0.8.0` リリースでは manifest が `0.8.0.0` になり、ファイル名にも `0.8.0.0` を使用します。手動でリリースの MSIX を作る場合は、同じ手順で manifest の値を先に書き換えます。`-OutputDirectory` パラメーターは現行実装では生成先に反映されないため、本書では使用しません。
 
 Store への提出には `.msix` ではなく `.msixupload` を使用します。`.msix` は WACK とローカル検査の入力です。現在のスクリプトはローカル署名を行わないため、`.msixupload` が Store で受け入れられるかは Partner Center の package validation で確認し、ローカル WACK の成功だけから「提出可能」と断定しません。Microsoft の現行ガイダンスは [MSIX パッケージのアップロード](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/upload-app-packages) を参照してください。
 
@@ -326,7 +326,7 @@ Submission options で、次を確認します。
 
 手動提出を行う場合は、概要ページで package、listing、価格・市場、プライバシーポリシー、審査ノート、公開保留設定を確認します。次の停止点で提出操作を止め、実行者の明示的な承認を得ます。#276 の自動経路では、この画面操作を通常手順にしません。
 
-> **手動経路の停止点:** 本書の手動確認だけでは「Submit for certification」または「Publish now」をクリックしない。画面の入力内容と証跡を共有し、提出・公開を実行する人の承認を得てから操作する。自動経路では tag push と workflow の成功条件を使用する。
+> **手動経路の停止点:** 本書の手動確認だけでは「Submit for certification」または「Publish now」をクリックしない。画面の入力内容と証跡を共有し、提出・公開を実行する人の承認を得てから操作する。自動経路ではリリース準備 PR のマージと workflow の成功条件を使用する。
 
 承認後に認定へ提出した場合は、次を記録します。
 
@@ -353,12 +353,12 @@ Submission options で、次を確認します。
 
 ### 6.1 通常の更新
 
-1. リリース準備用の専用 PR でコード、listing、`CHANGELOG.md`、2 つの manifest、`Directory.Build.props` の変更を確定する。
-2. manifest の Version は既存の Store package より大きくし、4 桁の値を package ファイル名の `-Version` と一致させる。
+1. コード、listing、`CHANGELOG.md`（`[Unreleased]` の内容）を通常の PR でマージする。manifest と `Directory.Build.props` の Version は、この PR では変更しない。続けて GitHub Actions の `Prepare Release`（`prepare-release.yml`）を、リリースする版（例: `0.8.0`）で手動実行する。`Directory.Build.props` の Version と `CHANGELOG.md` を確定する準備 PR（`chore(release): v0.8.0`）が作られる。
+2. リリースする版は既存の Store package より大きくする。manifest の Version は、tag から `X.Y.Z.0` として注入され、package ファイル名の `-Version` と一致する。
 3. 新しい `.msix` / `.msixupload` を生成し、ファイル名、package 内 manifest、SHA-256 を確認する。
 4. 新しい package で WACK を再実行し、Required/Optional の記録を更新する。
-5. `v<manifest Version>` の tag を push し、GitHub Actions の release workflow を開始する。
-6. workflow が同一 artifact の静的検査、WACK、`.msixupload` の Store submission と公開状態の poll を実行する。
+5. 準備 PR をレビューして squash マージする。マージで `release.yml` が起動し、tag と draft の GitHub Release が作られる。tag を手で push しない。
+6. workflow が同一 artifact の静的検査と WACK を行い、Release に成果物を添付して照合し、Release を公開する。その後で、`.msixupload` の Store submission と公開状態の poll を実行する。
 7. 公開後に Store listing、インストール、起動、ログイン、少量の転送、アンインストールを確認し、workflow の実行 URL と Submission ID を記録する。
 
 同じ submission の入力を上書きして証跡を失わないでください。修正して再提出する場合は、新しい package と新しい SHA-256 を記録します。
@@ -371,11 +371,11 @@ Submission options で、次を確認します。
 4. Version を既存 package より大きくし、新しい package を生成して WACK を再実行する。
 5. 修正内容と再 WACK の結果を新しい submission の証跡へ紐付ける。
 
-単なる再ビルドで同じ Version・同じ入力を再提出しません。Revision の 4 桁目だけを増やすか、主バージョンを進めるかは、変更内容と Partner Center の要求に応じてリリース準備時に決定します。4 桁目の増加をすべての差戻しに対する自動規則とはしません。
+単なる再ビルドで同じ Version・同じ入力を再提出しません。release-automate の tag は `X.Y.Z` の 3 桁のため、manifest の 4 桁目（常に `0`）だけを増やす再提出はできません。パッチ版を進めて、新しい準備 PR から再提出します。
 
 ### 6.3 GitHub Release と Store 自動公開の境界
 
-`.github/workflows/release.yml` は `v*` タグで GitHub Release と CLI/Dashboard、MSIX (`.msix` / `.msixupload`) のアセットを公開します。続いて同じ MSIX artifact を `wack.yml` の GitHub-hosted Windows WACK job に渡し、WACK 成功後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
+`.github/workflows/release.yml` は、リリース準備 PR のマージ（`chore(release):` で始まる main への push）で動きます。draft の GitHub Release を作り、CLI/Dashboard、MSIX (`.msix` / `.msixupload`) のアセットを添付して照合します。同じ MSIX artifact を `wack.yml` の GitHub-hosted Windows WACK job に渡し、WACK と照合が成功した後に Release を公開します。Release の公開後にだけ `store-production` Environment の Store 公開 job を開始します。GitHub Release の公開状態と Store の submission／公開状態は別の証跡として記録します。
 
 ---
 
@@ -437,7 +437,7 @@ Hosted runner の image、管理者権限、対話セッション、`appcert.exe
 `.github/workflows/wack.yml` は次の入口を持ちます。
 
 - `workflow_dispatch`: Actions 画面から対象 branch と manifest Version を選択して実行する
-- `workflow_call`: `release.yml` が生成した MSIX artifact を受け取り、tag push 時の再ビルドを行わずに実行する
+- `workflow_call`: `release.yml` が生成した MSIX artifact を受け取り、再ビルドを行わずに実行する
 
 手動実行では `windows-latest` で MSIX を生成・静的検査してから artifact に保存します。リリース実行では `release.yml` が生成した artifact（`.msix`、`.msixupload`、SHA-256 証跡 JSON）をそのまま `windows-latest` の WACK job へ渡します。WACK job は artifact 内の 1 個の `.msix` を `-PackagePath` で明示し、次の既存スクリプトを実行します。
 
@@ -453,11 +453,11 @@ WACK の UAC は通常の開発者実機でのみ使用します。CI の GitHub
 
 ### 8.4 Store 自動公開と初期設定（#276）
 
-タグ push 後の Store 公開は、次の順序で実行します。
+リリース準備 PR のマージ後の Store 公開は、次の順序で実行します。
 
-1. `release.yml` が tag と manifest Version を照合し、MSIX／MSIXUPLOAD と SHA-256 証跡を作成する。
-2. GitHub Release に添付したものと同じ artifact を `windows-latest` の WACK job へ渡す。
-3. WACK が成功した場合だけ `store-production` Environment の job を開始する。
+1. `release.yml` が tag から manifest Version を設定し、MSIX／MSIXUPLOAD と SHA-256 証跡を作成する。
+2. 同じ artifact を `windows-latest` の WACK job へ渡す。
+3. WACK と、Release に添付した成果物の照合が成功すると Release が公開される。その後で、`store-production` Environment の job を開始する。
 4. Microsoft Store Developer CLI で Entra ID の client credentials を設定し、`.msixupload` を Product ID `9NG134LB022L` へ送信する。
 5. 既存 submission の status と package 名を確認し、同じ package の処理中 submission は poll して再利用する。別 Version の submission が処理中なら上書きせず停止する。
 6. submission status が `PUBLISHED` になるまで poll し、失敗時は workflow を失敗させる。
@@ -471,16 +471,16 @@ pwsh -NoProfile -File .\scripts\Configure-StorePublishing.ps1 -WhatIf
 pwsh -NoProfile -File .\scripts\Configure-StorePublishing.ps1
 ~~~
 
-設定スクリプトは `store-production` Environment を作成または更新し、`v*` tag の deployment policy、`STORE_PRODUCT_ID` variable、次の Environment secrets を設定します。
+設定スクリプトは `store-production` Environment を作成または更新し、`main` ブランチの deployment policy、`STORE_PRODUCT_ID` variable、次の Environment secrets を設定します。
 
 - `AZURE_AD_APPLICATION_CLIENT_ID`
 - `AZURE_AD_APPLICATION_SECRET`
 - `AZURE_AD_TENANT_ID`
 - `SELLER_ID`
 
-Entra ID アプリには Microsoft Store Submission API を利用できる client credentials と、対象アプリを更新できる Partner Center 権限を付与します。Microsoft Store Developer CLI の GitHub Actions 更新は現行ドキュメント上、free product が前提です。Product ID は `.env` の `STORE_PRODUCT_ID` で確認しますが、secret にはしません。現在はユーザー判断により required reviewer を設定せず、`v*` tag 制限だけを Environment 保護ルールとして使います。承認を再導入する場合は GitHub Environment 側で追加設定します。
+Entra ID アプリには Microsoft Store Submission API を利用できる client credentials と、対象アプリを更新できる Partner Center 権限を付与します。Microsoft Store Developer CLI の GitHub Actions 更新は現行ドキュメント上、free product が前提です。Product ID は `.env` の `STORE_PRODUCT_ID` で確認しますが、secret にはしません。現在はユーザー判断により required reviewer を設定せず、`main` ブランチ制限だけを Environment 保護ルールとして使います。Store 公開 job は main への push で動くため、承認の関門はリリース準備 PR のレビューとマージです。承認を再導入する場合は GitHub Environment 側で追加設定します。なお、設定スクリプトは既存の `v*` tag policy を削除しません（release-automate への移行前の設定が残る場合は、GitHub の Environment 設定から削除します）。
 
-Store 公開 job は Product 単位の concurrency で直列化します。GitHub Actions の timeout 後に再実行する場合は、新しい tag や手動再ビルドを作らず、同じ run の再実行で既存 submission の status を確認します。submission が別 Version の処理中または失敗状態で残っている場合も自動で上書きせず、Partner Center で状態を確認してから対応します。
+Store 公開 job は Product 単位の concurrency で直列化します。GitHub Actions の timeout 後に再実行する場合は、新しい tag や手動再ビルドを作らず、同じ run の「Re-run failed jobs」で既存 submission の status を確認します。submission が別 Version の処理中または失敗状態で残っている場合も自動で上書きせず、Partner Center で状態を確認してから対応します。
 
 ### 8.5 Listing Data との責務分離
 
