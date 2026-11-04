@@ -13,6 +13,7 @@
 - MSIX の manifest Version は、コミット上の値ではなく、リリースのビルドで tag（`vX.Y.Z`）から `X.Y.Z.0` として注入する。tag が `X.Y.Z` の 3 桁になるため、4 桁目だけを増やす再提出はできず、パッチ版を進めて再提出する
 - `store-production` Environment の deployment policy を `v*` tag から `main` ブランチに変更するため、`Configure-StorePublishing.ps1` の設定対象を直した。既存の Environment は、マージ後・初回リリース前に設定を更新する必要がある
 - `docs/msix-packaging-and-store-guide.md` と `docs/architecture.md` のリリース手順を新しい経路に合わせた
+- `renovate.json` の `extends` から、中央プリセットで解除済みの非推奨プリセット（`options/schedule`・`options/security`・`options/automerge`）への参照を削除した。スケジュール・待機期間・自動マージ等は中央側で既に解除されているため更新の挙動は変わらず、Dependency Dashboard の警告表示が消える。
 
 ---
 
