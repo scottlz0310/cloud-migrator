@@ -14,6 +14,7 @@
 - `store-production` Environment の deployment policy を `v*` tag から `main` ブランチに変更するため、`Configure-StorePublishing.ps1` の設定対象を直した。既存の Environment は、マージ後・初回リリース前に設定を更新する必要がある
 - `docs/msix-packaging-and-store-guide.md` と `docs/architecture.md` のリリース手順を新しい経路に合わせた
 - `renovate.json` の `extends` から、中央プリセットで解除済みの非推奨プリセット（`options/schedule`・`options/security`・`options/automerge`）への参照を削除した。スケジュール・待機期間・自動マージ等は中央側で既に解除されているため更新の挙動は変わらず、Dependency Dashboard の警告表示が消える。
+- `tasks.md` を撤去した。進捗とタスクは Issue と Pull Request、リポジトリの外のハンドオフで管理する。`AGENTS.md`・`CLAUDE.md`・`README.md`・`.github/copilot-instructions.md` の参照を外した。
 
 ---
 

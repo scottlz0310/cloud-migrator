@@ -7,7 +7,7 @@
 - 共通の実装ガードレール: [docs/architecture/ai-implementation-guardrails.md](docs/architecture/ai-implementation-guardrails.md)
 - 既存アーキテクチャ: [docs/architecture.md](docs/architecture.md)
 - 実装計画: [docs/implementation-plan.md](docs/implementation-plan.md)
-- 現在のタスク: [tasks.md](tasks.md)
+- 現在のタスク: [GitHub Issues](https://github.com/scottlz0310/cloud-migrator/issues)
 
 ## 基本方針
 
