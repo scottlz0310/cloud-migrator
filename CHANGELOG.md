@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `bunfig.toml`: `minimumReleaseAge = 259200`（3 日）を追加。公開から 3 日未満の版を新規に解決しない。lock file maintenance は Renovate の minimumReleaseAge を迂回するため、無人の自動マージに対する防御としてパッケージマネージャ側で止める
+
 ### Changed
 
 - リリース手順を release-automate（v3.2.1）に移行。手動の `Prepare Release`（`prepare-release.yml`）が `Directory.Build.props` の Version と CHANGELOG を確定する準備 PR を作り、そのマージで `release.yml` が draft の Release を作成する。CLI と MSIX のビルド、WACK、成果物の添付と照合を経て Release を公開し、その後に Microsoft Store へ提出する。従来の `v*` タグ push による起動は廃止した
