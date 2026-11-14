@@ -124,14 +124,12 @@
     {
         _selectedFolderPath = folderPath;
         _destFolderConfirmed = true;
-        StateHasChanged();
     }
 
     private void UsePreviousFolder()
     {
         _selectedFolderPath = _savedFolderPath;
         _destFolderConfirmed = true;
-        StateHasChanged();
     }
 
     private async Task SaveAndContinueAsync()

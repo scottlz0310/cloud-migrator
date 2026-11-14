@@ -21,6 +21,10 @@
 - `tasks.md` を撤去した。進捗とタスクは Issue と Pull Request、リポジトリの外のハンドオフで管理する。`AGENTS.md`・`CLAUDE.md`・`README.md`・`.github/copilot-instructions.md` の参照を外した。
 - .NET SDK を `11.0.100`、各プロジェクトの `TargetFramework` を `net11.0` / `net11.0-windows10.0.19041.0` へ移行し、CI ワークフローの .NET セットアップを `global-json-file: global.json` 参照へ統一した（[#341](https://github.com/scottlz0310/cloud-migrator/pull/341) / [#344](https://github.com/scottlz0310/cloud-migrator/pull/344) 対応）
 
+### Fixed
+
+- `Microsoft.AspNetCore.Components.WebView.Wpf` 11.0.0 で有効化される Razor アナライザー `BL0012` に対応し、Dashboard の UI イベントハンドラ等における冗長な `StateHasChanged()` 呼び出し（5 ファイル・6 箇所）を削除した（[#344](https://github.com/scottlz0310/cloud-migrator/pull/344) 対応）
+
 ---
 
 ## [0.7.3] - 2026-10-02
