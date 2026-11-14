@@ -15,13 +15,13 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>60e5cdd2-925e-488b-848f-6d5f4d95c93b</UserSecretsId>
     <AssemblyName>cloud-migrator</AssemblyName>
-    <!-- AdaptiveConcurrencyController は [Obsolete] 化済みだが、CliServices/TransferCommand で
-         後方互換維持のため継続使用する。v0.6.0 で削除予定。 -->
+    <!-- AdaptiveConcurrencyController 縺ｯ [Obsolete] 蛹匁ｸ医∩縺縺後，liServices/TransferCommand 縺ｧ
+         蠕梧婿莠呈鋤邯ｭ謖√・縺溘ａ邯咏ｶ壻ｽｿ逕ｨ縺吶ｋ縲Ｗ0.6.0 縺ｧ蜑企勁莠亥ｮ壹・-->
     <NoWarn>CS0618</NoWarn>
   </PropertyGroup>
 

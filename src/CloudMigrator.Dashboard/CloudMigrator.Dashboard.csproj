@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net11.0-windows10.0.19041.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
@@ -9,7 +9,7 @@
     <RootNamespace>CloudMigrator.Dashboard</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\assets\CloudMigrator.ico</ApplicationIcon>
-    <!-- AdaptiveConcurrencyController/Adapter は [Obsolete] 化済みだが後方互換のため継続使用。v0.6.0 で削除予定。 -->
+    <!-- AdaptiveConcurrencyController/Adapter 縺ｯ [Obsolete] 蛹匁ｸ医∩縺縺悟ｾ梧婿莠呈鋤縺ｮ縺溘ａ邯咏ｶ壻ｽｿ逕ｨ縲Ｗ0.6.0 縺ｧ蜑企勁莠亥ｮ壹・-->
     <NoWarn>CS0618</NoWarn>
     <!-- MSIX Packaging Configuration -->
     <EnableMsixTooling>true</EnableMsixTooling>
