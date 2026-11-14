@@ -32,7 +32,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest]
-        dotnet: ["10.0"]
 
     steps:
       - uses: actions/checkout@v7
@@ -40,7 +39,7 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: ${{ matrix.dotnet }}
+          global-json-file: global.json
 
       - name: 依存関係の復元
         run: dotnet restore CloudMigrator.slnx
@@ -100,7 +99,7 @@ jobs:
       - name: .NET セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.404"
+          global-json-file: global.json
 
       - name: 依存関係の復元
         run: dotnet restore CloudMigrator.slnx
@@ -144,7 +143,7 @@ jobs:
       - name: .NET SDK セットアップ
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.404"
+          global-json-file: global.json
 
       - name: manifest Version を取得
         id: manifest

@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net11.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <!-- AdaptiveConcurrencyController/Adapter は [Obsolete] 化済み。テストでは引き続き直接検証するため CS0618 を抑制する。 -->
+    <!-- AdaptiveConcurrencyController/Adapter 縺ｯ [Obsolete] 蛹匁ｸ医∩縲ゅユ繧ｹ繝医〒縺ｯ蠑輔″邯壹″逶ｴ謗･讀懆ｨｼ縺吶ｋ縺溘ａ CS0618 繧呈椛蛻ｶ縺吶ｋ縲・-->
     <NoWarn>CS0618</NoWarn>
   </PropertyGroup>
 

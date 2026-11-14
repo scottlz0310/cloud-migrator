@@ -19,6 +19,7 @@
 - `docs/msix-packaging-and-store-guide.md` と `docs/architecture.md` のリリース手順を新しい経路に合わせた
 - `renovate.json` の `extends` から、中央プリセットで解除済みの非推奨プリセット（`options/schedule`・`options/security`・`options/automerge`）への参照を削除した。スケジュール・待機期間・自動マージ等は中央側で既に解除されているため更新の挙動は変わらず、Dependency Dashboard の警告表示が消える。
 - `tasks.md` を撤去した。進捗とタスクは Issue と Pull Request、リポジトリの外のハンドオフで管理する。`AGENTS.md`・`CLAUDE.md`・`README.md`・`.github/copilot-instructions.md` の参照を外した。
+- .NET SDK を `11.0.100`、各プロジェクトの `TargetFramework` を `net11.0` / `net11.0-windows10.0.19041.0` へ移行し、CI ワークフローの .NET セットアップを `global-json-file: global.json` 参照へ統一した（[#341](https://github.com/scottlz0310/cloud-migrator/pull/341) / [#344](https://github.com/scottlz0310/cloud-migrator/pull/344) 対応）
 
 ---
 
