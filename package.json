@@ -1,6 +1,6 @@
 {
   "private": true,
-  "packageManager": "bun@1.4.4",
+  "packageManager": "bun@1.4.5",
   "scripts": {
     "prepare": "lefthook install"
   },
